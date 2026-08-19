@@ -18,6 +18,7 @@
 #   --native-base <dir>    the bridge's install root (default: ~/.aify-comms)
 #   --host-repo <dir>      host checkout, for hooks that must run from source
 #   --set KEY=VALUE        extra placeholder, repeatable (hermes needs three; see README)
+#   --registry <path>      service registry to build against (default: ~/.aify/services.json)
 #   --render-only <dir>    write the launchers into <dir> and exit, touching nothing else
 #
 # Exit codes match the contract the wrappers themselves use: 78 configuration invalid, 127 a required
@@ -37,6 +38,7 @@ NATIVE_BASE="$HOME/.aify-comms"
 BRIDGE_DIR=""
 HOST_REPO=""
 RENDER_ONLY=""
+REGISTRY=""
 EXTRAS=()
 
 while [ $# -gt 0 ]; do
@@ -50,6 +52,7 @@ while [ $# -gt 0 ]; do
     --host-repo) HOST_REPO="${2:-}"; shift 2 ;;
     --set) EXTRAS+=("${2:-}"); shift 2 ;;
     --render-only) RENDER_ONLY="${2:-}"; shift 2 ;;
+    --registry) REGISTRY="${2:-}"; shift 2 ;;
     -h|--help) sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "install.sh: unknown option '$1'" >&2; exit "$EXIT_CONFIG" ;;
   esac
@@ -76,7 +79,19 @@ fi
 [ -n "$BRIDGE_DIR" ] || BRIDGE_DIR="$NATIVE_BASE/mcp/stdio"
 [ -n "$HOST_REPO" ] || HOST_REPO="$NATIVE_BASE"
 
+[ -n "$REGISTRY" ] || REGISTRY="$HOME/.aify/services.json"
+
 VERSION="$(cat "$HERE/VERSION" 2>/dev/null || echo unknown)"
+
+# What this launcher is being built from, baked in so anything holding the CURRENT registry can see
+# the launcher is stale without executing it. An absent registry is a legitimate host state and
+# fingerprints as the empty registry; a MALFORMED one stops the install here rather than producing a
+# launcher built against whatever survived parsing.
+if ! command -v node >/dev/null 2>&1; then
+  echo "install.sh: node is required to read the service registry ($REGISTRY)." >&2
+  exit "$EXIT_NO_RUNTIME"
+fi
+REGISTRY_FINGERPRINT="$(node "$HERE/lib/registry-cli.mjs" fingerprint "$REGISTRY")" || exit "$EXIT_CONFIG"
 
 # The launcher name follows the client name. pi is the one exception: it ships an alias, which is real
 # information and not derivable from a filename, so it is the only thing written down here.
@@ -113,6 +128,7 @@ install_one() {
       bash "$HERE/render.sh" "$client-aify.sh.in" "$target" \
         "ENDPOINT=$ENDPOINT" \
         "WRAPPER_VERSION=$VERSION" \
+        "REGISTRY_FINGERPRINT=$REGISTRY_FINGERPRINT" \
         "BRIDGE_DIR=$BRIDGE_DIR" \
         "NATIVE_BASE=$NATIVE_BASE" \
         "SCRIPT_DIR=$HOST_REPO" \
