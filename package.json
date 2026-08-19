@@ -1,0 +1,19 @@
+{
+  "name": "aify-wrapper",
+  "version": "0.5.7",
+  "description": "Harness wrappers: launchers that resolve a coding-agent CLI, export an identity environment, point it at an MCP bridge, and exec it.",
+  "license": "MIT",
+  "bin": {
+    "aify-wrapper-install": "./install.sh"
+  },
+  "files": [
+    "wrappers/",
+    "render.sh",
+    "install.sh",
+    "VERSION",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  }
+}

@@ -1,0 +1,122 @@
+# aify-wrapper
+
+Launchers for coding-agent CLIs. A wrapper resolves the runtime, exports an identity environment,
+points the runtime at an MCP bridge, and execs it with your arguments forwarded.
+
+Four are here: `claude-aify`, `codex-aify`, `hermes-aify`, `pi-aify` (with `omp-aify` as an alias).
+
+They were generated inside [aify-comms](https://github.com/zimdin12/aify-comms)' 4,371-line installer
+until v0.6, each body living in an unquoted heredoc where every runtime `$` had to be written `\$` and
+hermes carried 90 escaped backticks. This repo is that text made into files, so a host other than
+aify-comms can install a launcher without taking the service with it.
+
+## Install
+
+```bash
+./install.sh --client claude --endpoint http://127.0.0.1:8800
+```
+
+Writes `~/.local/bin/claude-aify`. Then, before you trust it:
+
+```bash
+claude-aify --check
+```
+
+`--check` resolves the whole configuration, prints it, and **starts nothing**. That is not politeness.
+The rule behind it was learned the expensive way: running a launcher to see whether it worked once
+superseded a live environment bridge and reaped every managed worker under it. A launcher needs a way
+to be asked without being run.
+
+| Option | Meaning |
+|---|---|
+| `--client` | `claude`, `codex`, `hermes` or `pi` |
+| `--endpoint` | the coordinating service, baked in as the fallback. Required: a wrapper will not guess one |
+| `--dest` | where to install (default `~/.local/bin`) |
+| `--bridge-dir` | directory holding the MCP bridge (default `~/.aify-comms/mcp/stdio`) |
+| `--native-base` | the bridge's install root (default `~/.aify-comms`) |
+| `--host-repo` | your checkout, for hooks that run from source |
+| `--set KEY=VALUE` | an extra placeholder, repeatable |
+| `--render-only DIR` | write the launcher into `DIR` and stop, touching nothing else |
+
+## The contract
+
+Six inputs, read at launch. Every one falls back to the legacy `AIFY_*` name, so an existing fleet
+keeps working untouched.
+
+| Input | Meaning | Required |
+|---|---|---|
+| `HARNESS_ENDPOINT` | base URL of the coordinating service | yes |
+| `HARNESS_MCP_COMMAND` | command that starts the MCP bridge the runtime should load | no |
+| `HARNESS_IDENTITY` | opaque id for this agent, exported to the runtime | no |
+| `HARNESS_ROLE` | opaque role string | no |
+| `HARNESS_CWD` | working directory the runtime starts in | no |
+| `HARNESS_EXTRA_ENV` | `KEY=VALUE` lines exported verbatim before launch | no |
+
+Precedence is **flag > `HARNESS_*` > legacy `AIFY_*` > the value baked in at install**. An explicit
+argument beats ambient environment because that is what typing it means.
+
+`HARNESS_ENDPOINT` uses `${HARNESS_ENDPOINT-...}`, not `${HARNESS_ENDPOINT:-...}`, and the difference
+is deliberate: an explicitly **emptied** endpoint is a configuration error, not an unset one. A host
+that cleared it gets exit 78 rather than an agent quietly talking to a service nobody named.
+
+`HARNESS_MCP_COMMAND` is the input that makes these reusable. A wrapper otherwise knows where one
+particular service keeps its bridge; with this it loads whatever the host names. Claude honours it.
+Codex, hermes and pi accept it and **report it as unused** through `--check`, because their MCP servers
+are registered at install time by the client's own tooling rather than by the launcher. A wrapper that
+silently swallowed the input would be claiming a job it does not do.
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | the runtime exited normally, or `--check` passed |
+| `78` | configuration invalid: a required input is missing or empty |
+| `127` | the runtime CLI is not on PATH |
+
+Anything else is the runtime's own exit code, passed through unchanged.
+
+## Templates
+
+`wrappers/*.sh.in` are ordinary bash with two additions: `@@TOKEN@@` placeholders a host substitutes at
+install time, and `#|` lines that document the template and are stripped from the output.
+
+| Placeholder | Supplied by |
+|---|---|
+| `@@ENDPOINT@@` | `--endpoint` |
+| `@@WRAPPER_VERSION@@` | this repo's `VERSION`, so `--check` can report what it is |
+| `@@BRIDGE_DIR@@` `@@NATIVE_BASE@@` `@@SCRIPT_DIR@@` | `--bridge-dir`, `--native-base`, `--host-repo` |
+| `@@HERMES_PLUGIN_PATH@@` `@@HERMES_STDIO_DIR@@` `@@HERMES_TUI_DIR@@` | `--set`, defaulted from the above |
+
+A placeholder the host does not supply is refused at render with exit 78. Left alone it would reach
+the launcher as literal `@@TOKEN@@` text and break at the moment somebody tried to start an agent,
+long after the install reported success.
+
+Hermes needs three the others do not, because they cannot be derived from a checkout: a plugin path
+converted for a native-Windows runtime, a bridge directory in a form Git-Bash `node` can open, and a
+prebuilt TUI bundle that is baked only when it exists. An empty TUI dir means "locate or build it as
+before", which never breaks.
+
+## Version skew
+
+A launcher is generated **text**. Restarting it changes nothing; only reinstalling does. That is the
+opposite of the bridge it points at, which is a running process that keeps whatever it loaded at boot.
+
+`--check` reports the wrapper's own version so a host can tell what it has. aify-comms compares it
+against the checkout in `aify-comms doctor`'s `wrapper-current` check, which says REINSTALL where
+`bridge-current` says RESTART.
+
+## Where the runtime is loaded from
+
+Point `--bridge-dir` at a **fast local path**. Where aify-comms keeps its bridge on a 9p/WSL2 mount the
+bridge takes about five seconds to load, and hermes' MCP discovery window is a hardcoded 0.75s: the
+result is a hermes that starts perfectly and silently has no tools. A native copy loads in about 0.3s.
+This is not a performance nicety.
+
+## Tests
+
+```bash
+node --test tests/*.test.js
+```
+
+They render each launcher and run it, rather than reading the templates. A wrapper's failure mode is
+silence, so a test that only reads text cannot see it.
