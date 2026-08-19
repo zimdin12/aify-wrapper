@@ -92,6 +92,9 @@ if ! command -v node >/dev/null 2>&1; then
   exit "$EXIT_NO_RUNTIME"
 fi
 REGISTRY_FINGERPRINT="$(node "$HERE/lib/registry-cli.mjs" fingerprint "$REGISTRY")" || exit "$EXIT_CONFIG"
+# Services that opted into strict mode, base64 so no path metacharacter survives the trip. Empty
+# unless a service asked, which keeps strict mode byte-identical on every host that did not.
+STRICT_EXTRA_MCP_B64="$(node "$HERE/lib/registry-cli.mjs" strict-fragment-b64 "$REGISTRY")" || exit "$EXIT_CONFIG"
 
 # The launcher name follows the client name. pi is the one exception: it ships an alias, which is real
 # information and not derivable from a filename, so it is the only thing written down here.
@@ -129,6 +132,7 @@ install_one() {
         "ENDPOINT=$ENDPOINT" \
         "WRAPPER_VERSION=$VERSION" \
         "REGISTRY_FINGERPRINT=$REGISTRY_FINGERPRINT" \
+        "STRICT_EXTRA_MCP_B64=$STRICT_EXTRA_MCP_B64" \
         "BRIDGE_DIR=$BRIDGE_DIR" \
         "NATIVE_BASE=$NATIVE_BASE" \
         "SCRIPT_DIR=$HOST_REPO" \

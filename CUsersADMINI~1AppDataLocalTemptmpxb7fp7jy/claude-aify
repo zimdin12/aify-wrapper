@@ -1,27 +1,4 @@
 #!/bin/bash
-#| claude-aify -- the wrapper aify-comms installs for Claude Code.
-#|
-#| A TEMPLATE, not a script. Two things happen at render time: `@@TOKEN@@` placeholders are
-#| substituted, and every line starting with `#|` -- including this block -- is REMOVED. That is what
-#| lets the template carry documentation the operator's installed wrapper does not have to repeat, and
-#| why the tokens can be named here without the substituter rewriting its own documentation.
-#|
-#| WHY IT IS A FILE. This body lived inside a 335-line unquoted heredoc in install.sh, where every
-#| runtime dollar sign had to be written escaped and every backtick too. That escaping is invisible
-#| while reading and is exactly the class of mistake this repo keeps paying for. As a file the text is
-#| what it is: diffable, reviewable, and `bash -n`-able on its own. It also gives `wrappers/` a real
-#| existence, which is where the v0.6 client tier is heading -- rather than 611 lines of shell that
-#| only exists as output of an installer.
-#|
-#| Placeholders, written split so they are inert here:
-#|   @@ + ENDPOINT@@       coordinating service URL with the built-in fallback applied
-#|   @@ + ENDPOINT_RAW@@   the same URL with no fallback (may be empty)
-#|   @@ + NATIVE_BASE@@    native dotfolder holding the bridge runtime (~/.aify-comms)
-#|   @@ + BRIDGE_DIR@@     the bridge directory inside it
-#|   @@ + SCRIPT_DIR@@     the repo checkout, for hooks that must run from source
-#|
-#| Rendering is proven byte-identical to the heredoc it replaced by
-#| mcp/stdio/tests/claude-wrapper-template.test.js.
 set -euo pipefail
 
 # ── The harness wrapper contract ────────────────────────────────────────────
@@ -43,13 +20,9 @@ set -euo pipefail
 # at install time. The contract name beats the legacy one because it is the canonical one; an argument
 # beats both because that is what an operator means by typing it.
 HARNESS_WRAPPER_RUNTIME="claude-code"
-HARNESS_WRAPPER_VERSION="@@WRAPPER_VERSION@@"
-#| Baked at install, never read at launch: parsing the registry on every start would spend the
-#| MCP discovery budget hermes gives us, and a launcher cannot learn about a service that was
-#| registered after it was written anyway. This is how a holder of the CURRENT registry can
-#| tell that it could not - by READING the launcher, without starting the runtime.
-HARNESS_REGISTRY_FINGERPRINT="@@REGISTRY_FINGERPRINT@@"
-HARNESS_ENDPOINT="${HARNESS_ENDPOINT-${AIFY_COMMS_URL:-@@ENDPOINT@@}}"
+HARNESS_WRAPPER_VERSION="0.5.7"
+HARNESS_REGISTRY_FINGERPRINT="bcee5b55e534ae7e"
+HARNESS_ENDPOINT="${HARNESS_ENDPOINT-${AIFY_COMMS_URL:-http://127.0.0.2:1}}"
 HARNESS_IDENTITY="${HARNESS_IDENTITY:-${AIFY_AGENT_ID:-}}"
 HARNESS_ROLE="${HARNESS_ROLE:-${AIFY_AGENT_ROLE:-}}"
 HARNESS_CWD="${HARNESS_CWD:-${AIFY_AGENT_CWD:-}}"
@@ -378,9 +351,9 @@ if [ "${AIFY_CLAUDE_STRICT_MCP:-0}" = "1" ]; then
   # spawning the MCP server children — they fail to start with the
   # MSYS-style path even though bash itself reads it fine.
   if command -v cygpath >/dev/null 2>&1; then
-    AIFY_SCRIPT_DIR_FWD="$(cygpath -m "@@NATIVE_BASE@@")"
+    AIFY_SCRIPT_DIR_FWD="$(cygpath -m "/root/.aify-comms")"
   else
-    AIFY_SCRIPT_DIR_FWD="@@NATIVE_BASE@@"
+    AIFY_SCRIPT_DIR_FWD="/root/.aify-comms"
   fi
   # WHICH BRIDGE THIS RUNTIME LOADS — the one thing that tied this launcher to one service.
   #
@@ -402,22 +375,6 @@ if [ "${AIFY_CLAUDE_STRICT_MCP:-0}" = "1" ]; then
     _mcp_cmd="node"
     _mcp_args="\"${AIFY_SCRIPT_DIR_FWD}/mcp/stdio/server.js\""
   fi
-  # Services that opted into strict mode, carried as base64 and decoded here.
-  #
-  # Base64 because the value crosses two hops that both eat backslashes: the installer's parameter
-  # substitution and the unquoted heredoc below. Base64 is [A-Za-z0-9+/=], so it survives both as
-  # itself; decoded into a variable, its expansion inside the heredoc is not re-parsed, so a Windows
-  # path in a service's args cannot be mangled or a backtick executed.
-  AIFY_STRICT_EXTRA=""
-  if [ -n "@@STRICT_EXTRA_MCP_B64@@" ]; then
-    if command -v base64 >/dev/null 2>&1; then
-      AIFY_STRICT_EXTRA="$(printf '%s' "@@STRICT_EXTRA_MCP_B64@@" | base64 -d)"
-    else
-      echo "[claude-aify] strict mode has extra MCP servers configured but 'base64' is not on PATH." >&2
-      echo "              Install coreutils, or clear \"strictMcp\" from the service registry." >&2
-      exit "$HARNESS_EXIT_CONFIG"
-    fi
-  fi
   AIFY_MCP_CONFIG="$(mktemp -t aify-mcp.XXXXXX.json 2>/dev/null || mktemp -t aify-mcp)"
   # The bridge's endpoint is the RESOLVED one, not the install-time literal this used to bake in. An
   # explicit `env` block REPLACES the inherited environment for that server, so baking meant a strict
@@ -434,21 +391,12 @@ if [ "${AIFY_CLAUDE_STRICT_MCP:-0}" = "1" ]; then
       "command": "node",
       "args": ["${AIFY_SCRIPT_DIR_FWD}/mcp/stdio/claude-channel.js"],
       "env": { "AIFY_SERVER_URL": "$HARNESS_ENDPOINT", "CLAUDE_MCP_SERVER_URL": "$HARNESS_ENDPOINT" }
-    }${AIFY_STRICT_EXTRA}
+    }
   }
 }
 JSON
   # Strict mode (AIFY_CLAUDE_STRICT_MCP=1): only the config above is visible
   # to this claude process.
-#| The STRICT_EXTRA_MCP_B64 placeholder above is empty unless a service set "strictMcp": true in the
-#| registry, in which case it splices that service's servers in after the comms pair. Opt-in per
-#| service on purpose: this flag exists BECAUSE extra MCP servers cause the init race described
-#| above, so carrying everything registered would reintroduce the failure the flag is the workaround
-#| for. An operator who needs a second service in here names it and owns the risk for that one.
-#| (Written at column 0, and spelled without the @@ markers, deliberately: `#|` is stripped by an
-#| anchored `^#|`, so an INDENTED template comment survives into the launcher — and a placeholder
-#| named inside one gets substituted there, which is how a multi-line JSON fragment once landed in
-#| the middle of a comment and broke the rendered bash.)
   CLAUDE_MCP_FLAGS+=(--strict-mcp-config --mcp-config "$AIFY_MCP_CONFIG")
 fi
 
@@ -460,9 +408,9 @@ fi
 # cross-agent session bleed when a whole team runs in one directory).
 # Always on — both strict and default MCP modes.
 if command -v cygpath >/dev/null 2>&1; then
-  AIFY_SCRIPT_DIR_FWD="$(cygpath -m "@@SCRIPT_DIR@@")"
+  AIFY_SCRIPT_DIR_FWD="$(cygpath -m "/root/.aify-comms")"
 else
-  AIFY_SCRIPT_DIR_FWD="@@SCRIPT_DIR@@"
+  AIFY_SCRIPT_DIR_FWD="/root/.aify-comms"
 fi
 AIFY_HOOK_SETTINGS="$(mktemp -t aify-hooks.XXXXXX.json 2>/dev/null || mktemp -t aify-hooks)"
 cat > "$AIFY_HOOK_SETTINGS" <<JSON
@@ -495,7 +443,7 @@ if [ "$AIFY_SESSION_MODE" = "managed" ] && [ -n "${CLAUDE_RESUME_ID:-}" ] && [ -
   # kills THIS agent's prior managed claude (verified via the candidate's parent
   # --aify-agent wrapper), never another agent or a resident operator session
   # that happens to share the same --resume session id (handle collision).
-  node "@@BRIDGE_DIR@@/reap-managed-claude.js" "$CLAUDE_RESUME_ID" "$CLAUDE_AIFY_AGENT_ID" >/dev/null 2>&1 || true
+  node "/root/.aify-comms/mcp/stdio/reap-managed-claude.js" "$CLAUDE_RESUME_ID" "$CLAUDE_AIFY_AGENT_ID" >/dev/null 2>&1 || true
 fi
 
 claude --dangerously-load-development-channels server:aify-comms-channel "${CLAUDE_MCP_FLAGS[@]}" "${CLAUDE_PERMISSION_FLAGS[@]}" "${CLAUDE_ARGS[@]}"

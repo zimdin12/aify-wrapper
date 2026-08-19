@@ -159,3 +159,24 @@ test("a missing placeholder is caught at render, not at launch", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("no template carries an INDENTED #| comment", () => {
+  // `#|` is stripped by an anchored `^#|`, in this renderer and in aify-comms' copy of it. An indented
+  // one therefore survives into the installed launcher as ordinary text — and if it names a
+  // placeholder, that placeholder is substituted inside it. A multi-line JSON fragment landing in the
+  // middle of a comment is how this was found: the rendered bash stopped parsing.
+  const offenders = [];
+  for (const name of fs.readdirSync(path.join(ROOT, "wrappers"))) {
+    const text = fs.readFileSync(path.join(ROOT, "wrappers", name), "utf8");
+    text.split("\n").forEach((line, i) => {
+      if (/^\s+#\|/.test(line)) offenders.push(`${name}:${i + 1}: ${line.trim().slice(0, 60)}`);
+    });
+  }
+  assert.deepEqual(offenders, [], "indented #| survives into the launcher");
+});
+
+test("POSITIVE CONTROL: the indented-#| scan can actually find one", () => {
+  // Otherwise the assertion above passes equally well when the regex is broken.
+  const probe = ["#| fine at column zero", "  #| not fine"].filter((l) => /^\s+#\|/.test(l));
+  assert.deepEqual(probe, ["  #| not fine"]);
+});

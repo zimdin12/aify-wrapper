@@ -16,7 +16,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { parseRegistry, endpointFor, mcpEntriesFor, fingerprint } from "../lib/registry.mjs";
+import {
+  parseRegistry, endpointFor, mcpEntriesFor, fingerprint,
+  strictMcpEntriesFor, strictMcpFragment, strictMcpFragmentBase64,
+} from "../lib/registry.mjs";
 
 const json = (o) => JSON.stringify(o);
 
@@ -138,4 +141,116 @@ test("mcpEntriesFor is ordered deterministically, so a rendered config is reprod
     a: { endpoint: "u", mcp: [{ name: "a1", command: "node", args: [] }] },
   });
   assert.deepEqual(forward, reversed);
+});
+
+// ── strict-mode opt-in ───────────────────────────────────────────────────────────
+// AIFY_CLAUDE_STRICT_MCP exists BECAUSE extra MCP servers cause the Claude init race that leaves
+// aify-comms-channel stuck connecting. So strict mode carries what an operator explicitly opted in,
+// never everything registered — the latter would reintroduce the failure the flag is the workaround
+// for. Absent means today's behaviour.
+
+test("strictMcp defaults to absent, and no service is opted in by default", () => {
+  const { registry } = parseRegistry(json(ONE_SERVICE));
+  assert.deepEqual(strictMcpEntriesFor(registry), []);
+});
+
+test("only services that opted in appear in the strict set", () => {
+  const { ok, registry } = parseRegistry(json({
+    version: 1,
+    services: {
+      "aify-comms": { endpoint: "http://a", mcp: [{ name: "a", command: "node", args: [] }] },
+      graph: { endpoint: "http://b", strictMcp: true, endpointEnv: ["G_URL"], mcp: [{ name: "g", command: "node", args: [] }] },
+    },
+  }));
+  assert.equal(ok, true);
+  assert.deepEqual(strictMcpEntriesFor(registry).map((e) => e.name), ["g"]);
+  assert.deepEqual(strictMcpEntriesFor(registry)[0].env, { G_URL: "http://b" });
+});
+
+test("opting in with no mcp entries contributes nothing rather than an empty object", () => {
+  const { registry } = parseRegistry(json({
+    version: 1,
+    services: { graph: { endpoint: "http://b", strictMcp: true } },
+  }));
+  assert.deepEqual(strictMcpEntriesFor(registry), []);
+});
+
+test("a non-boolean strictMcp is refused rather than coerced", () => {
+  // "false" and 0 are both truthy-or-falsy depending on who reads them. Refuse the ambiguity.
+  for (const bad of ["true", 1, null]) {
+    const r = parseRegistry(json({ version: 1, services: { g: { endpoint: "http://b", strictMcp: bad } } }));
+    assert.equal(r.ok, false, `strictMcp: ${JSON.stringify(bad)} should be refused`);
+  }
+});
+
+// ── the fragment, and the escaping the heredoc demands ───────────────────────────
+// The strict config is written from an UNQUOTED heredoc, where bash still interprets \, $ and a
+// backtick. This project has already shipped a bug of exactly that shape: an unescaped backtick in an
+// unquoted heredoc blanked a comment in every installed hermes-aify, and it was found only by
+// byte-comparing renders.
+
+test("an empty strict set yields an EMPTY fragment, so the config is unchanged", () => {
+  const { registry } = parseRegistry(json(ONE_SERVICE));
+  assert.equal(strictMcpFragment(registry), "");
+});
+
+test("a populated fragment starts with a comma, so it splices after the last entry", () => {
+  const { registry } = parseRegistry(json({
+    version: 1,
+    services: { g: { endpoint: "http://b", strictMcp: true, mcp: [{ name: "g", command: "node", args: [] }] } },
+  }));
+  assert.match(strictMcpFragment(registry), /^,\n/);
+});
+
+test("REAL BASH: a hostile path survives the installer AND the heredoc", async () => {
+  // Deliberately not re-implementing bash's rules to check them here. A test that models the shell
+  // tests the model, and the model is what is most likely to be wrong — an earlier version of this
+  // test failed twice against a correct implementation, and then PASSED against an implementation
+  // that was still one hop short, because it only modelled the heredoc and not the installer's
+  // parameter substitution. Both hops eat backslashes. Base64 removes them instead of counting them.
+  const { execFileSync } = await import("node:child_process");
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const pathMod = await import("node:path");
+
+  const B = String.fromCharCode(92), TICK = String.fromCharCode(96);
+  const nasty = `C:${B}bin${B}$HOME${B}${TICK}whoami${TICK}${B}s.js`;
+
+  const { registry } = parseRegistry(json({
+    version: 1,
+    services: {
+      g: { endpoint: "http://b", strictMcp: true, mcp: [{ name: "g", command: "node", args: [nasty] }] },
+    },
+  }));
+  const encoded = strictMcpFragmentBase64(registry);
+  assert.match(encoded, /^[A-Za-z0-9+/=]+$/, "base64 must carry no shell metacharacter");
+
+  // Decode through the SAME construct the launcher uses, then splice it in through a heredoc exactly
+  // as the launcher does.
+  const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), "aify-b64-"));
+  const out = pathMod.join(dir, "config.json");
+  const script = pathMod.join(dir, "emit.sh");
+  fs.writeFileSync(script, [
+    "#!/bin/bash",
+    "set -euo pipefail",
+    `EXTRA="$(printf '%s' "${encoded}" | base64 -d)"`,
+    `cat > "${out.split(String.fromCharCode(92)).join("/")}" <<JSON`,
+    "{",
+    '  "mcpServers": {',
+    '    "aify-comms": { "command": "node", "args": [], "env": {} }${EXTRA}',
+    "  }",
+    "}",
+    "JSON",
+    "",
+  ].join(String.fromCharCode(10)));
+
+  execFileSync("bash", [script], { encoding: "utf8" });
+  const written = JSON.parse(fs.readFileSync(out, "utf8"));
+  assert.equal(written.mcpServers.g.args[0], nasty, "the path did not survive");
+  assert.ok(written.mcpServers["aify-comms"], "the primary entry was disturbed");
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("an empty strict set encodes to an empty string, leaving the default path untouched", () => {
+  assert.equal(strictMcpFragmentBase64(parseRegistry(json(ONE_SERVICE)).registry), "");
 });
