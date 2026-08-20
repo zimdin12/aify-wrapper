@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  parseRegistry, endpointFor, mcpEntriesFor, fingerprint,
+  parseRegistry, mcpEntriesFor, fingerprint,
   strictMcpEntriesFor, strictMcpFragment, strictMcpFragmentBase64,
 } from "../lib/registry.mjs";
 
@@ -119,12 +119,6 @@ test("an mcp entry with no command is refused", () => {
     services: { graph: { endpoint: "http://b", mcp: [{ name: "g", args: [] }] } },
   }));
   assert.equal(r.ok, false);
-});
-
-test("endpointFor answers for a known service and returns null for an unknown one", () => {
-  const { registry } = parseRegistry(json(ONE_SERVICE));
-  assert.equal(endpointFor(registry, "aify-comms"), "http://127.0.0.1:8800");
-  assert.equal(endpointFor(registry, "not-installed"), null);
 });
 
 test("mcpEntriesFor is ordered deterministically, so a rendered config is reproducible", () => {
