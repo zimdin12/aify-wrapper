@@ -15,6 +15,10 @@ For a while both repos carried the templates and a hash gate in each kept the co
 template edit here reaches it through a version bump rather than through a second commit that has to
 remember to match.
 
+The third repo is [aify-env](https://github.com/zimdin12/aify-env), which owns processes and terminals
+on a host. It runs launchers rendered from these templates, and decides whether it may run one by
+reading the `HARNESS_WRAPPER_VERSION` marker out of the file — the same marker `--check` reports.
+
 ## Install
 
 ```bash
