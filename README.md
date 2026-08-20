@@ -10,6 +10,11 @@ until v0.6, each body living in an unquoted heredoc where every runtime `$` had 
 hermes carried 90 escaped backticks. This repo is that text made into files, so a host other than
 aify-comms can install a launcher without taking the service with it.
 
+For a while both repos carried the templates and a hash gate in each kept the copies honest. Since
+2026-08-20 there is one copy: aify-comms deleted its own and now depends on this package, so a
+template edit here reaches it through a version bump rather than through a second commit that has to
+remember to match.
+
 ## Install
 
 ```bash
