@@ -14,6 +14,7 @@
 // name carries an endpoint is the service's business, and the registry makes it say so.
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -249,40 +250,31 @@ test("an empty strict set encodes to an empty string, leaving the default path u
   assert.equal(strictMcpFragmentBase64(parseRegistry(json(ONE_SERVICE)).registry), "");
 });
 
-test("CROSS-REPO: a registry written by aify-comms parses here, with both servers resolved", async () => {
+test("CONTRACT: a registry as aify-comms actually writes it parses here, with both servers resolved", async () => {
   // This parser is the AUTHORITATIVE one -- it renders launchers from what it reads. Every other test
   // in this file feeds it a hand-written object, so if the writer and this reader ever disagreed they
   // would all still pass while every launcher was built against nothing.
   //
-  // It was checked once by hand in a terminal. Once, by hand, is a rumour.
+  // A RECORDED ARTIFACT rather than a live cross-repo call. The first version shelled out to a writer
+  // at a hardcoded absolute path on one particular machine, which made this suite fail for everybody
+  // else -- a public repo whose tests only pass on the author's laptop is broken, not covered. The
+  // fixture is real output from that writer; aify-comms owns a test that it still matches, which is
+  // where drift belongs because that is the only place both halves exist.
   const fs = await import("node:fs");
-  const os = await import("node:os");
   const pathMod = await import("node:path");
-  const { spawnSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
 
-  const writer = pathMod.join("C:", "Docker", "aify-comms", "mcp", "stdio", "register-service-cli.mjs");
-  if (!fs.existsSync(writer)) {
-    assert.fail("aify-comms is not checked out here, so the cross-repo contract cannot be exercised");
-  }
-
-  const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), "aify-wrapper-xrepo-"));
-  const file = pathMod.join(dir, "services.json");
-  // Set, and reachable by nothing.
-  const wrote = spawnSync(process.execPath, [writer, file, "http://127.0.0.2:1", "/b/mcp/stdio"], {
-    encoding: "utf8",
-    timeout: 60_000,
-  });
-  assert.equal(wrote.status, 0, wrote.stdout + wrote.stderr);
-
-  const parsed = parseRegistry(fs.readFileSync(file, "utf8"));
+  const here = pathMod.dirname(fileURLToPath(import.meta.url));
+  const fixture = pathMod.join(here, "fixtures", "services-written-by-aify-comms.json");
+  const parsed = parseRegistry(fs.readFileSync(fixture, "utf8"));
   assert.equal(parsed.ok, true, `the authoritative parser rejected it: ${JSON.stringify(parsed.errors)}`);
 
   const entries = mcpEntriesFor(parsed.registry);
   assert.deepEqual(entries.map((e) => e.name).sort(), ["aify-comms", "aify-comms-channel"]);
 
-  // The half that would fail silently rather than loudly: a service whose endpointEnv the writer and
-  // the reader disagreed about would produce entries with an EMPTY env, and a bridge that then
-  // inherited its endpoint from whatever launched the runtime.
+  // The half that would fail SILENTLY rather than loudly: a service whose endpointEnv the writer and
+  // the reader disagreed about produces entries with an EMPTY env, and a bridge that then inherits its
+  // endpoint from whatever launched the runtime. Correct-looking, until two services disagree.
   for (const entry of entries) {
     assert.ok(Object.keys(entry.env).length > 0, `${entry.name} resolved with no endpoint env at all`);
     for (const value of Object.values(entry.env)) {
@@ -290,9 +282,19 @@ test("CROSS-REPO: a registry written by aify-comms parses here, with both server
     }
   }
 
-  // And a fingerprint, since that is what a launcher bakes.
   assert.match(fingerprint(parsed.registry), /^[0-9a-f]{8,}$/);
-  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("the contract fixture carries nothing machine-specific", () => {
+  // It is a recorded artifact in a PUBLIC repo. A path from the machine that produced it would be both
+  // a leak and a lie about what the writer emits -- the first attempt at this fixture captured
+  // "C:/Program Files/Git/..." because the shell rewrote the argument on its way in.
+  const text = readFileSync(new URL("./fixtures/services-written-by-aify-comms.json", import.meta.url), "utf8");
+  // Built rather than written as a literal: a drive-letter pattern needs an escaped backslash, and a
+  // backslash written through a shell here has been eaten five times in this work already.
+  const BACKSLASH = String.fromCharCode(92);
+  const machineish = new RegExp(`Program Files|Users|Administrator|Docker|[A-Z]:${BACKSLASH}${BACKSLASH}`, "i");
+  assert.doesNotMatch(text, machineish);
 });
 
 test("REGISTRY_VERSION is the version this parser accepts, and the only one", () => {

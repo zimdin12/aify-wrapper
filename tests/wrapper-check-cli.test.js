@@ -12,7 +12,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import fs from "node:fs";
+import fs, { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -165,20 +165,28 @@ test("an UNUSABLE registry refuses rather than calling every launcher stale", ()
   }
 });
 
-test("POSITIVE CONTROL: it finds the launchers on the REAL install directory", () => {
-  // Every case above plants files in a temp directory. If the discovery glob stopped matching what an
-  // install actually produces, all of them would still pass while the check found nothing on any real
-  // host. Read-only: it lists and reads, and the previous test proves it never executes.
-  const realDest = path.join(os.homedir(), ".local", "bin");
-  if (!fs.existsSync(realDest)) {
-    assert.fail(`${realDest} does not exist, so the discovery glob cannot be controlled here`);
-  }
-  const found = fs.readdirSync(realDest).filter((n) => /-aify$/.test(n));
-  assert.ok(found.length > 0, `no launchers found in ${realDest}; the glob may no longer match`);
-  const res = spawnSync(process.execPath, [CHECK, "--dest", realDest, "--registry", path.join(os.tmpdir(), "no-such-registry.json"), "--json"], {
-    encoding: "utf8", timeout: 60_000,
-  });
-  const report = JSON.parse(res.stdout);
-  const seen = [...report.current, ...report.stale, ...report.unknown].map((r) => r.name);
-  for (const name of found) assert.ok(seen.includes(name), `${name} was not examined`);
+test("CONTRACT: the checker and the installer agree on where launchers go", () => {
+  // The first version of this read the machine's real ~/.local/bin and failed on any host that had
+  // never run an install -- a public repo whose suite only passes on the author's laptop is broken,
+  // not covered. And it was proving the wrong thing: the other tests here already render real launchers
+  // through install.sh and find them, so the discovery glob is covered.
+  //
+  // What is NOT covered by those is the DEFAULT. The checker looks in one place by default and the
+  // installer writes to one place by default, and nothing made them agree -- so either could move and
+  // every test here would stay green while the check reported "no launchers found" on a real host.
+  const installer = readFileSync(new URL("../install.sh", import.meta.url), "utf8");
+  const checker = readFileSync(new URL("../bin/aify-wrapper-check.mjs", import.meta.url), "utf8");
+
+  // Both express it as HOME plus .local/bin; compare the parts rather than a rendered path, which
+  // would just be this machine's home directory again.
+  // Plain substring checks rather than regexes: both needles contain characters a regex would need
+  // escaped, and an escaped backslash written through a shell has been eaten repeatedly in this work.
+  assert.ok(
+    installer.includes('DEST="$HOME/.local/bin"'),
+    "install.sh no longer defaults to ~/.local/bin; the checker will look in the wrong place",
+  );
+  assert.ok(
+    checker.includes('homedir(), ".local", "bin"'),
+    "the checker no longer defaults to ~/.local/bin; it will miss what install.sh writes",
+  );
 });
