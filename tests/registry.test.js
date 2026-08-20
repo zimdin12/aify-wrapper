@@ -254,3 +254,49 @@ test("REAL BASH: a hostile path survives the installer AND the heredoc", async (
 test("an empty strict set encodes to an empty string, leaving the default path untouched", () => {
   assert.equal(strictMcpFragmentBase64(parseRegistry(json(ONE_SERVICE)).registry), "");
 });
+
+test("CROSS-REPO: a registry written by aify-comms parses here, with both servers resolved", async () => {
+  // This parser is the AUTHORITATIVE one -- it renders launchers from what it reads. Every other test
+  // in this file feeds it a hand-written object, so if the writer and this reader ever disagreed they
+  // would all still pass while every launcher was built against nothing.
+  //
+  // It was checked once by hand in a terminal. Once, by hand, is a rumour.
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const pathMod = await import("node:path");
+  const { spawnSync } = await import("node:child_process");
+
+  const writer = pathMod.join("C:", "Docker", "aify-comms", "mcp", "stdio", "register-service-cli.mjs");
+  if (!fs.existsSync(writer)) {
+    assert.fail("aify-comms is not checked out here, so the cross-repo contract cannot be exercised");
+  }
+
+  const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), "aify-wrapper-xrepo-"));
+  const file = pathMod.join(dir, "services.json");
+  // Set, and reachable by nothing.
+  const wrote = spawnSync(process.execPath, [writer, file, "http://127.0.0.2:1", "/b/mcp/stdio"], {
+    encoding: "utf8",
+    timeout: 60_000,
+  });
+  assert.equal(wrote.status, 0, wrote.stdout + wrote.stderr);
+
+  const parsed = parseRegistry(fs.readFileSync(file, "utf8"));
+  assert.equal(parsed.ok, true, `the authoritative parser rejected it: ${JSON.stringify(parsed.errors)}`);
+
+  const entries = mcpEntriesFor(parsed.registry);
+  assert.deepEqual(entries.map((e) => e.name).sort(), ["aify-comms", "aify-comms-channel"]);
+
+  // The half that would fail silently rather than loudly: a service whose endpointEnv the writer and
+  // the reader disagreed about would produce entries with an EMPTY env, and a bridge that then
+  // inherited its endpoint from whatever launched the runtime.
+  for (const entry of entries) {
+    assert.ok(Object.keys(entry.env).length > 0, `${entry.name} resolved with no endpoint env at all`);
+    for (const value of Object.values(entry.env)) {
+      assert.equal(value, "http://127.0.0.2:1", `${entry.name} got the wrong endpoint`);
+    }
+  }
+
+  // And a fingerprint, since that is what a launcher bakes.
+  assert.match(fingerprint(parsed.registry), /^[0-9a-f]{8,}$/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
