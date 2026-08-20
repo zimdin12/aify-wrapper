@@ -13,14 +13,41 @@ aify-comms can install a launcher without taking the service with it.
 ## Install
 
 ```bash
+./install.sh --all --endpoint http://127.0.0.1:8800
+```
+
+`--all` installs a launcher for every harness runtime found on PATH, and nothing for the ones that are
+absent. That is the point of this package: one command on a new host, however many harnesses it happens
+to have. Use `--client <name>` instead when you want exactly one.
+
+```bash
 ./install.sh --client claude --endpoint http://127.0.0.1:8800
 ```
 
-Writes `~/.local/bin/claude-aify`. Then, before you trust it:
+Either writes into `~/.local/bin` (override with `--dest`). Run `./install.sh --help` for the rest.
+
+### The registry
+
+```bash
+./install.sh --all --endpoint http://127.0.0.1:8800 --registry ~/.aify/services.json
+```
+
+`--registry` names the service registry a launcher is built against; it defaults to
+`~/.aify/services.json`, which is where each installed service writes its own entry. The launcher bakes
+in a FINGERPRINT of what it was built from, so `aify-wrapper-check` can tell you later that the registry
+has moved on and the launcher has not. Install with no registry and you get a launcher built from
+nothing, which is a valid state and reported as such rather than as an error.
+
+Then, before you trust a launcher you just installed:
 
 ```bash
 claude-aify --check
 ```
+
+**Only on one you just installed.** A launcher predating the contract does not know `--check` and will
+forward it to the runtime, which launches the harness instead of answering. That is why
+`aify-wrapper-check` exists: it READS the launchers rather than running them, so it is safe to point at
+whatever a host already has.
 
 `--check` resolves the whole configuration, prints it, and **starts nothing**. That is not politeness.
 The rule behind it was learned the expensive way: running a launcher to see whether it worked once
