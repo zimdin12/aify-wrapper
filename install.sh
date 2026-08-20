@@ -92,6 +92,16 @@ if [ "$ALL" != "1" ]; then
   esac
 fi
 
+# A FIRST install will not guess an address: an agent pointed at the wrong service is worse than an
+# install that stopped. A REINSTALL is a different question -- the endpoint is already baked into the
+# launcher sitting in $DEST, so updating does not mean remembering what you typed months ago. Read out
+# of the file, never by running the launcher, which would start a coding-agent runtime to ask.
+if [ -z "$ENDPOINT" ] && [ -z "$RENDER_ONLY" ] && command -v node >/dev/null 2>&1; then
+  ENDPOINT="$(node "$(node_path "$HERE/lib/installed-endpoint-cli.mjs")" "$(node_path "$DEST")" 2>/dev/null || true)"
+  # Silently reusing an address is how a launcher ends up pointing somewhere nobody chose. Say it.
+  [ -z "$ENDPOINT" ] || echo "install.sh: reusing the endpoint already installed in $DEST: $ENDPOINT" >&2
+fi
+
 if [ -z "$ENDPOINT" ]; then
   echo "install.sh: --endpoint is required. A wrapper will not guess where its service lives." >&2
   exit "$EXIT_CONFIG"

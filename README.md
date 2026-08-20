@@ -70,6 +70,23 @@ to be asked without being run.
 | `--set KEY=VALUE` | an extra placeholder, repeatable |
 | `--render-only DIR` | write the launcher into `DIR` and stop, touching nothing else |
 
+### Updating
+
+Re-run the installer. A launcher is generated text, so an update is a rewrite of that text -- there is
+no in-place upgrade and nothing to migrate.
+
+```bash
+git pull && ./install.sh --all
+```
+
+`--endpoint` is required for a FIRST install and this refuses to guess one: an agent pointed at the
+wrong service is a worse outcome than an install that stopped. On a reinstall it is optional, because
+the endpoint is already baked into the launcher in `--dest` and gets read back out of the file. The
+installer prints which one it reused; passing `--endpoint` overrides it.
+
+Reading, not running. Asking a launcher for its endpoint by executing it would start a coding-agent
+runtime, which is a large side effect for a question.
+
 ## The contract
 
 Six inputs, read at launch. Every one falls back to the legacy `AIFY_*` name, so an existing fleet
