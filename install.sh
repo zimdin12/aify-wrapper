@@ -27,6 +27,27 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# A path this script hands to NODE, in the form Node can read.
+#
+# Under Git-Bash `pwd` yields an MSYS path like /c/Users/... , which Windows Node resolves against
+# the C: drive with the whole POSIX path appended, and cannot find. It works in an ordinary
+# interactive shell only because MSYS rewrites path-shaped arguments on their way to a native
+# binary -- a behaviour of the shell, not of this script. Anything that turns that off
+# (MSYS2_ARG_CONV_EXCL, MSYS_NO_PATHCONV, bash invoked from a non-MSYS parent) made the installer
+# exit 78 before writing a launcher. Found in review; the suite could not see it because every test
+# ran through a shell that was quietly rescuing it.
+#
+# `cygpath -m` gives a native drive with forward slashes, which Node reads and which needs no
+# quoting games here. On any non-Windows shell the path is already native and passes straight
+# through, so this is a no-op off Windows.
+node_path() {
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -m "$1"
+  else
+    printf %s "$1"
+  fi
+}
 EXIT_CONFIG=78
 EXIT_NO_RUNTIME=127
 
@@ -91,10 +112,10 @@ if ! command -v node >/dev/null 2>&1; then
   echo "install.sh: node is required to read the service registry ($REGISTRY)." >&2
   exit "$EXIT_NO_RUNTIME"
 fi
-REGISTRY_FINGERPRINT="$(node "$HERE/lib/registry-cli.mjs" fingerprint "$REGISTRY")" || exit "$EXIT_CONFIG"
+REGISTRY_FINGERPRINT="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" fingerprint "$(node_path "$REGISTRY")")" || exit "$EXIT_CONFIG"
 # Services that opted into strict mode, base64 so no path metacharacter survives the trip. Empty
 # unless a service asked, which keeps strict mode byte-identical on every host that did not.
-STRICT_EXTRA_MCP_B64="$(node "$HERE/lib/registry-cli.mjs" strict-fragment-b64 "$REGISTRY")" || exit "$EXIT_CONFIG"
+STRICT_EXTRA_MCP_B64="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" strict-fragment-b64 "$(node_path "$REGISTRY")")" || exit "$EXIT_CONFIG"
 
 # The launcher name follows the client name. pi is the one exception: it ships an alias, which is real
 # information and not derivable from a filename, so it is the only thing written down here.
@@ -158,7 +179,7 @@ if [ "$ALL" = "1" ]; then
   while IFS=$'\t' read -r _client _state _path; do
     [ -n "$_client" ] || continue
     if [ "$_state" = "found" ]; then CLIENTS+=("$_client"); else SKIPPED+=("$_client"); fi
-  done < <(node "$HERE/lib/detect-cli.mjs" "$HERE/wrappers")
+  done < <(node "$(node_path "$HERE/lib/detect-cli.mjs")" "$(node_path "$HERE/wrappers")")
 
   # Silence about a skip reads as "installed everything" when it did not. Name every one.
   if [ "${#SKIPPED[@]}" -gt 0 ]; then
