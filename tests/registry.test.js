@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  parseRegistry, mcpEntriesFor, fingerprint,
+  parseRegistry, mcpEntriesFor, fingerprint, REGISTRY_VERSION,
   strictMcpEntriesFor, strictMcpFragment, strictMcpFragmentBase64,
 } from "../lib/registry.mjs";
 
@@ -293,4 +293,28 @@ test("CROSS-REPO: a registry written by aify-comms parses here, with both server
   // And a fingerprint, since that is what a launcher bakes.
   assert.match(fingerprint(parsed.registry), /^[0-9a-f]{8,}$/);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("REGISTRY_VERSION is the version this parser accepts, and the only one", () => {
+  // The constant and the behaviour have to agree. Exported and never asserted, it is a number somebody
+  // can bump in one place while the parser keeps refusing files written to it — a schema version that
+  // lies is worse than none, because every writer trusts it.
+  assert.equal(typeof REGISTRY_VERSION, "number");
+
+  const at = (version) => parseRegistry(json({ version, services: {} })).ok;
+  assert.equal(at(REGISTRY_VERSION), true, "the parser refuses the version it declares");
+  assert.equal(at(REGISTRY_VERSION + 1), false, "a future version was accepted");
+  assert.equal(at(REGISTRY_VERSION - 1), false, "an older version was accepted");
+});
+
+test("what this package WRITES is what it declares it reads", () => {
+  // The other half of the same agreement, checked against a real file rather than a literal: the
+  // registry aify-comms produces must carry the version this parser expects, or the two repos disagree
+  // about the schema while every unit test on both sides passes.
+  const parsed = parseRegistry(json({
+    version: REGISTRY_VERSION,
+    services: { "aify-comms": { endpoint: "http://127.0.0.2:1", mcp: [] } },
+  }));
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.registry.version, REGISTRY_VERSION);
 });
