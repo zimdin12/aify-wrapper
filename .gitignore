@@ -1,2 +1,8 @@
 node_modules/
 *.log
+
+# Render output, not source. Three launchers were committed under flattened absolute paths
+# (a probe handed bash an interpolated Windows path and quote removal ate the backslashes).
+# U+F03A is what Windows substitutes for the colon it cannot store in a filename.
+/C*
+/[A-Za-z]:*
