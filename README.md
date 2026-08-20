@@ -120,3 +120,25 @@ node --test tests/*.test.js
 
 They render each launcher and run it, rather than reading the templates. A wrapper's failure mode is
 silence, so a test that only reads text cannot see it.
+
+## Checking what is installed
+
+```bash
+aify-wrapper-check            # is every launcher here built from this host's registry?
+aify-wrapper-check --json
+aify-wrapper-check --strict   # exit 1 when anything is stale or unreadable
+```
+
+**It reads. It never runs a launcher.** A wrapper built before the harness contract does not know
+`--check` and forwards it to the runtime, so a checker that asks instead of reads starts an agent.
+There is a test that plants a launcher which would leave a sentinel file if it ever ran, and requires
+the sentinel not to exist.
+
+Three states, because two would lose the one that matters: **current**, **stale** (built from a
+different registry, and it prints both digests so you can see they differ), and **unreadable** — a
+launcher installed before fingerprints existed, which is the population most likely to be stale and the
+one an absent-means-fine reading would report as healthy. A host with no launchers at all is not
+"fine"; nothing was verified.
+
+The remedy is **reinstall**, never restart. A launcher has exec'd and gone by the time anything is
+running, so relaunching an agent changes nothing about it.
