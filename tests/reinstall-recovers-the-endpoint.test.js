@@ -87,3 +87,33 @@ test("an explicit --endpoint still wins over what is installed", () => {
   assert.equal(install(dest, ["--endpoint", "http://127.0.0.2:1"]).status, 0);
   assert.equal(endpointInstalledAt(dest), "http://127.0.0.2:1");
 });
+
+// hermes nests the fallback TWICE, because it tries a second variable before the baked default:
+//   HARNESS_ENDPOINT="${HARNESS_ENDPOINT-${AIFY_SERVER_URL:-${AIFY_COMMS_URL:-<url>}}}"
+// A pattern written against claude's single level matched nothing for it. aify-comms' redeploy falls
+// back to loopback when nothing is recovered, so a hermes-only host would have had every wrapper
+// repointed at 127.0.0.1 by the command that exists to preserve its endpoint. Found in pre-deploy
+// review while every test here was green -- because every test here rendered claude.
+test("the endpoint is read at any nesting depth, not just claude's", () => {
+  const NL = String.fromCharCode(10);
+  const Q = String.fromCharCode(34);
+  const line = (body) => "#!/bin/bash" + NL + "HARNESS_ENDPOINT=" + Q + body + Q + NL;
+
+  const one = line("${HARNESS_ENDPOINT-${AIFY_COMMS_URL:-http://10.1.1.1:8800}}");
+  const two = line("${HARNESS_ENDPOINT-${AIFY_SERVER_URL:-${AIFY_COMMS_URL:-http://10.2.2.2:8800}}}");
+  const three = line("${HARNESS_ENDPOINT-${A:-${B:-${C:-http://10.3.3.3:8800}}}}");
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-depth-"));
+  const at = (name, text) => {
+    const p = path.join(dir, name);
+    fs.writeFileSync(p, text);
+    return p;
+  };
+  assert.equal(endpointInFile(at("a-aify", one)), "http://10.1.1.1:8800");
+  assert.equal(endpointInFile(at("b-aify", two)), "http://10.2.2.2:8800");
+  assert.equal(endpointInFile(at("c-aify", three)), "http://10.3.3.3:8800");
+
+  // Still no answer where there is none to give.
+  assert.equal(endpointInFile(at("d-aify", line("${HARNESS_ENDPOINT-${X:-@@ENDPOINT@@}}"))), null);
+  assert.equal(endpointInFile(at("e-aify", "#!/bin/bash" + NL)), null);
+});
