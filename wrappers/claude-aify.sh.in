@@ -429,14 +429,21 @@ if [ "${AIFY_CLAUDE_STRICT_MCP:-0}" = "1" ]; then
   # The bridge's endpoint is the RESOLVED one, not the install-time literal this used to bake in. An
   # explicit `env` block REPLACES the inherited environment for that server, so baking meant a strict
   # mode session where the wrapper announced one endpoint and its bridge talked to another.
+  # HOW THE RUNTIME REACHES MCP.
+  #
+  # `stdio` spawns the service's own bridge from this host, which is the only reason a host carries a
+  # copy of it at all. `sse` points at the container, so the client side needs no service code.
+  # Substituted at install time and defaulted to stdio, because repointing a live fleet's transport is
+  # the operator's call.
+  if [ "@@MCP_TRANSPORT@@" = "sse" ]; then
+    _aify_comms_entry="\"aify-comms\": { \"type\": \"sse\", \"url\": \"${HARNESS_ENDPOINT}/mcp/sse\" }"
+  else
+    _aify_comms_entry="\"aify-comms\": { \"command\": \"${_mcp_cmd}\", \"args\": [${_mcp_args}], \"env\": { \"AIFY_SERVER_URL\": \"$HARNESS_ENDPOINT\", \"CLAUDE_MCP_SERVER_URL\": \"$HARNESS_ENDPOINT\" } }"
+  fi
   cat > "$AIFY_MCP_CONFIG" <<JSON
 {
   "mcpServers": {
-    "aify-comms": {
-      "command": "${_mcp_cmd}",
-      "args": [${_mcp_args}],
-      "env": { "AIFY_SERVER_URL": "$HARNESS_ENDPOINT", "CLAUDE_MCP_SERVER_URL": "$HARNESS_ENDPOINT" }
-    },
+    ${_aify_comms_entry},
     "aify-comms-channel": {
       "command": "node",
       "args": ["${AIFY_SCRIPT_DIR_FWD}/mcp/stdio/claude-channel.js"],

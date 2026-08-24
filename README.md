@@ -91,6 +91,24 @@ installer prints which one it reused; passing `--endpoint` overrides it.
 Reading, not running. Asking a launcher for its endpoint by executing it would start a coding-agent
 runtime, which is a large side effect for a question.
 
+### Which transport the runtime uses for MCP
+
+```bash
+./install.sh --all --endpoint http://host:8800                     # stdio (default)
+./install.sh --all --endpoint http://host:8800 --mcp-transport sse # the container serves MCP
+```
+
+`stdio` spawns the service's own bridge from this host. That is the only reason a host carries a copy
+of the service at all -- on aify-comms it is 92 MB under `~/.aify-comms`. `sse` points the runtime at
+`<endpoint>/mcp/sse`, so the client side needs no service code.
+
+Default is stdio, and a launcher rendered today is byte-identical to one rendered before the flag
+existed. Repointing a live fleet's transport is the operator's call, not an upgrade side effect.
+
+The URL is built from the endpoint the launcher RESOLVES at run time, not the install-time literal.
+Baking it is a real bug this pattern already fixed once: a strict-mode session announced one endpoint
+while its bridge talked to another.
+
 ## The contract
 
 Six inputs, read at launch. Every one falls back to the legacy `AIFY_*` name, so an existing fleet

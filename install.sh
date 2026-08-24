@@ -60,6 +60,11 @@ BRIDGE_DIR=""
 HOST_REPO=""
 RENDER_ONLY=""
 REGISTRY=""
+# How the runtime reaches MCP. `stdio` spawns the service's own bridge locally, which is the only
+# reason a host carries a copy of it; `sse` points at the container's <endpoint>/mcp/sse and needs no
+# service code on the host. Default stdio: repointing a live fleet is the operator's call, and a
+# launcher rendered today must be byte-identical to one rendered before this existed.
+MCP_TRANSPORT="stdio"
 EXTRAS=()
 
 while [ $# -gt 0 ]; do
@@ -74,6 +79,7 @@ while [ $# -gt 0 ]; do
     --set) EXTRAS+=("${2:-}"); shift 2 ;;
     --render-only) RENDER_ONLY="${2:-}"; shift 2 ;;
     --registry) REGISTRY="${2:-}"; shift 2 ;;
+    --mcp-transport) MCP_TRANSPORT="${2:-}"; shift 2 ;;
     -h|--help) sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "install.sh: unknown option '$1'" >&2; exit "$EXIT_CONFIG" ;;
   esac
@@ -101,6 +107,11 @@ if [ -z "$ENDPOINT" ] && [ -z "$RENDER_ONLY" ] && command -v node >/dev/null 2>&
   # Silently reusing an address is how a launcher ends up pointing somewhere nobody chose. Say it.
   [ -z "$ENDPOINT" ] || echo "install.sh: reusing the endpoint already installed in $DEST: $ENDPOINT" >&2
 fi
+
+case "$MCP_TRANSPORT" in
+  stdio|sse) ;;
+  *) echo "install.sh: unknown --mcp-transport '$MCP_TRANSPORT' (stdio|sse)" >&2; exit "$EXIT_CONFIG" ;;
+esac
 
 if [ -z "$ENDPOINT" ]; then
   echo "install.sh: --endpoint is required. A wrapper will not guess where its service lives." >&2
@@ -164,6 +175,7 @@ install_one() {
         "WRAPPER_VERSION=$VERSION" \
         "REGISTRY_FINGERPRINT=$REGISTRY_FINGERPRINT" \
         "STRICT_EXTRA_MCP_B64=$STRICT_EXTRA_MCP_B64" \
+        "MCP_TRANSPORT=$MCP_TRANSPORT" \
         "BRIDGE_DIR=$BRIDGE_DIR" \
         "NATIVE_BASE=$NATIVE_BASE" \
         "SCRIPT_DIR=$HOST_REPO" \
