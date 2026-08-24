@@ -65,6 +65,9 @@ REGISTRY=""
 # service code on the host. Default stdio: repointing a live fleet is the operator's call, and a
 # launcher rendered today must be byte-identical to one rendered before this existed.
 MCP_TRANSPORT="stdio"
+# WHICH SERVICE these launchers are for. aify-comms by default, which is what every existing install
+# renders -- the point of the default is that this change is invisible to them.
+SERVICE_NAME="aify-comms"
 EXTRAS=()
 
 while [ $# -gt 0 ]; do
@@ -80,6 +83,9 @@ while [ $# -gt 0 ]; do
     --render-only) RENDER_ONLY="${2:-}"; shift 2 ;;
     --registry) REGISTRY="${2:-}"; shift 2 ;;
     --mcp-transport) MCP_TRANSPORT="${2:-}"; shift 2 ;;
+    # The channel name is DERIVED from this rather than taken separately: two names that must agree
+    # are a defect with a delay on it.
+    --service) SERVICE_NAME="${2:-}"; shift 2 ;;
     -h|--help) sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "install.sh: unknown option '$1'" >&2; exit "$EXIT_CONFIG" ;;
   esac
@@ -107,6 +113,15 @@ if [ -z "$ENDPOINT" ] && [ -z "$RENDER_ONLY" ] && command -v node >/dev/null 2>&
   # Silently reusing an address is how a launcher ends up pointing somewhere nobody chose. Say it.
   [ -z "$ENDPOINT" ] || echo "install.sh: reusing the endpoint already installed in $DEST: $ENDPOINT" >&2
 fi
+
+case "$SERVICE_NAME" in
+  "") echo "install.sh: --service needs a name" >&2; exit "$EXIT_CONFIG" ;;
+  # The name lands in a JSON key AND a shell word, so it is held to what both take without quoting
+  # games. Refusing costs nothing; the alternative is a launcher that breaks when it is read.
+  *[!A-Za-z0-9_-]*)
+    echo "install.sh: --service '$SERVICE_NAME' may use letters, digits, _ and - only" >&2
+    exit "$EXIT_CONFIG" ;;
+esac
 
 case "$MCP_TRANSPORT" in
   stdio|sse) ;;
@@ -176,6 +191,7 @@ install_one() {
         "REGISTRY_FINGERPRINT=$REGISTRY_FINGERPRINT" \
         "STRICT_EXTRA_MCP_B64=$STRICT_EXTRA_MCP_B64" \
         "MCP_TRANSPORT=$MCP_TRANSPORT" \
+        "SERVICE_NAME=$SERVICE_NAME" \
         "BRIDGE_DIR=$BRIDGE_DIR" \
         "NATIVE_BASE=$NATIVE_BASE" \
         "SCRIPT_DIR=$HOST_REPO" \

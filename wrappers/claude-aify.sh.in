@@ -436,15 +436,15 @@ if [ "${AIFY_CLAUDE_STRICT_MCP:-0}" = "1" ]; then
   # Substituted at install time and defaulted to stdio, because repointing a live fleet's transport is
   # the operator's call.
   if [ "@@MCP_TRANSPORT@@" = "sse" ]; then
-    _aify_comms_entry="\"aify-comms\": { \"type\": \"sse\", \"url\": \"${HARNESS_ENDPOINT}/mcp/sse\" }"
+    _aify_comms_entry="\"@@SERVICE_NAME@@\": { \"type\": \"sse\", \"url\": \"${HARNESS_ENDPOINT}/mcp/sse\" }"
   else
-    _aify_comms_entry="\"aify-comms\": { \"command\": \"${_mcp_cmd}\", \"args\": [${_mcp_args}], \"env\": { \"AIFY_SERVER_URL\": \"$HARNESS_ENDPOINT\", \"CLAUDE_MCP_SERVER_URL\": \"$HARNESS_ENDPOINT\" } }"
+    _aify_comms_entry="\"@@SERVICE_NAME@@\": { \"command\": \"${_mcp_cmd}\", \"args\": [${_mcp_args}], \"env\": { \"AIFY_SERVER_URL\": \"$HARNESS_ENDPOINT\", \"CLAUDE_MCP_SERVER_URL\": \"$HARNESS_ENDPOINT\" } }"
   fi
   cat > "$AIFY_MCP_CONFIG" <<JSON
 {
   "mcpServers": {
     ${_aify_comms_entry},
-    "aify-comms-channel": {
+    "@@SERVICE_NAME@@-channel": {
       "command": "node",
       "args": ["${AIFY_SCRIPT_DIR_FWD}/mcp/stdio/claude-channel.js"],
       "env": { "AIFY_SERVER_URL": "$HARNESS_ENDPOINT", "CLAUDE_MCP_SERVER_URL": "$HARNESS_ENDPOINT" }
@@ -512,6 +512,6 @@ if [ "$AIFY_SESSION_MODE" = "managed" ] && [ -n "${CLAUDE_RESUME_ID:-}" ] && [ -
   node "@@BRIDGE_DIR@@/reap-managed-claude.js" "$CLAUDE_RESUME_ID" "$CLAUDE_AIFY_AGENT_ID" >/dev/null 2>&1 || true
 fi
 
-claude --dangerously-load-development-channels server:aify-comms-channel "${CLAUDE_MCP_FLAGS[@]}" "${CLAUDE_PERMISSION_FLAGS[@]}" "${CLAUDE_ARGS[@]}"
+claude --dangerously-load-development-channels server:@@SERVICE_NAME@@-channel "${CLAUDE_MCP_FLAGS[@]}" "${CLAUDE_PERMISSION_FLAGS[@]}" "${CLAUDE_ARGS[@]}"
 STATUS=$?
 exit "$STATUS"
