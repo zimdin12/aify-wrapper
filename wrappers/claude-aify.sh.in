@@ -49,6 +49,13 @@ HARNESS_WRAPPER_VERSION="@@WRAPPER_VERSION@@"
 #| registered after it was written anyway. This is how a holder of the CURRENT registry can
 #| tell that it could not - by READING the launcher, without starting the runtime.
 HARNESS_REGISTRY_FINGERPRINT="@@REGISTRY_FINGERPRINT@@"
+#| Exported so the runtime -- and through it the bridge and the service -- can learn which
+#| launcher started this session and which registry it was built against. Kept as shell locals
+#| these were readable only by opening the file on the host, which is the whole reason a
+#| host-side staleness check existed. The export references the assignment above rather than
+#| repeating the placeholder: two sources for one fact is how they drift.
+export HARNESS_WRAPPER_VERSION="$HARNESS_WRAPPER_VERSION"
+export HARNESS_REGISTRY_FINGERPRINT="$HARNESS_REGISTRY_FINGERPRINT"
 HARNESS_ENDPOINT="${HARNESS_ENDPOINT-${AIFY_COMMS_URL:-@@ENDPOINT@@}}"
 HARNESS_IDENTITY="${HARNESS_IDENTITY:-${AIFY_AGENT_ID:-}}"
 HARNESS_ROLE="${HARNESS_ROLE:-${AIFY_AGENT_ROLE:-}}"

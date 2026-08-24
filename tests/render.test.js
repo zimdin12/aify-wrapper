@@ -19,6 +19,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const posix = (p) => p.split(String.fromCharCode(92)).join("/");
 const INSTALL = path.join(ROOT, "install.sh");
 const VERSION = fs.readFileSync(path.join(ROOT, "VERSION"), "utf8").trim();
 
@@ -138,8 +139,13 @@ test("the installer refuses an unknown client rather than rendering nothing", ()
 });
 
 test("the installer refuses to guess an endpoint", () => {
-  const res = spawnSync("bash", [INSTALL, "--client", "claude"], { encoding: "utf8" });
-  assert.equal(res.status, 78);
+  // --dest must point at an EMPTY directory. A reinstall recovers the endpoint from a launcher
+  // already in --dest, so with the default (~/.local/bin) this test passes only on a machine that
+  // has never installed one -- it read the developer's real launchers and went green or red by
+  // accident. Sealing the input is the fix; the recovery behaviour is correct and has its own tests.
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), "aify-wrapper-noendpoint-"));
+  const res = spawnSync("bash", [INSTALL, "--client", "claude", "--dest", posix(empty)], { encoding: "utf8" });
+  assert.equal(res.status, 78, `expected refusal, got ${res.status}: ${res.stdout}${res.stderr}`);
   assert.match(res.stderr, /--endpoint is required/);
 });
 
