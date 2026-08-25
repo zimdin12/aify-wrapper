@@ -96,6 +96,7 @@ runtime, which is a large side effect for a question.
 ```bash
 ./install.sh --all --endpoint http://host:8800                     # stdio (default)
 ./install.sh --all --endpoint http://host:8800 --mcp-transport sse # the container serves MCP
+./install.sh --all --endpoint http://host:8800 --service my-service # launchers for another service
 ```
 
 `stdio` spawns the service's own bridge from this host. That is the only reason a host carries a copy
@@ -108,6 +109,24 @@ existed. Repointing a live fleet's transport is the operator's call, not an upgr
 The URL is built from the endpoint the launcher RESOLVES at run time, not the install-time literal.
 Baking it is a real bug this pattern already fixed once: a strict-mode session announced one endpoint
 while its bridge talked to another.
+
+## Which service the launchers are for
+
+`--service` names it, and defaults to `aify-comms`. It sets the MCP server key in the launcher, and the
+channel server is DERIVED from it -- two names that must agree are a defect with a delay on it. The
+name lands in a JSON key and a shell word, so anything outside `[A-Za-z0-9_-]` is refused rather than
+rendered into a launcher that breaks when it is read.
+
+The default render is byte-identical to what it always was, so an existing fleet does not move.
+
+**What is NOT parameterised, deliberately: the paths.** `~/.aify-comms` in a rendered launcher is where
+that service's runtime lives, and it already comes from `--bridge-dir`. Identity and location are
+different axes, and only identity was missing.
+
+This matters because the contract below was always generic -- every variable is `HARNESS_*`, never
+`AIFY_COMMS_*` -- while the rendered bodies wired one service in executable lines. aify-env alongside
+this package has no such coupling at all: zero dependencies, and every mention of aify-comms in it is a
+comment.
 
 ## The contract
 
