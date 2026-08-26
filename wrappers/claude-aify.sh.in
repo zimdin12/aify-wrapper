@@ -84,6 +84,23 @@ $HARNESS_EXTRA_ENV
 HARNESS_ENV_EOF
 fi
 
+# A LAUNCHER MUST NOT INHERIT ANOTHER SESSION'S CHILD MARKER.
+#
+# `CLAUDE_CODE_CHILD_SESSION` tells Claude Code it is a nested session and it stops writing a
+# transcript -- no history on disk, and nothing to `--resume` from. It is set inside a running Claude
+# Code session, so ANY wrapper launched from that session's shell inherits it, and every agent started
+# from that shell silently loses its transcript. The operator sees only a one-line banner:
+# "Transcript saving is off - inherited CLAUDE_CODE_CHILD_SESSION marker".
+#
+# aify-comms strips it on the SPAWN path (child-env-hygiene.mjs, 2026-08-25). That does not help here:
+# a resident launcher is started by a human from whatever shell they happen to be in, which is exactly
+# the shell most likely to be inside a Claude Code session. Measured 2026-08-26 on the operator's own
+# machine -- a resident session was running with the marker set and its transcript off.
+#
+# Unset rather than emptied: Claude Code treats the name being PRESENT as the signal, so exporting an
+# empty value would keep the behaviour while looking fixed.
+unset CLAUDE_CODE_CHILD_SESSION
+
 CLAUDE_RESUME_ID="${CLAUDE_SESSION_ID:-}"
 # Bypass permissions by DEFAULT for every *-aify wrapper (2026-06-02 decision):
 # aify agents run unattended, so they must not stall on approval prompts. Each
