@@ -275,10 +275,29 @@ test("CONTRACT: a registry as aify-comms actually writes it parses here, with bo
   // The half that would fail SILENTLY rather than loudly: a service whose endpointEnv the writer and
   // the reader disagreed about produces entries with an EMPTY env, and a bridge that then inherits its
   // endpoint from whatever launched the runtime. Correct-looking, until two services disagree.
+  //
+  // TWO KINDS OF NAME NOW, bound from two different sources, so they are checked separately rather
+  // than by "every value is the endpoint" -- which was right while endpointEnv was the only list and
+  // would quietly demand that a KEY equal a URL.
+  const service = parsed.registry.services["aify-comms"];
+  assert.ok(service.endpointEnv.length > 0, "the fixture declares no endpoint names");
+  assert.ok(service.keyEnv.length > 0, "the fixture declares no key names");
+  assert.deepEqual(
+    service.endpointEnv.filter((name) => service.keyEnv.includes(name)),
+    [],
+    "a name declared in both lists would be bound twice, and the second write would win silently",
+  );
+
   for (const entry of entries) {
-    assert.ok(Object.keys(entry.env).length > 0, `${entry.name} resolved with no endpoint env at all`);
-    for (const value of Object.values(entry.env)) {
-      assert.equal(value, "http://127.0.0.2:1", `${entry.name} got the wrong endpoint`);
+    assert.ok(Object.keys(entry.env).length > 0, `${entry.name} resolved with no env at all`);
+    for (const name of service.endpointEnv) {
+      assert.equal(entry.env[name], "http://127.0.0.2:1", `${entry.name} got the wrong endpoint`);
+    }
+    for (const name of service.keyEnv) {
+      // PINNED EVEN WHEN EMPTY. Omitting the name is what allows inheritance, which is the defect;
+      // this test process carries no key, so "" is the right answer and its PRESENCE is the claim.
+      assert.ok(name in entry.env, `${entry.name} left ${name} unpinned, so it would be inherited`);
+      assert.equal(entry.env[name], process.env[name] ?? "");
     }
   }
 
