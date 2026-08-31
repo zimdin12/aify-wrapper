@@ -339,3 +339,71 @@ test("what this package WRITES is what it declares it reads", () => {
   assert.equal(parsed.ok, true);
   assert.equal(parsed.registry.version, REGISTRY_VERSION);
 });
+
+test("credentialRef is CARRIED, not silently dropped", () => {
+  // It was dropped until 2026-08-31, which meant this parser -- the one aify-comms calls
+  // authoritative before writing its own entry -- validated none of the grammar below. A field a
+  // parser merely passes through is a field nothing checked; a field it DROPS is worse, because the
+  // writer then believes it was inspected.
+  const parsed = parseRegistry(JSON.stringify({
+    version: 1,
+    services: { "aify-comms": { endpoint: "http://x", endpointEnv: [], keyEnv: [], mcp: [], credentialRef: "a.key" } },
+  }));
+  assert.equal(parsed.ok, true, JSON.stringify(parsed.errors));
+  assert.equal(parsed.registry.services["aify-comms"].credentialRef, "a.key");
+});
+
+test("a reference that could escape the store is REFUSED here", () => {
+  // WHERE the key lives, never what it is -- and only one name, so a registry every service can
+  // write cannot point a daemon at a path of its choosing.
+  for (const hostile of ["../services.json", "a/b", "a\b", "/etc/passwd", "..", ".", ".hidden", "x".repeat(65)]) {
+    const parsed = parseRegistry(JSON.stringify({
+      version: 1,
+      services: { svc: { endpoint: "http://x", endpointEnv: [], keyEnv: [], mcp: [], credentialRef: hostile } },
+    }));
+    assert.equal(parsed.ok, false, `accepted ${JSON.stringify(hostile)}`);
+  }
+  // POSITIVE CONTROL: an ordinary reference is accepted, so the refusals above are about the value.
+  const fine = parseRegistry(JSON.stringify({
+    version: 1,
+    services: { svc: { endpoint: "http://x", endpointEnv: [], keyEnv: [], mcp: [], credentialRef: "a.b-c_1.key" } },
+  }));
+  assert.equal(fine.ok, true, JSON.stringify(fine.errors));
+});
+
+test("TWO SERVICES CANNOT CLAIM ONE CREDENTIAL FILE, even in different case", () => {
+  // On a case-insensitive volume they ARE one file, so accepting both would have two services
+  // silently sharing a credential -- and the host it was tested on might be the one where they are
+  // two. Only the whole file can see the pair, which is why the closure lives here.
+  const both = parseRegistry(JSON.stringify({
+    version: 1,
+    services: {
+      a: { endpoint: "http://x", endpointEnv: [], keyEnv: [], mcp: [], credentialRef: "Foo.key" },
+      b: { endpoint: "http://y", endpointEnv: [], keyEnv: [], mcp: [], credentialRef: "foo.key" },
+    },
+  }));
+  assert.equal(both.ok, false, "two services shared one credential file");
+  assert.match(both.errors.join(" "), /claimed by both/);
+
+  // DISTINCT references are fine, so the closure is about collision rather than about a second
+  // service storing a credential at all.
+  const distinct = parseRegistry(JSON.stringify({
+    version: 1,
+    services: {
+      a: { endpoint: "http://x", endpointEnv: [], keyEnv: [], mcp: [], credentialRef: "a.key" },
+      b: { endpoint: "http://y", endpointEnv: [], keyEnv: [], mcp: [], credentialRef: "b.key" },
+    },
+  }));
+  assert.equal(distinct.ok, true, JSON.stringify(distinct.errors));
+});
+
+test("no credentialRef is a normal state, not a fault", () => {
+  // A service that stores no credential on this host is either keyless or driven from the
+  // environment, and both are configurations rather than problems.
+  const parsed = parseRegistry(JSON.stringify({
+    version: 1,
+    services: { svc: { endpoint: "http://x", endpointEnv: [], keyEnv: [], mcp: [] } },
+  }));
+  assert.equal(parsed.ok, true, JSON.stringify(parsed.errors));
+  assert.equal(parsed.registry.services.svc.credentialRef, "");
+});
