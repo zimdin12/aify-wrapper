@@ -191,7 +191,17 @@ if [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ]; then
 else
   PI_AIFY_SKIP_BRIDGE_GUARD=false
 fi
-if [ "$PI_AIFY_STANDALONE" != true ] && [ -n "$PI_AIFY_AGENT_ID" ] && [ -n "${AIFY_COMMS_URL:-}" ]; then
+# NOT UNDER `--check`, WHICH MUST TOUCH NOTHING AND ALWAYS REPORT. This block calls the service and,
+# when the agent is bridge-owned, exits 1 with "stop it from the dashboard" -- both of them BEFORE the
+# report below is printed. So `pi-aify --check` made a network request on a command whose whole
+# contract is that it starts nothing, and on a live managed agent it exited non-zero having printed no
+# report at all: the operator asked "is this wrapper configured" and was told to stop an agent.
+#
+# The other three launchers do not have this problem. hermes and codex answer `--check` inline in the
+# argument loop, above every probe; claude's report sits at line 231 with its first request at 298.
+# This one grew a session-state probe at 200 while its report stayed at 247, and nothing compared them.
+if [ "${HARNESS_CHECK:-false}" != true ] \
+  && [ "$PI_AIFY_STANDALONE" != true ] && [ -n "$PI_AIFY_AGENT_ID" ] && [ -n "${AIFY_COMMS_URL:-}" ]; then
   AIFY_WATCHDOG_URL="${AIFY_COMMS_URL%/}/api/v1/agents/${PI_AIFY_AGENT_ID}/pi-session-state"
   AIFY_WATCHDOG_HEADERS=()
   if [ -n "${AIFY_API_KEY:-}" ]; then
