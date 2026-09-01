@@ -235,7 +235,25 @@ if [ "$HARNESS_CHECK" = true ]; then
   echo "  identity  : ${CLAUDE_AIFY_AGENT_ID:-<none — this session would be anonymous>}"
   echo "  role      : $CLAUDE_AIFY_ROLE"
   echo "  cwd       : ${HARNESS_CWD:-<inherited>}"
-  echo "  mcp       : ${HARNESS_MCP_COMMAND:-<built-in bridge>}"
+  # SAY WHETHER IT IS APPLIED, not merely what was configured. `HARNESS_MCP_COMMAND` and
+  # `--mcp-transport sse` are read ONLY inside the strict-MCP branch below, which is opt-in via
+  # AIFY_CLAUDE_STRICT_MCP=1. In the default mode this line printed the configured value as though it
+  # were in force, so `--check` confirmed a setting that the launch then ignored -- the one report an
+  # operator consults to find out exactly this.
+  if [ "${AIFY_CLAUDE_STRICT_MCP:-0}" = "1" ]; then
+    echo "  mcp       : ${HARNESS_MCP_COMMAND:-<built-in bridge>} (strict mode)"
+  elif [ -n "$HARNESS_MCP_COMMAND" ] || [ "@@MCP_TRANSPORT@@" = "sse" ]; then
+    HARNESS_IGNORED_MCP=""
+    [ -n "$HARNESS_MCP_COMMAND" ] && HARNESS_IGNORED_MCP="HARNESS_MCP_COMMAND"
+    if [ "@@MCP_TRANSPORT@@" = "sse" ]; then
+      HARNESS_IGNORED_MCP="${HARNESS_IGNORED_MCP:+$HARNESS_IGNORED_MCP, }--mcp-transport sse"
+    fi
+    echo "  mcp       : <built-in bridge> (default mode)"
+    echo "              NOT APPLIED: $HARNESS_IGNORED_MCP"
+    echo "              Set AIFY_CLAUDE_STRICT_MCP=1 to apply them, or clear them."
+  else
+    echo "  mcp       : <built-in bridge>"
+  fi
   echo "  registry  : $HARNESS_REGISTRY_FINGERPRINT"
   echo "OK — nothing was started."
   exit 0
@@ -492,6 +510,23 @@ JSON
 #| named inside one gets substituted there, which is how a multi-line JSON fragment once landed in
 #| the middle of a comment and broke the rendered bash.)
   CLAUDE_MCP_FLAGS+=(--strict-mcp-config --mcp-config "$AIFY_MCP_CONFIG")
+else
+  # SAY SO WHEN A SETTING IS DROPPED. Everything above -- HARNESS_MCP_COMMAND and the sse transport --
+  # is read only inside this branch, so in the default mode an operator who configured either got no
+  # error, no warning and no effect. `--mcp-transport sse` is chosen at INSTALL time and baked in, so
+  # the person who set it is not usually the person launching, and nothing connected the two.
+  #
+  # Warned rather than applied: making the default mode honour them means writing an --mcp-config,
+  # which is exactly the strict behaviour this flag exists to opt OUT of, and that is a decision
+  # rather than a repair. Being told is the part that was missing.
+  if [ -n "$HARNESS_MCP_COMMAND" ]; then
+    echo "[claude-aify] HARNESS_MCP_COMMAND is set but NOT applied: it is read only in strict MCP mode." >&2
+    echo "              Set AIFY_CLAUDE_STRICT_MCP=1 to use it, or unset it. Continuing with the built-in bridge." >&2
+  fi
+  if [ "@@MCP_TRANSPORT@@" = "sse" ]; then
+    echo "[claude-aify] this launcher was installed with --mcp-transport sse, which is read only in" >&2
+    echo "              strict MCP mode. This session uses the built-in stdio bridge instead." >&2
+  fi
 fi
 
 # Session-id truth capture (2026-05-30, #138): install SessionStart +
