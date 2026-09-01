@@ -53,5 +53,29 @@ if [ -n "${leftover// /}" ]; then
 fi
 
 mkdir -p "$(dirname "$target")"
-printf '%s\n' "$text" > "$target"
-chmod +x "$target"
+# CREATED PRIVATE, THEN OPENED, rather than written at the umask's mercy and tightened afterwards.
+# `chmod` runs after the bytes are on disk, so a launcher carrying a secret is world-readable for the
+# window in between -- short, and on a shared host long enough. `umask` applies at creation.
+(
+  umask 077
+  printf '%s\n' "$text" > "$target"
+)
+
+# A LAUNCHER THAT CARRIES A SECRET STAYS PRIVATE. `keyEnv` values are baked in at render time -- the
+# MCP `env` block REPLACES the inherited environment for that server, so the value has to be in the
+# file -- and `chmod +x` under the usual umask makes that file 0755. Everyone on the host can then
+# read a service credential out of a launcher.
+#
+# The check is on the CONTENT, not on a flag the caller passes, because the caller that bakes the
+# secret and the caller that sets the mode would otherwise be two places to keep in step. A rendered
+# launcher with no baked credential keeps 0755: these are meant to be runnable, and tightening every
+# one of them would break a genuinely shared install for a risk it does not carry.
+# MEASURED against a real render rather than guessed. The placeholder is substituted INLINE, so the
+# variable name is gone from the output: an ordinary launcher carries `printf '%s' "" | base64 -d`
+# and one with servers to splice in carries the blob in that position. The name-based check written
+# first would have matched neither, and would have reported every launcher as secret-free.
+if grep -qE '[A-Za-z0-9+/=]{8,}" \| base64 -d' "$target" 2>/dev/null; then
+  chmod 700 "$target"
+else
+  chmod +x "$target"
+fi
