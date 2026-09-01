@@ -393,19 +393,30 @@ fi
 # aify-comms-channel stuck in "still connecting" state. The legacy
 # strict mode trades operator-visible MCP servers inside the wrapper for
 # guaranteed channel wake.
+# THE INSTALLED BRIDGE DIRECTORY, converted ONCE, for every consumer that is not bash.
+#
+# `@@BRIDGE_DIR@@` is substituted MSYS-style (/c/Users/.../.aify-comms/mcp/stdio). Bash reads that
+# fine -- the reaper call near the end of this file uses it raw -- but native-Windows Claude does
+# NOT: it fails to start the MCP server children on an MSYS path, which is why the conversion below
+# exists at all. So the raw placeholder is right for a `node` call made from this script, and this
+# converted form is right for anything written into Claude's own config.
+#
+# ONE NAME FOR ONE DIRECTORY. This launcher used to reach the same directory through
+# `AIFY_SCRIPT_DIR_FWD` + a hardcoded `/mcp/stdio/` segment, and that variable WAS assigned twice
+# from two different bases -- `@@NATIVE_BASE@@` in the strict-MCP branch and `@@SCRIPT_DIR@@`
+# unconditionally further down. The session hook, written after the second assignment, therefore
+# resolved to the REPO CHECKOUT while the bridge resolved to the installed copy: one launcher, two
+# deploy models, and the hook silently opting out of "security fixes flow on reinstall". Both
+# assignments are gone -- nothing reads that name now, which is what makes the hazard unavailable
+# rather than merely corrected.
+if command -v cygpath >/dev/null 2>&1; then
+  AIFY_BRIDGE_DIR_FWD="$(cygpath -m "@@BRIDGE_DIR@@")"
+else
+  AIFY_BRIDGE_DIR_FWD="@@BRIDGE_DIR@@"
+fi
 CLAUDE_MCP_FLAGS=()
 AIFY_MCP_CONFIG=""
 if [ "${AIFY_CLAUDE_STRICT_MCP:-0}" = "1" ]; then
-  # Convert install dir to a Windows-native path (C:/Docker/aify-comms)
-  # if cygpath is available, otherwise use SCRIPT_DIR as-is. The MSYS
-  # path /c/Docker/aify-comms is unreadable by native-Windows Claude
-  # spawning the MCP server children — they fail to start with the
-  # MSYS-style path even though bash itself reads it fine.
-  if command -v cygpath >/dev/null 2>&1; then
-    AIFY_SCRIPT_DIR_FWD="$(cygpath -m "@@NATIVE_BASE@@")"
-  else
-    AIFY_SCRIPT_DIR_FWD="@@NATIVE_BASE@@"
-  fi
   # WHICH BRIDGE THIS RUNTIME LOADS — the one thing that tied this launcher to one service.
   #
   # Default: the built-in bridge, named as a single quoted path exactly as before, so a HOME with a
@@ -424,7 +435,7 @@ if [ "${AIFY_CLAUDE_STRICT_MCP:-0}" = "1" ]; then
     fi
   else
     _mcp_cmd="node"
-    _mcp_args="\"${AIFY_SCRIPT_DIR_FWD}/mcp/stdio/server.js\""
+    _mcp_args="\"${AIFY_BRIDGE_DIR_FWD}/server.js\""
   fi
   # Services that opted into strict mode, carried as base64 and decoded here.
   #
@@ -463,7 +474,7 @@ if [ "${AIFY_CLAUDE_STRICT_MCP:-0}" = "1" ]; then
     ${_aify_comms_entry},
     "@@SERVICE_NAME@@-channel": {
       "command": "node",
-      "args": ["${AIFY_SCRIPT_DIR_FWD}/mcp/stdio/claude-channel.js"],
+      "args": ["${AIFY_BRIDGE_DIR_FWD}/claude-channel.js"],
       "env": { "AIFY_SERVER_URL": "$HARNESS_ENDPOINT", "CLAUDE_MCP_SERVER_URL": "$HARNESS_ENDPOINT" }
     }${AIFY_STRICT_EXTRA}
   }
@@ -490,20 +501,15 @@ fi
 # OWN session instead of a machine-global filesystem guess (the cause of
 # cross-agent session bleed when a whole team runs in one directory).
 # Always on — both strict and default MCP modes.
-if command -v cygpath >/dev/null 2>&1; then
-  AIFY_SCRIPT_DIR_FWD="$(cygpath -m "@@SCRIPT_DIR@@")"
-else
-  AIFY_SCRIPT_DIR_FWD="@@SCRIPT_DIR@@"
-fi
 AIFY_HOOK_SETTINGS="$(mktemp -t aify-hooks.XXXXXX.json 2>/dev/null || mktemp -t aify-hooks)"
 cat > "$AIFY_HOOK_SETTINGS" <<JSON
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "node \"${AIFY_SCRIPT_DIR_FWD}/mcp/stdio/claude-session-hook.js\"" } ] }
+      { "hooks": [ { "type": "command", "command": "node \"${AIFY_BRIDGE_DIR_FWD}/claude-session-hook.js\"" } ] }
     ],
     "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "node \"${AIFY_SCRIPT_DIR_FWD}/mcp/stdio/claude-session-hook.js\"" } ] }
+      { "hooks": [ { "type": "command", "command": "node \"${AIFY_BRIDGE_DIR_FWD}/claude-session-hook.js\"" } ] }
     ]
   }
 }

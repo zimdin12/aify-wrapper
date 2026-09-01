@@ -1,6 +1,6 @@
 // The client path can reach MCP over HTTP instead of spawning a local stdio bridge.
 //
-// A launcher spawning `node <path>/mcp/stdio/server.js` is the only reason a host carries a copy of
+// A launcher spawning `node <bridge dir>/server.js` is the only reason a host carries a copy of
 // aify-comms' own runtime -- 92 MB in ~/.aify-comms. The container serves the same MCP at
 // `<endpoint>/mcp/sse`, so a launcher pointed there needs no service code on the host. That is the
 // difference between the two install paths in aify-comms' docs/TARGET_ARCHITECTURE.md being real or
@@ -45,7 +45,18 @@ function liveArm(text) {
 test("by default the launcher still spawns the local stdio bridge", () => {
   const text = render();
   assert.equal(liveArm(text), "stdio");
-  assert.match(text, /mcp\/stdio\/server\.js/, "the stdio arm must still name the local bridge");
+  // THE LAYOUT IS NO LONGER SPELLED AT THIS SITE. The `mcp/stdio` segment moved into the installed
+  // bridge directory the launcher derives once, so only the entry-point FILE is named here. This
+  // used to assert the concatenated `mcp/stdio/server.js`, which is exactly the coupling row 5
+  // removes -- re-asserting it would pin the launcher to aify-comms' internal layout, which is the
+  // thing that stopped a second service being able to use this launcher at all.
+  //
+  // The intent is unchanged and is now checked in two parts, because one alone would pass on a
+  // launcher that had lost the other half.
+  assert.match(text, /\$\{AIFY_BRIDGE_DIR_FWD\}\/server\.js/,
+    "the stdio arm must still name the local bridge entry point");
+  assert.match(text, /AIFY_BRIDGE_DIR_FWD=.*mcp\/stdio/,
+    "and that directory must still resolve to the host's own copy of the bridge");
 });
 
 test("the default render is byte-identical to one with the flag explicitly off", () => {
