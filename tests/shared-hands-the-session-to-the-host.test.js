@@ -202,3 +202,87 @@ test("a template that renders NOTHING is named, not skipped", () => {
   assert.deepEqual(missing, ["pi-aify"],
     "the set of templates that render nothing changed; if that is deliberate, say why here");
 });
+
+// ── the other three wrappers, which nothing here was checking ────────────────────────────────
+//
+// EVERY ASSERTION ABOVE READS `renderAll()["claude-aify"]`. The block is copied into all four
+// templates and only one of them was ever tested, so the other three could lose it, hardcode
+// another runtime's name in the refusal, or hand the host the wrong launcher, and this file would
+// stay green.
+//
+// PROVEN, not feared: pointing codex's `exec aify-env run` at `--launcher "/usr/bin/claude"`
+// instead of `"$0"` left all 198 tests passing (2026-09-04). The host would then be asked to start
+// the wrong runtime — or refuse it for carrying no wrapper marker — and `codex-aify --shared` would
+// be broken with nothing to say so.
+//
+// The header of this very block in `claude-aify.sh.in` names the failure it was written against:
+// "somebody copies it, forgets the string, and codex-aify starts calling itself claude". That is a
+// warning in a comment, which is a rule somebody has to remember. This is the same rule enforced.
+
+test("EVERY RENDERED LAUNCHER HANDS THE SESSION TO THE HOST THE SAME WAY", () => {
+  const rendered = renderAll();
+  assert.ok(Object.keys(rendered).length >= 2,
+    `only ${Object.keys(rendered).length} launcher(s) rendered; this test would prove almost nothing`);
+
+  for (const [name, text] of Object.entries(rendered)) {
+    const body = code(text);
+    assert.match(body, /exec aify-env run/, `${name}: does not hand the session to the host tier`);
+    assert.match(body, /--launcher "\$0"/,
+      `${name}: hands the host something other than THIS wrapper — the host would start the wrong `
+      + "runtime, or refuse it for carrying no wrapper marker");
+    assert.match(body, /--service "aify-comms"/, `${name}: carries no service, and the host needs an owner`);
+    assert.match(body, /-- "\$\{[A-Z]+_AIFY_PASSTHRU\[@\]\}"/,
+      `${name}: hands the host something other than the original arguments`);
+  }
+});
+
+test("THE REFUSAL EXISTS AND NAMES ITSELF FROM $0", () => {
+  // NARROWED ON PURPOSE. "no launcher names another launcher's runtime in the block" above already
+  // proves no wrapper calls itself something else, so repeating that loop here would be cost without
+  // coverage. What it does NOT prove is that the refusal is there at all, or that the name comes from
+  // `${0##*/}` rather than a literal that merely happens to be correct today — which is what makes
+  // the block copyable to the next wrapper without an edit.
+  //
+  // It also skips any launcher missing the block entirely (`if (start < 0) continue`); a lost block
+  // is caught by "EVERY RENDERED LAUNCHER HANDS THE SESSION TO THE HOST THE SAME WAY" above.
+  for (const [name, text] of Object.entries(renderAll())) {
+    const line = code(text).split(String.fromCharCode(10))
+      .find((l) => l.includes("needs aify-env on PATH"));
+    assert.ok(line, `${name}: the PATH refusal is missing entirely`);
+    assert.match(line, /\$\{0##\*\/\}/,
+      `${name}: the refusal hardcodes a name instead of taking it from $0, so a copy of this block ` +
+      "into the next wrapper would introduce it as this one");
+  }
+});
+
+test("EVERY TEMPLATE CARRIES THE BLOCK, including the one --all does not render", () => {
+  // pi installs are deliberately disabled, so `pi-aify` renders no launcher and the two tests above
+  // cannot see it. The template is still shipped and still has to carry the feature, so it is
+  // checked at the source rather than left as the one wrapper nothing covers.
+  for (const name of LAUNCHERS) {
+    const template = fs.readFileSync(path.join(ROOT, "wrappers", `${name}.sh.in`), "utf8");
+    const body = code(template);
+    assert.match(body, /exec aify-env run/, `${name}.sh.in: no shared branch`);
+    assert.match(body, /--launcher "\$0"/, `${name}.sh.in: hands the host the wrong launcher`);
+  }
+});
+
+test("THE SHARED BRANCH SITS BELOW EVERYTHING, IN EVERY TEMPLATE", () => {
+  // The operator's constraint on this feature is that the DEFAULT path is untouched, and the way it
+  // is kept is position: an ordinary run reaches the launch line having executed not one instruction
+  // of the branch. Checked for claude alone until now.
+  //
+  // Measured 2026-09-04: 6 to 8 code lines follow it — the runtime launch, a status capture and an
+  // exit. The bound is 12 so an honest extra line does not fail this, while a branch that drifts up
+  // above real work does.
+  for (const name of LAUNCHERS) {
+    const lines = fs.readFileSync(path.join(ROOT, "wrappers", `${name}.sh.in`), "utf8").split("\n");
+    const at = lines.findIndex((l) => /_AIFY_SHARED" = true/.test(l));
+    assert.ok(at > 0, `${name}.sh.in: no shared branch to place`);
+    const after = lines.slice(at + 1)
+      .filter((l) => l.trim() && !/^\s*#/.test(l) && !/^\s*(fi|else|then)\s*$/.test(l.trim()));
+    assert.ok(after.length <= 12,
+      `${name}.sh.in: ${after.length} code lines run after the shared branch — it is no longer last, `
+      + "so an ordinary run now executes part of it");
+  }
+});
