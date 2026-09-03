@@ -233,6 +233,11 @@ test("EVERY RENDERED LAUNCHER HANDS THE SESSION TO THE HOST THE SAME WAY", () =>
     assert.match(body, /--service "aify-comms"/, `${name}: carries no service, and the host needs an owner`);
     assert.match(body, /-- "\$\{[A-Z]+_AIFY_PASSTHRU\[@\]\}"/,
       `${name}: hands the host something other than the original arguments`);
+    // EXACTLY THIS WORD, which claude's template calls out as a decision and only claude's tests
+    // enforced. A glob would swallow `--shared-anything`, which belongs to whoever reads it, and
+    // hand the host a command line missing an argument the caller meant.
+    assert.match(body, /\[ "\$ARG" = "--shared" \]/,
+      `${name}: matches --shared as a prefix rather than exactly`);
   }
 });
 
