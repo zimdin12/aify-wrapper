@@ -161,3 +161,93 @@ test("the emitted config is valid JSON even when an opted-in path is hostile", (
   assert.equal(config.mcpServers["aify-graph"].args[0], nasty);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// ── WRAP-M1: strict mode must not bake a credential into a world-readable launcher ───────────────
+//
+// REPRODUCED BEFORE IT WAS GUARDED, 2026-09-03. Rendering with `strictMcp: true` and a key exported
+// produced, inside the base64 fragment the installer bakes into every launcher:
+//
+//     "env": { "OTHER_URL": "http://127.0.0.2:1", "AIFY_API_KEY": "<the key>" }
+//
+// A launcher is mode 755 -- world-readable by design, because it is a command on PATH -- so any
+// local user could read the fleet credential out of it. Base64 is a transport encoding, not a
+// secret; the reproduction decoded it in one line.
+//
+// LATENT, NOT LIVE: no service sets `strictMcp` on the real host, where the fragment is the empty
+// string. Which is exactly when it is cheap to close.
+//
+// THE COMBINATION IS REFUSED, never `strictMcp` alone. Keeping the pin AND keeping the secret out of
+// the file means resolving per-server env in the launcher at RUN time, and the fragment is base64
+// precisely so its content is never re-parsed -- adding a substitution hop back is how the escaping
+// bugs that encoding ended would return. That design is worth having when a service actually needs
+// strict mode with a credential; inventing it speculatively inside a package other services are
+// about to consume is not.
+
+import { strictMcpSecretProblem } from "../lib/registry.mjs";
+
+const strictService = (over = {}) => ({
+  version: 1,
+  services: {
+    "other-svc": {
+      endpoint: NOWHERE,
+      endpointEnv: ["OTHER_URL"],
+      keyEnv: ["AIFY_API_KEY"],
+      strictMcp: true,
+      mcp: [{ name: "other-svc", command: "node", args: ["/tmp/other.js"] }],
+      ...over,
+    },
+  },
+});
+
+test("A LIVE CREDENTIAL PLUS STRICT MODE IS REFUSED, and the reason names both", () => {
+  const why = strictMcpSecretProblem(strictService(), { AIFY_API_KEY: "live-key" });
+  assert.match(why, /other-svc/, "the offending service is not named");
+  assert.match(why, /AIFY_API_KEY/, "the offending variable is not named");
+  assert.match(why, /world-readable/, "the reason does not say why it matters");
+});
+
+test("strict mode WITHOUT a key set renders exactly as before", () => {
+  // The feature is not withdrawn. A strict service whose key is simply absent from the installing
+  // shell has nothing to leak, and must keep working.
+  assert.equal(strictMcpSecretProblem(strictService(), {}), "");
+  assert.equal(strictMcpSecretProblem(strictService(), { AIFY_API_KEY: "" }), "");
+});
+
+test("A KEY WITH NO STRICT SERVICE IS NOT THE DEFECT", () => {
+  // The case that must stay silent, and the one a blunter guard would break: ordinary installs run
+  // with a key exported all the time. It is the fragment that publishes it, and a service that opted
+  // into nothing contributes no fragment.
+  const ordinary = strictService({ strictMcp: false });
+  assert.equal(strictMcpSecretProblem(ordinary, { AIFY_API_KEY: "live-key" }), "");
+});
+
+test("a service that declares no keyEnv has nothing to bake", () => {
+  assert.equal(strictMcpSecretProblem(strictService({ keyEnv: [] }), { AIFY_API_KEY: "live-key" }), "");
+});
+
+test("every offender is named, not just the first", () => {
+  const two = strictService({ keyEnv: ["AIFY_API_KEY", "OTHER_TOKEN"] });
+  const why = strictMcpSecretProblem(two, { AIFY_API_KEY: "a", OTHER_TOKEN: "b" });
+  assert.match(why, /AIFY_API_KEY/);
+  assert.match(why, /OTHER_TOKEN/);
+});
+
+test("THE INSTALL ITSELF REFUSES, and writes no launcher at all", () => {
+  // The guard is only worth anything at the install boundary: by the time a launcher exists, the
+  // credential has already been published to every local user. Driven through the REAL installer,
+  // because a pure function proving a reason says nothing about whether anything consults it.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-wrapm1-"));
+  const out = path.join(dir, "out");
+  fs.mkdirSync(out, { recursive: true });
+  const registryFile = path.join(dir, "services.json");
+  fs.writeFileSync(registryFile, JSON.stringify(strictService()));
+
+  const refused = spawnSync("bash", [
+    INSTALL, "--client", "claude", "--endpoint", NOWHERE,
+    "--render-only", out, "--registry", registryFile,
+  ], { encoding: "utf8", timeout: 120_000, env: { ...process.env, AIFY_API_KEY: "live-key" } });
+
+  assert.notEqual(refused.status, 0, "the install rendered a launcher carrying a live credential");
+  assert.match(`${refused.stderr}`, /world-readable/, "the refusal does not say why");
+  assert.deepEqual(fs.readdirSync(out), [], "a launcher was written despite the refusal");
+});
