@@ -213,12 +213,31 @@ if ! wait_for_port "$PORT"; then
 fi
 
 CODEX_ARGS=()
+# --shared: let the HOST TIER own this session's terminal, so closing this window does not end it.
+# Recognised here, acted on at the very bottom; every path in between is unchanged, which is the
+# operator's constraint on this feature -- an ordinary run must be exactly what it was.
+CODEX_AIFY_SHARED=false
+# THE ORIGINAL ARGUMENTS, CAPTURED ONCE, minus the flag. Rebuilt inside the parse loop instead, it
+# would have to be appended in every one of that loop's branches -- and the branch somebody adds next
+# year is the one that silently drops an argument from the relaunch. Filtering `"$@"` here cannot
+# drift with the loop, because it does not read it.
+CODEX_AIFY_PASSTHRU=()
+for _ORIGINAL in "$@"; do
+  [ "$_ORIGINAL" = "--shared" ] || CODEX_AIFY_PASSTHRU+=("$_ORIGINAL")
+done
+
 CODEX_AIFY_AGENT_ID="$HARNESS_IDENTITY"
 CODEX_AIFY_ROLE="${HARNESS_ROLE:-coder}"
 CODEX_AIFY_SESSION_MODE="${AIFY_SESSION_MODE:-}"
 CODEX_RESUME_HANDLE=""
 PREV_ARG=""
 for ARG in "$@"; do
+  # EXACTLY THIS WORD. `--shared-anything` belongs to whoever reads it; a prefix test here would
+  # swallow it and host a session nobody asked to host. Consumed so it never reaches the runtime.
+  if [ "$ARG" = "--shared" ]; then
+    CODEX_AIFY_SHARED=true
+    continue
+  fi
   if [ "$PREV_ARG" = "--aify-agent" ] || [ "$PREV_ARG" = "--agent-id" ]; then
     CODEX_AIFY_AGENT_ID="$ARG"
     PREV_ARG=""
@@ -395,5 +414,28 @@ if [ -n "${CODEX_RESUME_HANDLE:-}" ]; then
     echo "[codex-aify] saved session $CODEX_RESUME_HANDLE not found in codex storage; starting fresh codex" >&2
   fi
 fi
+# --shared: HAND THE SESSION TO THE HOST TIER instead of running it as a child of this shell.
+#
+# It asks aify-env to run THIS WRAPPER again, without the flag, and attaches to it. So what runs is
+# exactly what the launch below would have run -- every resolution and every flag composed above --
+# rather than a command rebuilt from the parts somebody remembered. It passes the host's launcher
+# allowlist by being a wrapper, which is what that allowlist is for.
+#
+# The process then belongs to aify-env: closing this window leaves it running, Ctrl-] detaches, and
+# anyone can attach again. That is the whole point.
+#
+# BELOW EVERYTHING, so an ordinary run reaches the launch having executed not one instruction of
+# this. The operator's constraint on the feature is that the default path is unchanged.
+if [ "$CODEX_AIFY_SHARED" = true ]; then
+  if ! command -v aify-env >/dev/null 2>&1; then
+    # `${0##*/}` rather than a hardcoded name: this block is shared by all four wrappers, and a
+    # message naming one launcher is how the copy in another starts lying about itself.
+    echo "${0##*/}: --shared needs aify-env on PATH; it is the tier that would own the session." >&2
+    echo "  Install it, or run without --shared to start in this terminal as usual." >&2
+    exit 69
+  fi
+  exec aify-env run --service "@@SERVICE_NAME@@" --launcher "$0" --label "${CODEX_AIFY_AGENT_ID:-}" -- "${CODEX_AIFY_PASSTHRU[@]}"
+fi
+
 run_codex_foreground --remote "$APP_SERVER_URL" "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_ARGS[@]}"
 exit $?
