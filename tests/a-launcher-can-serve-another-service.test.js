@@ -78,8 +78,19 @@ test("NO executable line names aify-comms once another service is asked for -- p
   // No exception. Until the NATIVE_BASE default was derived, this excused every `.aify-comms` path,
   // which is exactly where the bug lived: a launcher for svc-four pointing at aify-comms' runtime
   // directory passed the old assertion BY DESIGN.
+  //
+  // THE LIST IS DERIVED, NOT TYPED. It named three launchers, which was correct and would have
+  // stopped being correct silently: a fourth that starts rendering -- pi is disabled today, not
+  // absent -- would be the ONE launcher free to wire another service's runtime directory, and
+  // nothing here would say so. Its sibling file already derives its set for exactly this reason,
+  // and the standing rule is that a list you have to remember to update is a defect with a delay
+  // on it. Reading the directory means a launcher is covered on the day it first renders.
   const { dir } = render(["--service", "svc-four"]);
-  for (const name of ["claude-aify", "codex-aify", "hermes-aify"]) {
+  const rendered = fs.readdirSync(dir).filter((name) => name.endsWith("-aify")).sort();
+  assert.ok(rendered.length >= 3,
+    `only ${rendered.length} launcher(s) rendered (${rendered.join(", ")}); this test would prove `
+    + "almost nothing, and an empty directory would pass it outright");
+  for (const name of rendered) {
     const offenders = codeLines(read(dir, name))
       .filter((line) => line.includes("aify-comms"));
     assert.deepEqual(offenders, [], `${name} still wires aify-comms:\n${offenders.join("\n")}`);
