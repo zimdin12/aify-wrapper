@@ -74,13 +74,14 @@ test("codex's log root follows the service", () => {
   assert.match(read(dir, "codex-aify"), /^LOG_ROOT=.*\/svc-three"$/m);
 });
 
-test("no executable line names aify-comms once another service is asked for", () => {
-  // Paths excepted: those are where the service's runtime lives and come from --bridge-dir.
+test("NO executable line names aify-comms once another service is asked for -- paths included", () => {
+  // No exception. Until the NATIVE_BASE default was derived, this excused every `.aify-comms` path,
+  // which is exactly where the bug lived: a launcher for svc-four pointing at aify-comms' runtime
+  // directory passed the old assertion BY DESIGN.
   const { dir } = render(["--service", "svc-four"]);
   for (const name of ["claude-aify", "codex-aify", "hermes-aify"]) {
     const offenders = codeLines(read(dir, name))
-      .filter((line) => line.includes("aify-comms"))
-      .filter((line) => !/\.aify-comms/.test(line));
+      .filter((line) => line.includes("aify-comms"));
     assert.deepEqual(offenders, [], `${name} still wires aify-comms:\n${offenders.join("\n")}`);
   }
 });
@@ -103,4 +104,31 @@ test("the contract variables are named for the harness, not for any one service"
     assert.ok(claude.includes(name), `${name} is missing from a rendered launcher`);
   }
   assert.ok(!claude.includes("AIFY_COMMS_ENDPOINT"), "a service-specific contract variable appeared");
+});
+
+test("the runtime directory DEFAULTS to the service's own, not to a neighbour's", () => {
+  // The positive half. Asserting an ABSENCE above says nothing about whether the right path
+  // arrived: a render that produced no bridge directory at all would satisfy it and break every
+  // launcher it wrote.
+  const { dir } = render(["--service", "svc-six"]);
+  const claude = codeLines(read(dir, "claude-aify")).join("\n");
+  assert.match(claude, /\.svc-six\/mcp\/stdio/, "the bridge directory does not follow the service");
+});
+
+test("--native-base still wins, because location is its own axis", () => {
+  // The decision this change did NOT reverse. A service whose runtime lives somewhere else says so,
+  // and a derived default must never quietly override an explicit answer.
+  const { dir } = render(["--service", "svc-seven", "--native-base", "/tmp/elsewhere"]);
+  const claude = codeLines(read(dir, "claude-aify")).join("\n");
+  assert.match(claude, /\/tmp\/elsewhere\/mcp\/stdio/, "an explicit --native-base was ignored");
+  assert.ok(!claude.includes(".svc-seven"), "the derived default overrode an explicit --native-base");
+});
+
+test("THE DEFAULT SERVICE STILL LANDS IN ~/.aify-comms, exactly as before", () => {
+  // The safety property of the whole change: SERVICE_NAME defaults to aify-comms, so the derived
+  // path is the literal it replaced and no existing install moves. Proven by rendering rather than
+  // by reasoning about what the substitution ought to produce.
+  const { dir } = render();
+  assert.match(codeLines(read(dir, "claude-aify")).join("\n"), /\.aify-comms\/mcp\/stdio/,
+    "the default render's runtime directory moved, which would relocate every existing install");
 });

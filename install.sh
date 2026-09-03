@@ -55,7 +55,7 @@ ALL=0
 CLIENT=""
 ENDPOINT=""
 DEST="$HOME/.local/bin"
-NATIVE_BASE="$HOME/.aify-comms"
+NATIVE_BASE=""
 BRIDGE_DIR=""
 HOST_REPO=""
 RENDER_ONLY=""
@@ -132,6 +132,22 @@ if [ -z "$ENDPOINT" ]; then
   echo "install.sh: --endpoint is required. A wrapper will not guess where its service lives." >&2
   exit "$EXIT_CONFIG"
 fi
+
+# WHERE THIS SERVICE'S RUNTIME LIVES, derived from WHOSE it is.
+#
+# This was `$HOME/.aify-comms`, set before the arguments were parsed -- so `--service my-service`
+# with no `--native-base` rendered a launcher for my-service that pointed its bridge directory,
+# its host repo and codex's log root at AIFY-COMMS' dotfolder. Silently: every other name in the
+# launcher followed the service correctly, and only the paths pointed at a neighbour.
+#
+# Identity and location are still different axes and `--native-base` still wins outright. What
+# changed is the DEFAULT, which named one service and was therefore right for exactly one caller.
+# Derived, it is right for all of them, and the default render is byte-identical because
+# SERVICE_NAME defaults to aify-comms.
+#
+# Placed after the SERVICE_NAME validation on purpose: that check refuses an empty name and
+# anything outside [A-Za-z0-9_-], so this cannot build a path out of a name a shell would reinterpret.
+[ -n "$NATIVE_BASE" ] || NATIVE_BASE="$HOME/.$SERVICE_NAME"
 
 [ -n "$BRIDGE_DIR" ] || BRIDGE_DIR="$NATIVE_BASE/mcp/stdio"
 [ -n "$HOST_REPO" ] || HOST_REPO="$NATIVE_BASE"
