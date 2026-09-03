@@ -116,6 +116,18 @@ CLAUDE_AIFY_ROLE="${HARNESS_ROLE:-coder}"
 # is unset, auto-detect via TTY presence on stdin: interactive → resident.
 CLAUDE_AIFY_SESSION_MODE="${AIFY_SESSION_MODE:-}"
 CLAUDE_ARGS=()
+# --shared: let the HOST TIER own this session's terminal, so closing this window does not end it.
+# Recognised here, acted on at the very bottom; every path in between is unchanged, which is the
+# operator's constraint on this feature -- an ordinary run must be exactly what it was.
+CLAUDE_AIFY_SHARED=false
+# THE ORIGINAL ARGUMENTS, CAPTURED ONCE, minus the flag. Rebuilt inside the parse loop instead, it
+# would have to be appended in every one of that loop's dozen branches -- and the branch somebody
+# adds next year is the one that silently drops an argument from the relaunch. Filtering `"$@"` here
+# cannot drift with the loop, because it does not read it.
+CLAUDE_AIFY_PASSTHRU=()
+for _ORIGINAL in "$@"; do
+  [ "$_ORIGINAL" = "--shared" ] || CLAUDE_AIFY_PASSTHRU+=("$_ORIGINAL")
+done
 CLAUDE_RESUME_FROM_ARG=false
 CLAUDE_RESUME_FLAG="--resume"
 CLAUDE_HAS_MODEL=false
@@ -161,6 +173,14 @@ for ARG in "$@"; do
   fi
   if [ "$ARG" = "--managed" ]; then
     CLAUDE_AIFY_SESSION_MODE="managed"
+    continue
+  fi
+  # EXACTLY THIS WORD. `--shared-anything` belongs to whoever reads it; a prefix test here would
+  # swallow it and host a session nobody asked to host. Not added to the passthrough: the relaunched
+  # wrapper must not see it again, or it asks the host to start a wrapper that asks the host to
+  # start a wrapper.
+  if [ "$ARG" = "--shared" ]; then
+    CLAUDE_AIFY_SHARED=true
     continue
   fi
   if [ "$ARG" = "--aify-agent" ] || [ "$ARG" = "--agent-id" ] || [ "$ARG" = "--aify-role" ]; then
@@ -568,6 +588,32 @@ if [ "$AIFY_SESSION_MODE" = "managed" ] && [ -n "${CLAUDE_RESUME_ID:-}" ] && [ -
   # --aify-agent wrapper), never another agent or a resident operator session
   # that happens to share the same --resume session id (handle collision).
   node "@@BRIDGE_DIR@@/reap-managed-claude.js" "$CLAUDE_RESUME_ID" "$CLAUDE_AIFY_AGENT_ID" >/dev/null 2>&1 || true
+fi
+
+# --shared: HAND THE SESSION TO THE HOST TIER instead of running it as a child of this shell.
+#
+# It asks aify-env to run THIS WRAPPER again, without the flag, and attaches to it. So what runs is
+# exactly what the line below would have run -- every resolution, every MCP flag, every reap above --
+# rather than a command rebuilt from the parts somebody remembered. It passes the host's launcher
+# allowlist by being a wrapper, which is what that allowlist is for.
+#
+# The process then belongs to aify-env: closing this window leaves it running, Ctrl-] detaches, and
+# anyone can attach again. That is the whole point.
+#
+# BELOW EVERYTHING, so an ordinary run reaches the line after it having executed not one instruction
+# of this. The operator's constraint on the feature is that the default path is unchanged.
+if [ "$CLAUDE_AIFY_SHARED" = true ]; then
+  if ! command -v aify-env >/dev/null 2>&1; then
+    # `${0##*/}` RATHER THAN THE NAME, so this block is copyable to the other three wrappers with no
+    # edit. A message that hardcodes one launcher's name is the reason a shared block stops being
+    # shared -- somebody copies it, forgets the string, and codex-aify starts calling itself claude.
+    echo "${0##*/}: --shared needs aify-env on PATH; it is the tier that would own the session." >&2
+    echo "  Install it, or run without --shared to start in this terminal as usual." >&2
+    exit 69
+  fi
+  # `$0` IS THIS WRAPPER, which is precisely what should be re-run. The label is the agent id when
+  # there is one, so the host lists the session under the name the operator thinks in.
+  exec aify-env run     --service "@@SERVICE_NAME@@"     --launcher "$0"     --label "${CLAUDE_AIFY_AGENT_ID:-}"     -- "${CLAUDE_AIFY_PASSTHRU[@]}"
 fi
 
 claude --dangerously-load-development-channels server:@@SERVICE_NAME@@-channel "${CLAUDE_MCP_FLAGS[@]}" "${CLAUDE_PERMISSION_FLAGS[@]}" "${CLAUDE_ARGS[@]}"
