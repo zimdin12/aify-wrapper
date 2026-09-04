@@ -97,15 +97,25 @@ test("and an ordinary launcher is still executable by everyone", () => {
       fs.readFileSync(out, "utf8"), /printf '%s' "" \| base64 -d/,
       "this render was expected to carry no fragment; the detector's premise has changed",
     );
+    // THE WHOLE MODE, NOT ONE BIT. External review, Round 8 M2: `render.sh` used `chmod +x`, which
+    // only ADDS the execute bit to the 0600 the writer created -- giving 0711, not the 0755 its own
+    // comment promises. This assertion read `mode & 0o100`, the OWNER's execute bit, and passed on
+    // 0711 for eleven days. 0711 is worse than it looks for a SHELL script: another user may execute
+    // it and not READ it, and an interpreter must read a script to run it.
     if (process.platform === "win32") {
+      // THIS HOST CANNOT OBSERVE MODES -- measured: chmod 600, chmod +x and chmod 755 all report
+      // 644, and node reads 666 for every file. So the bits are unavailable here and the SOURCE is
+      // what can be checked. Named rather than skipped: a test that cannot fail must say why.
       assert.match(
-        fs.readFileSync(RENDER, "utf8"), /chmod \+x/,
-        "render.sh no longer leaves an ordinary launcher executable by everyone",
+        fs.readFileSync(RENDER, "utf8"), /chmod 755 "\$target"/,
+        "render.sh no longer sets an ordinary launcher to 755. `chmod +x` is not equivalent: it adds "
+        + "a bit to the 0600 create mode and yields 0711, which other users can execute but not read",
       );
     } else {
-      assert.ok(
-        fs.statSync(out).mode & 0o100,
-        `an ordinary launcher is mode ${modeOf(out)} and not executable by its owner`,
+      assert.equal(
+        modeOf(out), "755",
+        `an ordinary launcher is mode ${modeOf(out)}. It must be 755: 711 lets another user execute `
+        + "a shell script they cannot read, which no interpreter can actually do",
       );
     }
   } finally {

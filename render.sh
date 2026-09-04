@@ -77,5 +77,13 @@ mkdir -p "$(dirname "$target")"
 if grep -qE '[A-Za-z0-9+/=]{8,}" \| base64 -d' "$target" 2>/dev/null; then
   chmod 700 "$target"
 else
-  chmod +x "$target"
+  # 755, SAID RATHER THAN IMPLIED. This was `chmod +x`, which only ADDS the execute bit to whatever
+  # the file was created with -- 0600 from the writer, so the result was 0711, not the 0755 the
+  # comment above promises. External review, Round 8 M2, measured against the prior commit.
+  #
+  # 0711 is worse than it looks for a SHELL SCRIPT: other users may execute it and not READ it, and
+  # an interpreter has to read a script to run it. So "executable by everyone" was true of the bits
+  # and false of the behaviour, which is the shape a mode check catches only if it reads the whole
+  # mode. The test beside this one checked `mode & 0o100` -- the OWNER's bit -- and passed on 0711.
+  chmod 755 "$target"
 fi

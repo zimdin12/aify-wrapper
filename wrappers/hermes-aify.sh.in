@@ -557,7 +557,20 @@ if [ ${#HERMES_ARGS[@]} -eq 0 ]; then aify_hermes_warm_bridge; fi
 # The agent still REGISTERS with its resolved sessionMode (AIFY_SESSION_MODE,
 # exported at line ~1270 before this branch), so residents stay resident and
 # managed stays managed — only the LAUNCH mechanism is now shared.
-if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ]; then
+# `--shared` IS NOT THIS BRANCH'S TO HANDLE, and leaving it out cost the flag its main case.
+# External review, Round 8 H6: `--shared` is consumed at the top of this file and acted on at the
+# BOTTOM, but this branch -- an agent id with no other arguments, which IS the ordinary managed
+# launch -- runs kill-prior, ensure-host and the TUI and then EXITS, two hundred lines above it.
+# So `hermes-aify --aify-agent x --shared` started locally and never called aify-env, with
+# nothing said: the operator gets a session that dies with the terminal while believing the host
+# owns it. PROVEN by running the rendered launcher against stubs, which is how it was found --
+# every source-reading assertion in the suite was green, because the exec line IS in the file.
+#
+# GATED HERE RATHER THAN MOVING THE BLOCK UP, because "the shared branch sits below everything"
+# is the operator's own constraint on this feature and a test asserts it. The default path pays
+# one string comparison; the shared path falls through to the branch that was always meant to
+# take it.
+if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_AIFY_SHARED" != true ]; then
   aify_hermes_kill_prior "$HERMES_AIFY_AGENT_ID"
   export AIFY_AGENT_ID="$HERMES_AIFY_AGENT_ID"
   # Hermes launches its MCP server as a short-lived child of individual turns.

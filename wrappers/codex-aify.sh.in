@@ -434,6 +434,16 @@ if [ "$CODEX_AIFY_SHARED" = true ]; then
     echo "  Install it, or run without --shared to start in this terminal as usual." >&2
     exit 69
   fi
+  # THE APP-SERVER THIS SHELL STARTED MUST DIE FIRST. External review, Round 8 M13: `cleanup` is
+  # trapped on EXIT, and bash does NOT run EXIT traps on a SUCCESSFUL exec -- so replacing this
+  # shell orphaned the app-server it had already started, on every `--shared` launch. It listens
+  # on a port, so the next launch picks a new one and the old process is left holding the first.
+  #
+  # The trapped function is CALLED rather than a second teardown written here: one of the two
+  # would drift, and this is the one that already knows about both children. The trap is then
+  # cleared so an INT arriving between here and the exec cannot run it twice.
+  cleanup
+  trap - EXIT INT TERM HUP
   exec aify-env run --service "@@SERVICE_NAME@@" --launcher "$0" --label "${CODEX_AIFY_AGENT_ID:-}" -- "${CODEX_AIFY_PASSTHRU[@]}"
 fi
 
