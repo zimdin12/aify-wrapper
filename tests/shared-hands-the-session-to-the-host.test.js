@@ -291,3 +291,58 @@ test("THE SHARED BRANCH SITS BELOW EVERYTHING, IN EVERY TEMPLATE", () => {
       + "so an ordinary run now executes part of it");
   }
 });
+
+// ── the EXIT trap does not run on a successful exec ──────────────────────────────────────────────
+//
+// EXTERNAL REVIEW, Round 8: M13 for codex's orphaned app-server, and the LOW entry for claude's
+// leaked mktemp files. One cause, three templates. Bash simply does not fire EXIT traps when the
+// shell is REPLACED, so `exec aify-env run …` skipped every trapped cleanup.
+//
+// WHAT EACH ONE LEAKED: codex left the app-server it had just started, holding a port. Claude left
+// two mktemp files -- and in strict-MCP mode one of them holds the DECODED credential, so every
+// `--shared` launch left the service key on disk for ever. Hermes would have left its delivery loop
+// and gateway host, which is the teardown its trap exists for.
+//
+// DERIVED, so a fifth wrapper is covered the day it lands: every template that BOTH sets a trap and
+// execs must do something about it before the exec.
+
+test("EVERY TEMPLATE THAT TRAPS ALSO CLEANS UP BEFORE HANDING OVER", () => {
+  const offenders = [];
+  for (const name of LAUNCHERS) {
+    const text = fs.readFileSync(path.join(ROOT, "wrappers", `${name}.sh.in`), "utf8");
+    const lines = text.split("\n");
+    const execAt = lines.findIndex((l) => l.trim().startsWith("exec aify-env run"));
+    if (execAt < 0) { offenders.push(`${name}: no shared exec at all`); continue; }
+    // A TRAP AT TOP LEVEL is one the exec would skip. An INDENTED trap is armed inside a branch,
+    // and a branch the shared path does not take arms nothing -- hermes is exactly that shape: its
+    // trap lives in the agent-id branch, which now yields to `--shared` before reaching it.
+    //
+    // MEASURED, not assumed. Calling hermes' teardown before its exec was tried and broke the path:
+    // under `set -e` an undefined function aborts the shell, so `--shared` stopped reaching the host
+    // at all, and the behavioural test caught it. Column position is the discriminator because it is
+    // the one this file can actually read.
+    const trapsAbove = lines.slice(0, execAt).some((l) => /^trap\s+\S/.test(l));
+    if (!trapsAbove) continue;   // nothing to skip: pi has no trap, hermes arms its inside a branch
+    // Something in the handful of lines before the exec must disarm or discharge it.
+    const before = lines.slice(Math.max(0, execAt - 12), execAt).join("\n");
+    const handled = /\btrap\s+-\s/.test(before) && /(rm -f|cleanup|_on_exit)/.test(before);
+    if (!handled) {
+      offenders.push(`${name}: arms a trap and execs without running or clearing it`);
+    }
+  }
+  assert.deepEqual(offenders, [],
+    `${offenders.join("; ")}. Bash does NOT run EXIT traps on a successful exec, so whatever that `
+    + "trap cleans up is leaked on every --shared launch -- an app-server holding a port, a delivery "
+    + "loop, or a temp file holding the decoded service key.");
+});
+
+test("the scan can SEE a template that traps, so its silence means something", () => {
+  // POSITIVE CONTROL. The rule above passes for a template with no trap, which is also what a broken
+  // regex produces -- and then every launcher would look compliant.
+  const trapping = LAUNCHERS.filter((name) => {
+    const text = fs.readFileSync(path.join(ROOT, "wrappers", `${name}.sh.in`), "utf8");
+    return /^\s*trap\s+\S/m.test(text);
+  });
+  assert.ok(trapping.length >= 2,
+    `only ${trapping.length} template(s) were seen to arm a trap; the scan is not reading them`);
+});

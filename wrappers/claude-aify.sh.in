@@ -613,6 +613,16 @@ if [ "$CLAUDE_AIFY_SHARED" = true ]; then
   fi
   # `$0` IS THIS WRAPPER, which is precisely what should be re-run. The label is the agent id when
   # there is one, so the host lists the session under the name the operator thinks in.
+  # THE TRAP DOES NOT RUN ON A SUCCESSFUL `exec`, so the cleanup happens here or not at all.
+  # External review, Round 8 (LOW), and the same defect as codex's orphaned app-server: bash
+  # simply does not fire EXIT traps when the shell is replaced. Claude's trap removes two mktemp
+  # files, and in strict-MCP mode `AIFY_MCP_CONFIG` holds the DECODED credential -- so every
+  # `--shared` launch left a file containing the service key behind, for ever.
+  #
+  # The trapped command is reused rather than a second copy written beside it: one of the two
+  # would drift. Cleared afterwards so an INT between here and the exec cannot run it twice.
+  rm -f "$AIFY_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null
+  trap - EXIT
   exec aify-env run     --service "@@SERVICE_NAME@@"     --launcher "$0"     --label "${CLAUDE_AIFY_AGENT_ID:-}"     -- "${CLAUDE_AIFY_PASSTHRU[@]}"
 fi
 

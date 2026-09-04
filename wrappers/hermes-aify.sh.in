@@ -790,6 +790,15 @@ if [ "$HERMES_AIFY_SHARED" = true ]; then
     echo "  Install it, or run without --shared to start in this terminal as usual." >&2
     exit 69
   fi
+  # NO CLEANUP IS NEEDED HERE, and finding that out is worth writing down. `exec` does skip EXIT
+  # traps, which is the defect fixed in claude and codex -- but hermes arms its trap INSIDE the
+  # agent-id branch, and that branch now yields to `--shared` before reaching it. So on this path
+  # `_aify_hermes_on_exit` is never defined and no trap is ever armed.
+  #
+  # Calling it anyway was tried and BROKE THE PATH: under `set -e` an undefined function aborts
+  # the shell before the exec, so `--shared` stopped reaching the host at all. The behavioural
+  # test caught it, which is the whole reason that test runs the launchers instead of reading
+  # them.
   exec aify-env run --service "@@SERVICE_NAME@@" --launcher "$0" --label "${HERMES_AIFY_AGENT_ID:-}" -- "${HERMES_AIFY_PASSTHRU[@]}"
 fi
 
