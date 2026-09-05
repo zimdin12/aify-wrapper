@@ -398,12 +398,23 @@ export CLAUDE_CODE_DISABLE_AGENT_VIEW="${CLAUDE_CODE_DISABLE_AGENT_VIEW:-1}"
 # a backing process (no human at the keyboard); same wrapper, same
 # channels, but the service knows there's no operator typing in this
 # session.
+# INFERRED, NOT CHOSEN -- and that distinction has to survive a `--shared` relaunch (R9-M10,
+# external review 2026-09-06). This resolves from THIS process's stdin, and the `--shared` block
+# below hands the session to aify-env, which forwards the whole environment to a host that runs the
+# launcher IN A PTY. So a non-TTY caller -- a script, a CI job, a non-interactive shell -- inferred
+# `managed` here and pinned it onto a relaunch where `[ -t 0 ]` would have said `resident`. The
+# service then treats a session with a real PTY as a backing process with no operator at it.
+#
+# An EXPLICIT choice (--resident, --managed, or AIFY_SESSION_MODE in the environment) must still
+# travel, which is why this marks the inference rather than dropping the value outright.
+AIFY_SESSION_MODE_INFERRED=0
 if [ -z "$CLAUDE_AIFY_SESSION_MODE" ]; then
   if [ -t 0 ]; then
     CLAUDE_AIFY_SESSION_MODE="resident"
   else
     CLAUDE_AIFY_SESSION_MODE="managed"
   fi
+  AIFY_SESSION_MODE_INFERRED=1
 fi
 export AIFY_SESSION_MODE="$CLAUDE_AIFY_SESSION_MODE"
 # claude-aify ALWAYS activates aify-comms-channel as a dev channel below
@@ -623,6 +634,11 @@ if [ "$CLAUDE_AIFY_SHARED" = true ]; then
   # would drift. Cleared afterwards so an INT between here and the exec cannot run it twice.
   rm -f "$AIFY_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null
   trap - EXIT
+  # AN INFERRED SESSION MODE DOES NOT CROSS THIS BOUNDARY (R9-M10). It was resolved from THIS
+  # process's stdin, and the host will run the launcher in a PTY where the answer differs. Dropping
+  # it lets the relaunched wrapper infer from the terminal it actually gets; an explicit --resident,
+  # --managed or AIFY_SESSION_MODE is left alone and still travels.
+  [ "${AIFY_SESSION_MODE_INFERRED:-0}" = 1 ] && unset AIFY_SESSION_MODE
   exec aify-env run     --service "@@SERVICE_NAME@@"     --launcher "$0"     --label "${CLAUDE_AIFY_AGENT_ID:-}"     -- "${CLAUDE_AIFY_PASSTHRU[@]}"
 fi
 

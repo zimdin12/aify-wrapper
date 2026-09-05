@@ -270,3 +270,41 @@ test("NEGATIVE CONTROL: without --shared, a resume still runs locally", () => {
     + "past --shared and now swallows an ordinary resume.",
   );
 });
+
+// ── R9-M10: an INFERRED session mode must not cross the --shared boundary ────────────────────
+//
+// External review 2026-09-06. Every wrapper resolves `AIFY_SESSION_MODE` from its OWN stdin when
+// nothing set it explicitly, and exports it. The `--shared` block then hands the session to aify-env,
+// which forwards the whole environment to a host that runs the launcher IN A PTY. So a non-TTY
+// caller -- a script, a CI job, a non-interactive shell -- inferred `managed` and pinned it onto a
+// relaunch where `[ -t 0 ]` would have answered `resident`, and the service treated a session with a
+// real PTY as a backing process with nobody at it.
+//
+// DERIVED OVER EVERY LAUNCHER, so a fifth wrapper is covered the day it lands rather than the day
+// somebody remembers. All four carry the same block by hand, which is exactly the shape that rots.
+
+test("EVERY LAUNCHER DROPS AN INFERRED SESSION MODE BEFORE HANDING OVER", () => {
+  const { rendered, dir } = world();
+  const missing = [];
+  for (const name of rendered) {
+    const text = fs.readFileSync(path.join(dir, name), "utf8");
+    const shared = text.slice(text.indexOf("exec aify-env run") - 2000, text.indexOf("exec aify-env run"));
+    if (!/AIFY_SESSION_MODE_INFERRED/.test(shared)) missing.push(name);
+  }
+  assert.deepEqual(missing, [],
+    `${missing.join(", ")} hand an inferred session mode to the host. It was resolved from this `
+    + "process's stdin, and the host runs the launcher in a PTY where the answer differs.");
+});
+
+test("...and an EXPLICIT session mode still travels", () => {
+  // The control. Dropping the value outright would also discard `--managed`, which is a choice the
+  // operator made and the host cannot re-derive.
+  const { rendered, dir } = world();
+  for (const name of rendered) {
+    const text = fs.readFileSync(path.join(dir, name), "utf8");
+    assert.match(text, /AIFY_SESSION_MODE_INFERRED=1/,
+      `${name} never marks the inference, so the guard cannot tell an inferred mode from a chosen one`);
+    assert.doesNotMatch(text, /^\s*unset AIFY_SESSION_MODE\s*$/m,
+      `${name} unsets the mode unconditionally, which discards an explicit --managed`);
+  }
+});
