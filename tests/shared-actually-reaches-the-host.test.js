@@ -65,9 +65,52 @@ function world() {
   // "all four are broken" that was really one wrong path separator.
   fs.writeFileSync(path.join(bin, "aify-env-stub.sh"),
     `#!/usr/bin/env bash${LF}printf '%s\\n' "$*" >> "$AIFY_TEST_MARKER"${LF}exit 0${LF}`);
-  for (const name of ["claude", "codex", "hermes", "pi", "opencode"]) {
+  for (const name of ["claude", "hermes", "pi", "opencode"]) {
     fs.writeFileSync(path.join(bin, name), `#!/usr/bin/env bash${LF}exit 0${LF}`);
   }
+
+  // CODEX GETS A STUB THAT ACTUALLY LISTENS, which is what makes it measurable at all.
+  //
+  // `codex-aify` starts `codex app-server --listen ws://127.0.0.1:<port>` and then `wait_for_port`s
+  // it, exiting 1 when nothing answers. An `exit 0` stub therefore failed the BARE case, so codex
+  // fell out of `drivable()` and every assertion in this file silently skipped it -- which is how
+  // R9-H4 (`--shared --resume` running locally) lived in a launcher this file was watching. An
+  // external reviewer found it by hand and noted this harness "cannot see codex".
+  //
+  // The stub does the minimum that makes the wrapper proceed: on `app-server`, open a TCP socket on
+  // the port named by `--listen` and hold it until killed. Every other invocation exits 0 like the
+  // rest. It speaks no protocol, because nothing here asks it to.
+  // The listener lives in its OWN file rather than inside `node -e`. A one-liner would need quotes
+  // nested three deep (JS inside bash inside JS) and the first attempt produced an octal escape that
+  // failed to parse. A separate file has no nesting to get wrong.
+  fs.writeFileSync(path.join(bin, "app-server-stub.mjs"), [
+    'import net from "node:net";',
+    'const port = Number(String(process.argv[2] || "").split(":").pop());',
+    'net.createServer().listen(port, "127.0.0.1");',
+    "setInterval(() => {}, 1e9);",
+    "",
+  ].join(LF));
+  fs.writeFileSync(path.join(bin, "codex"), [
+    "#!/usr/bin/env bash",
+    "IS_SERVER=",
+    "LISTEN=",
+    "PREV=",
+    'for a in "$@"; do',
+    '  [ "$a" = "app-server" ] && IS_SERVER=1',
+    '  [ "$PREV" = "--listen" ] && LISTEN="$a"',
+    '  PREV="$a"',
+    "done",
+    'if [ -n "$IS_SERVER" ] && [ -n "$LISTEN" ]; then',
+    '  exec node "$(dirname "$0")/app-server-stub.mjs" "$LISTEN"',
+    "fi",
+    // EVERY OTHER INVOCATION IS RECORDED. Without this the negative control below could only say
+    // "aify-env was not called", which is equally true of a wrapper that resumed correctly and one
+    // that dropped the resume and started a fresh session -- and a mutation that skipped the resume
+    // block entirely passed it. Recording the args is what lets the control tell those apart.
+    '[ -n "${AIFY_CODEX_MARKER:-}" ] && printf \'%s\\n\' "$*" >> "$AIFY_CODEX_MARKER"',
+    "exit 0",
+    "",
+  ].join(LF));
   fs.copyFileSync(path.join(bin, "aify-env-stub.sh"), path.join(bin, "aify-env"));
 
   WORLD = { dir, bin, rendered, marker: path.join(dir, "asked.txt") };
@@ -149,4 +192,81 @@ test("what the harness could NOT drive is named, never silently passed over", ()
     `only ${can.length} of ${rendered.length} launcher(s) could be driven here `
     + `(unmeasured: ${unmeasured.join(", ") || "none"}). Below two, this file is not evidence about `
     + "the fleet -- it is evidence about one launcher.");
+});
+
+// ── R9-H4: `--shared --resume` must not resume in THIS terminal ──────────────────────────────
+//
+// External review, 2026-09-06. R8-H6's shape, in the launcher beside the one that was fixed.
+// `codex-aify` looks for the saved session and, when it finds one, runs `codex ... resume` here and
+// `exit $?`s -- eighteen lines above the `--shared` block, which therefore never executes. aify-env
+// was never called and nothing was printed, so the operator gets a working codex that is simply not
+// shared and no indication the flag was ignored. hermes learned this at its own agent-id branch.
+//
+// THE SESSION HAS TO EXIST for the bug to fire: with no saved session the lookup misses, the wrapper
+// falls through to "starting fresh codex" and reaches the shared block anyway. A test that forgot to
+// seed one would pass against the broken wrapper.
+
+/** Seed a saved codex session inside the sealed HOME so the resume lookup finds it. */
+function seedCodexSession(handle) {
+  const { dir } = world();
+  const sessions = path.join(dir, ".codex", "sessions", handle);
+  fs.mkdirSync(sessions, { recursive: true });
+  return handle;
+}
+
+test("CODEX --shared --resume HANDS THE SESSION TO THE HOST, not to this terminal", () => {
+  const can = drivable();
+  // Scoped like every other assertion here, but LOUD about it: codex was unmeasured in this file
+  // until its stub learned to listen, and that silence is how R9-H4 lived in a launcher this file
+  // was supposedly watching.
+  assert.ok(
+    can.includes("codex-aify"),
+    "codex-aify is not drivable here, so this file cannot see the defect R9-H4 names. That was the "
+    + "state it shipped in; the app-server stub exists to end it.",
+  );
+
+  const handle = seedCodexSession("sess-r9h4-shared");
+  const { asked, call } = askedTheHost("codex-aify", ["--resume", handle]);
+  assert.ok(
+    asked,
+    "codex-aify --shared --resume <id> resumed LOCALLY and exited before the --shared block. "
+    + "aify-env was never asked to take the session.",
+  );
+  assert.match(call, new RegExp(handle), "the handle must travel to the host, or it resumes nothing");
+});
+
+test("NEGATIVE CONTROL: without --shared, a resume still runs locally", () => {
+  // The guard must be about `--shared` and nothing else. If this also reached the host, the fix
+  // would have broken the ordinary resume rather than fixed the shared one.
+  const { dir, bin, marker } = world();
+  const handle = seedCodexSession("sess-r9h4-local");
+  const codexMarker = path.join(dir, "codex-calls.txt");
+  for (const f of [marker, codexMarker]) if (fs.existsSync(f)) fs.rmSync(f);
+  const script = `
+    BIN=$(cd ${JSON.stringify(posix(bin))} && pwd)
+    DIR=$(cd ${JSON.stringify(posix(dir))} && pwd)
+    NODE=$(dirname "$(command -v node)")
+    chmod +x "$BIN"/* "$DIR"/*-aify 2>/dev/null
+    env -i PATH="$BIN:$NODE:/usr/bin:/bin" HOME="$DIR" TERM=dumb \
+      AIFY_TEST_MARKER="$DIR/asked.txt" \
+      AIFY_CODEX_MARKER="$DIR/codex-calls.txt" \
+      AIFY_COMMS_URL=http://127.0.0.2:1 \
+      bash "$DIR/codex-aify" '--resume' '${handle}' >/dev/null 2>&1
+    exit 0
+  `;
+  spawnSync("bash", ["-c", script], { encoding: "utf8", timeout: 120_000 });
+
+  assert.ok(
+    !fs.existsSync(marker) || fs.readFileSync(marker, "utf8").trim().length === 0,
+    "an ordinary --resume was handed to the host; the guard is keying on something other than --shared",
+  );
+  // AND IT ACTUALLY RESUMED. "aify-env was not called" is equally true of a wrapper that dropped the
+  // resume and started fresh, so the guard has to be shown NOT to have swallowed the local path.
+  const calls = fs.existsSync(codexMarker) ? fs.readFileSync(codexMarker, "utf8") : "";
+  assert.match(
+    calls,
+    new RegExp(`resume[^${LF}]*${handle}`),
+    `the local resume never ran: codex was invoked as ${JSON.stringify(calls)}. The guard widened `
+    + "past --shared and now swallows an ordinary resume.",
+  );
 });

@@ -406,7 +406,17 @@ if [ -n "${CODEX_RESUME_HANDLE:-}" ]; then
   fi
 fi
 
-if [ -n "${CODEX_RESUME_HANDLE:-}" ]; then
+# `--shared` OUTRANKS A LOCAL RESUME, and this guard is R9-H4 (external review, 2026-09-06).
+#
+# This is R8-H6's defect in the wrapper beside it: hermes learned it at line 573 and codex did not.
+# `codex-aify --shared --resume <id>` found the saved session, ran it in THIS terminal and
+# `exit $?`d -- eighteen lines above the `--shared` block, which therefore never executed. aify-env
+# was never called and nothing was written to stderr, so the operator got a working codex that was
+# simply not shared, with no indication that the flag had been ignored. Proven with a stub.
+#
+# The handle is NOT dropped: it is already in CODEX_AIFY_PASSTHRU, so the host resumes the same
+# session on the far side. What changes is WHERE it resumes.
+if [ -n "${CODEX_RESUME_HANDLE:-}" ] && [ "$CODEX_AIFY_SHARED" != true ]; then
   if [ -n "$CODEX_SESSION_FOUND" ]; then
     run_codex_foreground --remote "$APP_SERVER_URL" "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_ARGS[@]}" resume --include-non-interactive "$CODEX_RESUME_HANDLE"
     exit $?
