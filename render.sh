@@ -13,6 +13,21 @@
 
 set -euo pipefail
 
+# AN & IN A VALUE IS A LITERAL &, NOT THE MATCHED TEXT (R9-M12, external review 2026-09-06).
+#
+# bash 5.2 added `patsub_replacement`, ON BY DEFAULT, which makes an unquoted `&` in the replacement
+# half of `${var//pat/repl}` expand to whatever the pattern matched. So rendering an endpoint that
+# carries a query string -- `http://host/p?a=1&b=2` -- produced `http://host/p?a=1@@ENDPOINT@@b=2`.
+# The placeholder was still there afterwards, so the unsubstituted-placeholder check below fired and
+# exited 78 blaming the TEMPLATE for a value the renderer had mangled. That message sends the reader
+# to the wrong file.
+#
+# Turned off rather than escaped at each site: escaping is a rule every future substitution has to
+# remember, and this shell option is the thing that made a plain value special in the first place.
+# Guarded because bash 5.1 and earlier do not know the option and `shopt -u` on an unknown name is
+# an error under `set -e`.
+shopt -u patsub_replacement 2>/dev/null || true
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ "$#" -lt 2 ]; then
