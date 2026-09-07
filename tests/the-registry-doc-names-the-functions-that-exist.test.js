@@ -3,8 +3,11 @@
 //
 // MEASURED 2026-09-07, and it had drifted in BOTH directions at once:
 //
-//   * it documented `endpointFor(registry, name)`, which no version of this module has ever
-//     exported -- a reader following the doc calls something that is not there;
+//   * it documented `endpointFor(registry, name)`, which this module no longer exports -- a reader
+//     following the doc calls something that is not there. It DID exist once: added in `c07734f`,
+//     deleted in `4bec3c6`, both ancestors of main. I first wrote that it had never existed, which
+//     review checked against the history and disproved. Removing the stale entry was right; the
+//     explanation for why it was stale was not.
 //   * it omitted `REGISTRY_VERSION` and the whole strict-MCP half (four functions), so a reader
 //     never learned that half existed.
 //
@@ -56,7 +59,7 @@ test("POSITIVE CONTROL: the block is read, and it names things", () => {
 test("NEGATIVE CONTROL: the parse can say a name is absent", () => {
   // A membership test that answered yes to everything would make the whole file vacuous.
   assert.equal(documentedNames().has("endpointFor"), false,
-    "`endpointFor` is documented again -- it has never been exported by this module");
+    "`endpointFor` is documented again -- it was removed from this module in 4bec3c6");
 });
 
 test("every documented name is exported", () => {

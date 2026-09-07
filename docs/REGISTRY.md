@@ -77,9 +77,15 @@ symptom as far as possible from the cause.
 
 ## API
 
-`lib/registry.mjs`, pure — text in, values out, no filesystem. Nothing here reads the environment on
-its own: `strictMcpSecretProblem` takes it as a parameter, defaulting to `process.env` so a caller
-that means the real one does not have to say so.
+`lib/registry.mjs` touches no filesystem. It is NOT free of the environment, and the correction is
+worth stating because this paragraph claimed otherwise twice: `mcpEntriesFor` binds each service's
+`keyEnv` names by reading `process.env` directly, so the same registry yields different entries in
+different environments — and every strict-fragment consumer inherits that, since they are built from
+those entries. `strictMcpSecretProblem` is the one that takes the environment as a parameter,
+defaulting to `process.env`.
+
+Verified by review with an identical synthetic registry and a changed synthetic environment producing
+changed output.
 
 ```js
 REGISTRY_VERSION                 // the schema version this module speaks
@@ -87,13 +93,14 @@ parseRegistry(text)              // -> {ok, registry?, errors[]}
 mcpEntriesFor(registry)          // -> [{name, command, args, env}]
 fingerprint(registry)            // -> stable short digest
 strictMcpEntriesFor(registry)    // -> the same entries, strict-MCP shaped
-strictMcpSecretProblem(registry, env = process.env)  // -> string | null
+strictMcpSecretProblem(registry, env = process.env)  // -> a reason, or "" when there is none
 strictMcpFragment(registry)      // -> the config fragment a strict-MCP client wants
 strictMcpFragmentBase64(registry)// -> that fragment, base64, for an argv
 ```
 
 **This block is checked against the module's real exports** by
 `tests/the-registry-doc-names-the-functions-that-exist.test.js`. It had drifted BOTH ways before that
-test existed: it documented `endpointFor`, which no version of this module has ever exported, and it
+test existed: it documented `endpointFor`, which this module EXPORTED once and no longer does — added
+in `c07734f` and deleted in `4bec3c6`, both ancestors of main — and it
 omitted five functions that do exist. A reader following it would have called something that is not
 there and never learned about the strict-MCP half.
