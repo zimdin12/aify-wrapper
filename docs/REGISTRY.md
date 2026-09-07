@@ -77,11 +77,23 @@ symptom as far as possible from the cause.
 
 ## API
 
-`lib/registry.mjs`, pure — text in, values out, no filesystem and no environment.
+`lib/registry.mjs`, pure — text in, values out, no filesystem. Nothing here reads the environment on
+its own: `strictMcpSecretProblem` takes it as a parameter, defaulting to `process.env` so a caller
+that means the real one does not have to say so.
 
 ```js
+REGISTRY_VERSION                 // the schema version this module speaks
 parseRegistry(text)              // -> {ok, registry?, errors[]}
-endpointFor(registry, name)      // -> string | null
 mcpEntriesFor(registry)          // -> [{name, command, args, env}]
 fingerprint(registry)            // -> stable short digest
+strictMcpEntriesFor(registry)    // -> the same entries, strict-MCP shaped
+strictMcpSecretProblem(registry, env = process.env)  // -> string | null
+strictMcpFragment(registry)      // -> the config fragment a strict-MCP client wants
+strictMcpFragmentBase64(registry)// -> that fragment, base64, for an argv
 ```
+
+**This block is checked against the module's real exports** by
+`tests/the-registry-doc-names-the-functions-that-exist.test.js`. It had drifted BOTH ways before that
+test existed: it documented `endpointFor`, which no version of this module has ever exported, and it
+omitted five functions that do exist. A reader following it would have called something that is not
+there and never learned about the strict-MCP half.
