@@ -288,6 +288,16 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ]; then
   # (the wrapper runs in the agent's working directory).
   export AIFY_AGENT_CWD="${AIFY_AGENT_CWD:-$PWD}"
 fi
+# LOCAL PATCH (temporary, until upstream): a dashboard Reset sets AIFY_HERMES_FRESH_CONTEXT=1 but this
+# launcher never read it, so a Reset resumed the old (often dead) session. Mint an id hermes has never
+# seen -- a missing --resume id makes hermes start a NEW session under it -- and drop the session marker
+# so the active_list / marker fallback cannot resurrect the old one.
+if [ "${AIFY_HERMES_FRESH_CONTEXT:-}" = "1" ]; then
+  HERMES_SESSION_HANDLE="$(date -u +%Y%m%d_%H%M%S)_$(od -An -N3 -tx1 /dev/urandom | tr -d ' \n')"
+  HERMES_EXPLICIT_SESSION_HANDLE="true"
+  rm -f "${TEMP:-${TMP:-/tmp}}/aify-hermes-session-${HERMES_AIFY_AGENT_ID:-}" 2>/dev/null || true
+  echo "[hermes-aify] fresh context requested: starting a NEW hermes session '$HERMES_SESSION_HANDLE' for agent '${HERMES_AIFY_AGENT_ID:-}'." >&2
+fi
 if [ "$HERMES_EXPLICIT_SESSION_HANDLE" = "true" ] && [ -n "$HERMES_SESSION_HANDLE" ]; then
   export HERMES_SESSION_ID="$HERMES_SESSION_HANDLE"
   export AIFY_SESSION_HANDLE="$HERMES_SESSION_HANDLE"
@@ -497,7 +507,7 @@ aify_hermes_kill_prior() {
         kill "$_pid" >/dev/null 2>&1 || true
       done
     else
-      pkill -f "hermes-managed-host.js run $agent_id" >/dev/null 2>&1 || true
+      pkill -f "hermes-managed-host.js run $agent_id$" >/dev/null 2>&1 || true
     fi
     # Best-effort: reap any orphaned gateway host left listening on this agent's
     # dashboard/api port (a prior SIGKILL bypasses the loop's teardown handler).
@@ -509,7 +519,7 @@ aify_hermes_kill_prior() {
       local host_port
       host_port="$(node -e 'import("'"$AIFY_HERMES_STDIO_DIR"'/hermes-endpoint.js").then(m=>process.stdout.write(String(m.agentPort(process.argv[1]))))' "$agent_id" 2>/dev/null || true)"
       if [ -n "$host_port" ]; then
-        lsof -ti tcp:"$host_port" 2>/dev/null | xargs kill >/dev/null 2>&1 || true
+        lsof -ti tcp:"$host_port" 2>/dev/null | xargs -r ps -o pid=,args= -p 2>/dev/null | awk '/hermes dashboard --port/ {print $1}' | xargs -r kill >/dev/null 2>&1 || true
       fi
     fi
     # Managed visible-TUI leak fix (MC3, 2026-06-06): reap a prior
