@@ -12,6 +12,42 @@ Two separate things the operator asked for, which need different mechanisms:
 vendored `libghostty-vt` needs Zig 0.15.2 to build, and Herdr's own build prints an external
 contributor policy. Everything below uses the published plugin surface.
 
+## Using it
+
+**One install step, once per machine.** Nothing restores until the plugin is linked, and until then
+everything else looks like it is working:
+
+```bash
+aify-herdr-pane install          # links the plugin into your Herdr
+herdr plugin list                # should show: aify.wrappers (aify wrappers) enabled
+```
+
+**Then there is nothing to do.** Start `claude-aify` or `hermes-aify` in a Herdr pane as usual. The
+wrapper labels its own pane and records the exact command; after a reboot, Herdr restores the session
+and runs the plugin's startup hook, which puts each wrapper back into its own pane. Panes running a
+bare `claude` or `hermes` keep Herdr's native resume and are not touched.
+
+```bash
+aify-herdr-pane status           # what is recorded, and which pane each record is in
+aify-herdr-pane restore          # run the restore now instead of waiting for a restart
+herdr plugin unlink aify.wrappers   # undo the install
+```
+
+**The isolated instance is a separate command**, and it does not need the plugin:
+
+```bash
+herdr-aify                       # an isolated Herdr with a dedicated aify-env in its first space
+herdr-aify --status              # what previous invocations left on this host
+```
+
+Closing `herdr-aify` ends that Herdr, its dedicated env and its workers. A new invocation gets a
+fresh UUID and the daemon refuses a context whose receipts already exist, so it cannot resurrect the
+previous invocation's agents. Your ordinary Herdr is untouched by it: different socket, different
+config and state roots.
+
+**Where things live.** Records: `~/.aify/herdr/panes.json` (`AIFY_HERDR_LEDGER` moves it).
+Invocations: `~/.aify/herdr/invocations/<uuid>/`.
+
 ## What stock Herdr actually gives us
 
 Read out of `herdr-upstream` at `b99002ac` (v0.9.0), not assumed:
