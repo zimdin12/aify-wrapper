@@ -22,8 +22,8 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { spawn, spawnSync } from "node:child_process";
-import { pathToFileURL } from "node:url";
 
+import { isMainModule } from "../lib/main-module.mjs";
 import { herdr } from "../lib/herdr-cli.mjs";
 import { HerdrOwner, clearProfileOwner, profileOwnerState, writeProfileOwner } from "../lib/herdr-owner.mjs";
 import { HerdrAifyInstance } from "../lib/herdr-supervisor.mjs";
@@ -197,7 +197,7 @@ async function main(argv) {
 
 export { run, processes };
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
   // A THROW FROM `run()` USED TO SURFACE AS A RAW UNHANDLED REJECTION. The reachable window is real:
   // `owner.listen()` rejects on a bind failure, and `writeProfileOwner` can throw — both AFTER the
   // owner is serving and BEFORE the signal handlers exist, which is the worst moment to exit with a

@@ -211,6 +211,41 @@ node --test tests/*.test.js
 They render each launcher and run it, rather than reading the templates. A wrapper's failure mode is
 silence, so a test that only reads text cannot see it.
 
+## Herdr
+
+Two commands and a plugin, so agents launched through these wrappers survive a machine restart as
+themselves. Full design, the measurements behind it and the limits are in [HERDR.md](HERDR.md).
+
+**Ordinary Herdr keeps aify agents.** Start `claude-aify` in a Herdr pane, reboot, and it comes back
+as `claude-aify` rather than as a bare `claude`. Panes running a bare agent keep Herdr's own native
+resume and are not touched.
+
+```bash
+aify-herdr-pane install          # link the plugin — once per machine, nothing restores without it
+aify-herdr-pane status           # what is recorded, and which pane each record is in
+aify-herdr-pane restore          # run the restore now instead of waiting for a restart
+herdr plugin unlink aify.wrappers
+```
+
+The wrappers do the rest by themselves: each labels its own pane and records the exact command it was
+started with, gated on `HERDR_ENV` so an ordinary terminal launch pays nothing. It can never fail a
+launch, and its diagnostics go to `~/.aify/herdr/claim.log` rather than to nowhere.
+
+**`herdr-aify` is a separate, isolated instance** — its own Herdr socket and config roots, with a
+dedicated `aify-env` in its first space. Closing the command ends that Herdr, the dedicated env and
+its workers, and a later invocation cannot adopt the previous one's processes.
+
+```bash
+herdr-aify                       # start one
+herdr-aify --status              # what previous invocations left on this host
+```
+
+It does not touch an ordinary Herdr on the same machine, and it does not need the plugin.
+
+**If a command here prints nothing, the package needs re-linking.** npm creates bin shims at install
+time, so a command added since the last `npm link` has none — and both of these were installed and
+INERT for a day because of it. `npm link` in this checkout, or reinstall the package.
+
 ## Checking what is installed
 
 ```bash

@@ -21,8 +21,9 @@
 
 import { randomUUID } from "node:crypto";
 import process from "node:process";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
+import { isMainModule } from "../lib/main-module.mjs";
 import { herdr, listPanes } from "../lib/herdr-cli.mjs";
 import { paneLabel, parsePaneLabel, readPaneContext, renamePaneArgv, reportAgentArgv } from "../lib/herdr-pane.mjs";
 import { replayCommand } from "../lib/herdr-replay.mjs";
@@ -286,8 +287,12 @@ function main(argv) {
     return 0;
   }
 
+  // `--help` IS A REQUEST, NOT A MISTAKE, and its sibling command already treats it as one. Exiting
+  // 2 on it made an honest question look like a usage error, and made a symlink-install check that
+  // simply asked both commands for help read as a broken install.
+  const asked = options.command === "--help" || options.command === "-h";
   process.stdout.write("usage: aify-herdr-pane <install | claim --wrapper <name> -- <argv...> | restore | status>\n");
-  return options.command ? 2 : 0;
+  return options.command && !asked ? 2 : 0;
 }
 
 export { claim, restore, status, installPlugin, parseArgs, CLAIM_TIMEOUT_MS };
@@ -295,6 +300,6 @@ export { claim, restore, status, installPlugin, parseArgs, CLAIM_TIMEOUT_MS };
 // RUN ONLY WHEN INVOKED AS THE PROGRAM. Comparing `import.meta.url` to a hand-built `file://` string
 // is wrong on Windows, where the real URL is `file:///C:/...`; `pathToFileURL` produces the spelling
 // Node itself used, so importing this module from a test stays inert.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url)) {
   process.exitCode = main(process.argv.slice(2));
 }
