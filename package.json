@@ -6,7 +6,8 @@
   "bin": {
     "aify-wrapper-install": "./install.sh",
     "aify-wrapper-check": "./bin/aify-wrapper-check.mjs",
-    "aify-herdr-pane": "./bin/aify-herdr-pane.mjs"
+    "aify-herdr-pane": "./bin/aify-herdr-pane.mjs",
+    "herdr-aify": "./bin/herdr-aify.mjs"
   },
   "files": [
     "wrappers/",

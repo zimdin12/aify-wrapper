@@ -135,7 +135,18 @@ test("pruning keeps what live panes still claim and drops the rest", () => {
 });
 
 test("the default ledger path sits under the aify home, not in temp", () => {
-  const file = defaultLedgerPath({ home: path.join("C:", "Users", "Someone") });
+  const file = defaultLedgerPath({ home: path.join("C:", "Users", "Someone"), env: {} });
   assert.ok(file.includes(".aify"));
   assert.ok(file.endsWith("panes.json"));
+});
+
+test("an operator can point the ledger elsewhere, and an empty override is not a location", () => {
+  const home = path.join("C:", "Users", "Someone");
+  const moved = defaultLedgerPath({ home, env: { AIFY_HERDR_LEDGER: path.join("D:", "state", "panes.json") } });
+  assert.equal(moved, path.resolve(path.join("D:", "state", "panes.json")));
+  // A variable that is set but empty is the shape of an unset one, and must not resolve to the
+  // process's current directory -- which is where `path.resolve("")` would land it.
+  for (const blank of ["", "   "]) {
+    assert.ok(defaultLedgerPath({ home, env: { AIFY_HERDR_LEDGER: blank } }).includes(".aify"));
+  }
 });

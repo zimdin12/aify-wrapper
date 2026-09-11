@@ -82,6 +82,34 @@ whole mechanism, and it is now a measurement rather than a reading.
    label to the literal string `--label …`, which is what happened on the first hand-driven attempt
    and persisted that way into a real `session.json`.
 
+## Proven end to end, 2026-09-12
+
+The lever above is the mechanism; this is the whole feature working, in one run against a real Herdr
+with an isolated profile and an isolated ledger. No aify-env was involved, so nothing could reach the
+operator's fleet.
+
+A bare-agent pane and a wrapper pane, side by side. The wrapper claimed its own pane exactly as the
+template does; the server was stopped and started again, which is a real session restore:
+
+```
+before   w1:p1  (bare)     session={"source":"herdr:claude", ... "native-session"}
+         w1:p2  (wrapper)  label=aify:claude-aify:29fcd8b604c2   session=null
+after    w1:p1             agent=claude   session=<the same one>      <- native resume kept
+         w1:p2             agent=None     session=null                <- empty shell, label intact
+restore  restored 1 pane(s):  w1:p2 <- echo RESTORED_BY_THE_PLUGIN
+pane     PS ...> echo RESTORED_BY_THE_PLUGIN
+         RESTORED_BY_THE_PLUGIN
+```
+
+The bare pane is the negative control and it is in the same run: the restore pass reported one pane,
+not two, and left the natively-resumed pane untouched. That is the contract the operator set —
+ordinary Herdr keeps working exactly as it did — measured rather than asserted.
+
+**What is still ASSUMED.** The `herdr-aify` command has not been run end to end, because doing so
+starts a real aify-env and starting one is the operator's action: supersession there reaps the
+predecessor's workers, and that has taken this fleet down before. Its isolated-Herdr half is proven
+(the runs above all used it); its dedicated-daemon half passes in tests and has never been executed.
+
 ## How the restore is completed
 
 There is **no plugin metadata on a pane**, and `launch_argv` is only replayed `if was_imported`, so
@@ -122,11 +150,21 @@ The launcher owns the lifetime; `aify-env` owns the workers. That split is the o
 matches `docs/AIFY_ENV_BOUNDARY.md`.
 
 ```
-herdr-aify (aify-wrapper)          owns a non-breakaway Windows Job, kill-on-close
+herdr-aify (aify-wrapper)          owns the lifetime; teardown stops the server
   Herdr server                     isolated: own socket, own XDG config/state roots
     space 1: aify-env daemon       the ACTUAL dedicated daemon, --instance-context
     space N: attached workers      opened by the daemon through the plugin API
 ```
+
+**It is NOT a Windows Job Object, and that was claimed here before it was built.** A real
+kill-on-close Job needs a native addon and this package has no native dependency. What takes the
+tree down is the structure instead: the dedicated aify-env runs in a PANE of this Herdr and its
+workers are its own children, so stopping this Herdr ends the panes, which ends the env, which ends
+the workers. A tree kill is the backstop for a server that will not stop, not the mechanism.
+
+The honest limit: a hard kill of the launcher itself can leave processes behind. What it can never do
+is let the NEXT invocation adopt them — that half is enforced by the filesystem, and it is the half
+the operator asked for by name.
 
 - The invocation is minted by `lib/herdr-instance.mjs` and authorized by `lib/herdr-owner.mjs`,
   which already exist: the daemon refuses to start until the owner answers its challenge, and a
