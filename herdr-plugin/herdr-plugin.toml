@@ -1,0 +1,29 @@
+id = "aify.wrappers"
+name = "aify wrappers"
+version = "0.6.2"
+min_herdr_version = "0.9.0"
+description = "Bring claude-aify and hermes-aify panes back after Herdr restores a session."
+platforms = ["linux", "macos", "windows"]
+
+# Runs once after Herdr restores the session, and again when a new server takes over during a live
+# handoff. That is exactly the moment an aify pane exists as an empty shell: Herdr declined to plan a
+# resume for it -- because the agent was reported under a source its allowlist does not contain --
+# so the pane came back carrying its cwd and its label and nothing else.
+#
+# Panes running bare `claude` or `hermes` are not touched. They keep Herdr's own native resume, which
+# is the half of this integration that has to stay exactly as it was.
+[[startup]]
+command = ["node", "../bin/aify-herdr-pane.mjs", "restore"]
+
+# The same pass on demand, for an operator who wants it now rather than at the next start.
+[[actions]]
+id = "restore"
+title = "Restore aify agents"
+contexts = ["workspace"]
+command = ["node", "../bin/aify-herdr-pane.mjs", "restore"]
+
+[[actions]]
+id = "status"
+title = "Show aify pane records"
+contexts = ["workspace"]
+command = ["node", "../bin/aify-herdr-pane.mjs", "status"]

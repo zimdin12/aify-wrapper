@@ -16,6 +16,42 @@
 #|   @@ + SCRIPT_DIR@@   the repo checkout
 set -euo pipefail
 
+# ── Herdr: what this invocation was, captured before anything consumes it ───
+#
+# A Herdr restore replays this array VERBATIM. It has to be what the operator actually typed rather
+# than a command rebuilt later from remembered flags, because a rebuilt command drifts from the real
+# one the moment either side changes -- and the drift would only show up after a reboot.
+AIFY_HERDR_ARGV=("$0" "$@")
+
+# ── Herdr: claim this pane so it comes back as this wrapper, not as a bare agent ───
+#
+# WHAT IT BUYS. Start this wrapper in a Herdr pane, restart the machine, and the pane comes back
+# running this wrapper again instead of the bare CLI underneath it.
+#
+# HOW, measured against Herdr 0.9.0 rather than assumed: the claim labels the pane and reports the
+# agent under the source `herdr:aify`, which is NOT one of the (source, agent) pairs Herdr's own
+# allowlist contains. Herdr therefore persists no agent session for this pane, and on restore leaves
+# it an empty shell carrying its label -- which the aify plugin's startup hook matches against its
+# ledger and fills with this exact command. Panes running a bare `claude` or `hermes` are untouched
+# and keep Herdr's native resume, which is the half of the contract that must not regress.
+#
+# GATED ON HERDR_ENV so an ordinary terminal launch pays nothing: that variable is set only inside a
+# pane, and without it this block never starts node at all.
+#
+# IT CAN NEVER FAIL THE LAUNCH. This runs on the path of the operator starting an agent, so a Herdr
+# that is busy, mid-handoff or gone costs the pane its label and never costs the agent its start.
+if [ "${HERDR_ENV:-}" = "1" ]; then
+  # `@@BRIDGE_DIR@@` is substituted MSYS-style (/c/Users/...), which native Windows node cannot open.
+  # The same conversion the strict-MCP branch does, carried here so this block stays self-contained
+  # and identical in all four templates.
+  if command -v cygpath >/dev/null 2>&1; then
+    AIFY_HERDR_HELPER="$(cygpath -m "@@BRIDGE_DIR@@")/node_modules/aify-wrapper/bin/aify-herdr-pane.mjs"
+  else
+    AIFY_HERDR_HELPER="@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-herdr-pane.mjs"
+  fi
+  node "$AIFY_HERDR_HELPER" claim --wrapper "${0##*/}" -- "${AIFY_HERDR_ARGV[@]}" 2>/dev/null || true
+fi
+
 # The version this wrapper was GENERATED from, read by `aify-comms doctor`'s wrapper-current check.
 # Hermes has not moved onto the harness contract yet (it is sequenced last), but it still needs to
 # report a version: without the marker, doctor would report hermes-aify as a pre-contract build

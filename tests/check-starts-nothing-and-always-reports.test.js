@@ -46,8 +46,12 @@ function renderPi() {
   const out = path.join(dir, "pi-aify");
   // EVERY placeholder: render.sh refuses a partial substitution rather than shipping a launcher with
   // `@@...@@` still in it, which is the right call and means a test must supply them all.
+  // BRIDGE_DIR arrived with the Herdr pane claim, which every template now carries. It points at a
+  // directory that does not exist on purpose: this test must never reach the helper it names, and a
+  // path under the throwaway render directory makes that explicit rather than accidental.
   execFileSync("bash", [RENDER, "pi-aify.sh.in", out,
     `ENDPOINT=${NOWHERE}`, "REGISTRY_FINGERPRINT=test-fp", "SERVICE_NAME=aify-comms",
+    `BRIDGE_DIR=${path.join(dir, "no-bridge-here").replace(/\\/g, "/")}`,
     "WRAPPER_VERSION=0.6.0"], { encoding: "utf8" });
   return { dir, out };
 }
