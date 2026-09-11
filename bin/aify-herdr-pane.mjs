@@ -22,7 +22,7 @@
 
 import { randomUUID } from "node:crypto";
 import process from "node:process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { herdr, listPanes } from "../lib/herdr-cli.mjs";
 import { paneLabel, parsePaneLabel, readPaneContext, renamePaneArgv, reportAgentArgv } from "../lib/herdr-pane.mjs";
@@ -96,6 +96,23 @@ function restore({ env = process.env, ledger }) {
   return { restored, why: null };
 }
 
+/**
+ * Link the aify plugin into the operator's Herdr, which is what makes the restore actually run.
+ *
+ * EXPLICIT RATHER THAN AN INSTALLER SIDE EFFECT. This writes into the operator's own Herdr config,
+ * and a launcher install quietly registering a plugin there is a change they did not ask for and
+ * would not find later. `herdr plugin unlink` reverses it.
+ *
+ * WITHOUT THIS STEP EVERYTHING ELSE STILL "WORKS" AND NOTHING RESTORES: wrappers label their panes,
+ * the ledger fills up, Herdr declines the resume exactly as designed -- and no startup hook ever
+ * runs. That is the silent half-installed state this command exists to make a single visible action.
+ */
+function installPlugin({ env = process.env } = {}) {
+  const pluginDir = fileURLToPath(new URL("../herdr-plugin/", import.meta.url));
+  const linked = herdr(["plugin", "link", pluginDir], { env });
+  return { ok: linked.ok, pluginDir, error: linked.error };
+}
+
 function status({ env = process.env, ledger }) {
   const listing = listPanes({ env });
   const live = new Map();
@@ -165,17 +182,28 @@ function main(argv) {
     return 0;
   }
 
+  if (options.command === "install") {
+    const result = installPlugin();
+    if (!result.ok) {
+      note(`could not link the plugin at ${result.pluginDir}: ${result.error}`);
+      return 1;
+    }
+    note(`linked the aify plugin from ${result.pluginDir}`);
+    note("aify panes will be restored at the next Herdr start; 'herdr plugin unlink aify.wrappers' undoes it");
+    return 0;
+  }
+
   if (options.command === "status") {
     const result = status({ ledger });
     process.stdout.write(`${JSON.stringify(result, null, 1)}\n`);
     return 0;
   }
 
-  process.stdout.write("usage: aify-herdr-pane <claim --wrapper <name> -- <argv...> | restore | status>\n");
+  process.stdout.write("usage: aify-herdr-pane <install | claim --wrapper <name> -- <argv...> | restore | status>\n");
   return options.command ? 2 : 0;
 }
 
-export { claim, restore, status, parseArgs };
+export { claim, restore, status, installPlugin, parseArgs };
 
 // RUN ONLY WHEN INVOKED AS THE PROGRAM. Comparing `import.meta.url` to a hand-built `file://` string
 // is wrong on Windows, where the real URL is `file:///C:/...`; `pathToFileURL` produces the spelling

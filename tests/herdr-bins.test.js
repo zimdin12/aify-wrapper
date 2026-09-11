@@ -16,7 +16,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { parseArgs } from "../bin/aify-herdr-pane.mjs";
+import { installPlugin, parseArgs } from "../bin/aify-herdr-pane.mjs";
 import { defaultProfileRoot, invocationsOnDisk } from "../bin/herdr-aify.mjs";
 
 test("the wrapper's own argv is taken verbatim from after the separator", () => {
@@ -62,6 +62,19 @@ test("a spent invocation is reported as spent, which is what makes resurrection 
 
 test("a host that has never run the command reports nothing rather than failing", () => {
   assert.deepEqual(invocationsOnDisk({ profileRoot: path.join(os.tmpdir(), "aify-herdr-never-run-here") }), []);
+});
+
+test("the plugin link points at a directory that really holds the manifest", () => {
+  // THE HALF-INSTALLED STATE THIS GUARDS. Without the link nothing restores, and every other part of
+  // the feature still looks like it is working: panes get labelled, the ledger fills up, Herdr
+  // declines the resume exactly as designed, and no startup hook ever runs. A link pointing at a
+  // directory with no manifest in it produces precisely that state, with a success message.
+  //
+  // No Herdr is contacted: with none running the call fails, and the PATH it resolved is what the
+  // assertion is about.
+  const result = installPlugin({ env: { HERDR_BIN_PATH: path.join(os.tmpdir(), "no-herdr-here") } });
+  assert.ok(fs.existsSync(path.join(result.pluginDir, "herdr-plugin.toml")), `no manifest at ${result.pluginDir}`);
+  assert.equal(result.ok, false, "a missing herdr binary must not report a successful link");
 });
 
 test("invocations live under the aify home, not in temp", () => {
