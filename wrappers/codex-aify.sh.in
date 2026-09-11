@@ -19,6 +19,30 @@ set -euo pipefail
 # one the moment either side changes -- and the drift would only show up after a reboot.
 AIFY_HERDR_ARGV=("$0" "$@")
 
+# ── Herdr: give this agent back the profile the HOST had ───
+#
+# `herdr-aify` runs an isolated Herdr whose XDG roots point inside one invocation's directory, and
+# everything started in a pane inherits them. That isolation is Herdr's, not the agent's: an agent
+# that kept it would write its profile and logs into a directory that is deleted when the invocation
+# ends. The launcher records what the host had, and this puts it back.
+#
+# `${VAR+set}` DISTINGUISHES SET-BUT-EMPTY FROM NEVER-SET, so a host with no XDG_CONFIG_HOME leaves
+# the agent without one instead of being handed an empty string.
+#
+# An ordinary launch never enters this: nothing sets AIFY_HERDR_ISOLATED outside a dedicated instance.
+if [ "${AIFY_HERDR_ISOLATED:-}" = "1" ]; then
+  if [ -n "${AIFY_HERDR_HOST_XDG_CONFIG_HOME+set}" ]; then
+    export XDG_CONFIG_HOME="$AIFY_HERDR_HOST_XDG_CONFIG_HOME"
+  else
+    unset XDG_CONFIG_HOME
+  fi
+  if [ -n "${AIFY_HERDR_HOST_XDG_STATE_HOME+set}" ]; then
+    export XDG_STATE_HOME="$AIFY_HERDR_HOST_XDG_STATE_HOME"
+  else
+    unset XDG_STATE_HOME
+  fi
+fi
+
 # ── Herdr: claim this pane so it comes back as this wrapper, not as a bare agent ───
 #
 # WHAT IT BUYS. Start this wrapper in a Herdr pane, restart the machine, and the pane comes back
@@ -37,15 +61,34 @@ AIFY_HERDR_ARGV=("$0" "$@")
 # IT CAN NEVER FAIL THE LAUNCH. This runs on the path of the operator starting an agent, so a Herdr
 # that is busy, mid-handoff or gone costs the pane its label and never costs the agent its start.
 if [ "${HERDR_ENV:-}" = "1" ]; then
-  # `@@BRIDGE_DIR@@` is substituted MSYS-style (/c/Users/...), which native Windows node cannot open.
-  # The same conversion the strict-MCP branch does, carried here so this block stays self-contained
-  # and identical in all four templates.
+  # THE UNCONVERTED PATH FIRST, because this assignment cannot fail. `@@BRIDGE_DIR@@` is substituted
+  # MSYS-style (/c/Users/...), which native Windows node cannot open, so cygpath converts it where
+  # cygpath exists -- but the conversion only ever REPLACES a value that is already usable.
+  #
+  # THE SUBSTITUTION IS KEPT OUT OF THE ASSIGNMENT ON PURPOSE. Under `set -euo pipefail`,
+  # `VAR="$(cmd)"` takes cmd's exit status, so writing this the obvious way aborts the wrapper
+  # BEFORE the agent runs whenever cygpath fails -- which review proved with an empty BRIDGE_DIR
+  # (`cygpath: can't convert empty path`, exit 1, agent never started) against a control that
+  # launched normally. Every line below is individually neutralised instead.
+  AIFY_HERDR_BRIDGE="@@BRIDGE_DIR@@"
   if command -v cygpath >/dev/null 2>&1; then
-    AIFY_HERDR_HELPER="$(cygpath -m "@@BRIDGE_DIR@@")/node_modules/aify-wrapper/bin/aify-herdr-pane.mjs"
-  else
-    AIFY_HERDR_HELPER="@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-herdr-pane.mjs"
+    AIFY_HERDR_CONVERTED="$(cygpath -m "@@BRIDGE_DIR@@" 2>/dev/null || true)"
+    if [ -n "$AIFY_HERDR_CONVERTED" ]; then
+      AIFY_HERDR_BRIDGE="$AIFY_HERDR_CONVERTED"
+    fi
   fi
-  node "$AIFY_HERDR_HELPER" claim --wrapper "${0##*/}" -- "${AIFY_HERDR_ARGV[@]}" 2>/dev/null || true
+  AIFY_HERDR_HELPER="$AIFY_HERDR_BRIDGE/node_modules/aify-wrapper/bin/aify-herdr-pane.mjs"
+  # STDERR GOES TO A LOG, NOT TO NOWHERE. It used to go to /dev/null, which made every failure of
+  # this feature -- a lost record, a pane labelled but never reported, a refused relaunch -- invisible
+  # until a reboot did not bring an agent back, with nothing anywhere saying why. It stays off the
+  # agent's terminal, because this must not print into the operator's session.
+  # The log directory may not exist on a host where no wrapper has ever claimed a pane, and a
+  # redirect into a missing directory fails IN THE SHELL before node runs -- printing its own
+  # error into the operator's terminal. So it is created first, and the log falls back to nowhere
+  # if it cannot be. Both lines return 0 whatever happens.
+  AIFY_HERDR_LOG="${HOME:-.}/.aify/herdr/claim.log"
+  mkdir -p "${HOME:-.}/.aify/herdr" 2>/dev/null || AIFY_HERDR_LOG=/dev/null
+  node "$AIFY_HERDR_HELPER" claim --wrapper "${0##*/}" -- "${AIFY_HERDR_ARGV[@]}" >/dev/null 2>>"$AIFY_HERDR_LOG" || true
 fi
 
 # ── The harness wrapper contract ────────────────────────────────────────────

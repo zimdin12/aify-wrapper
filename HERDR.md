@@ -141,6 +141,21 @@ The bare pane is the negative control and it is in the same run: the restore pas
 not two, and left the natively-resumed pane untouched. That is the contract the operator set —
 ordinary Herdr keeps working exactly as it did — measured rather than asserted.
 
+**And this proof was weaker than it looked, which review caught and a later measurement confirmed.**
+The replayed argv was `echo RESTORED_BY_THE_PLUGIN`: a single bare token, which is the one shape that
+cannot expose quoting. Driven against a real Herdr afterwards, `herdr pane run w1:p1 echo --flag
+"be terse"` printed `be` and `terse` on separate lines — `pane run` TYPES its arguments into the
+pane's shell and the argument boundary was gone. A wrapper started as
+`claude-aify --append-system-prompt "be terse"` would have come back configured differently, silently.
+`lib/herdr-replay.mjs` now quotes for the intersection of PowerShell, cmd and bash, and REFUSES
+anything outside it rather than typing something that would be wrong in one of them.
+
+**Two other defects of the same family were found by that review and are fixed with the tests that
+fail without them.** A live handoff keeps the PTYs while giving the new server no agent report, so
+every running aify pane looked empty and would have been typed into — the guard is now the pane's
+`terminal_id`, measured to change across a restart. And `pruneTo([])` deleted every record on the
+host, which an empty listing (a hook firing before Herdr restored anything) would have reached.
+
 **What is still ASSUMED.** The `herdr-aify` command has not been run end to end, because doing so
 starts a real aify-env and starting one is the operator's action: supersession there reaps the
 predecessor's workers, and that has taken this fleet down before. Its isolated-Herdr half is proven
@@ -206,9 +221,23 @@ the operator asked for by name.
   which already exist: the daemon refuses to start until the owner answers its challenge, and a
   dedicated instance cannot supersede or reap the env already serving this machine.
 - Isolation uses `XDG_CONFIG_HOME` / `XDG_STATE_HOME`, which `src/config/io.rs` honours on Windows
-  before its platform fallback, plus `HERDR_SOCKET_PATH`. Children inherit those, so the aify
-  wrappers clear them for the agents they launch — agents keep their real profiles.
-- Ending the command ends the Job, which ends Herdr, the dedicated env and its workers. A later
-  invocation mints a fresh UUID, and the daemon refuses a context whose receipts already exist, so
-  **no previous invocation's agents can be resurrected** — enforced by the filesystem, not by a rule
-  somebody has to remember.
+  before its platform fallback, plus `HERDR_SOCKET_PATH`. Children inherit those, so the launcher
+  also exports `AIFY_HERDR_ISOLATED` and the host's original XDG values, and each wrapper puts them
+  back before starting its agent — agents keep their real profiles.
+
+  **This sentence used to assert that as done while nothing did it.** The function that looked like
+  the mitigation had zero callers, and no wrapper touched XDG at all, so an agent inside a dedicated
+  instance inherited the invocation's roots — `codex-aify` wrote its app-server log into a directory
+  deleted when the invocation ended. The undo could never have been a function here: the thing that
+  starts an agent is the operator typing `claude-aify` into a pane, so it has to be data the shell
+  can read. It is now in all four templates, with a control proving an ordinary launch is untouched.
+- Ending the command stops the Herdr server, which ends its panes, which ends the dedicated env and
+  its workers — **and the stop is verified rather than assumed**: `herdr server stop` returning 0
+  says the request was accepted, so the launcher re-probes the socket and reports "confirmed gone" or
+  says plainly that the server is still answering. A later invocation mints a fresh UUID, and the
+  daemon refuses a context whose receipts already exist, so **no previous invocation's agents can be
+  resurrected** — enforced by the filesystem, not by a rule somebody has to remember.
+
+  (An earlier version of this line said "ends the Job". There is no Job object, as this document
+  says six paragraphs above; the two statements sat in one file, and the wrong one was the one an
+  operator would have read first.)

@@ -25,7 +25,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 import { herdr } from "../lib/herdr-cli.mjs";
-import { HerdrOwner, clearProfileOwner, writeProfileOwner } from "../lib/herdr-owner.mjs";
+import { HerdrOwner, clearProfileOwner, profileOwnerState, writeProfileOwner } from "../lib/herdr-owner.mjs";
 import { HerdrAifyInstance } from "../lib/herdr-supervisor.mjs";
 
 /** Every invocation of every herdr-aify on this host lives under here. */
@@ -36,8 +36,19 @@ export function defaultProfileRoot({ home = os.homedir() } = {}) {
 /** The real process control the supervisor is given. Injected there; concrete only here. */
 const processes = {
   spawn(command, argv, { env }) {
-    const child = spawn(command, argv, { env, stdio: "ignore", windowsHide: true });
+    // DETACHED ON POSIX, so the server leads a process GROUP and the backstop can reach its panes.
+    // Without it `process.kill(-pid)` names a group that does not exist and fails with ESRCH every
+    // time — the documented last resort could never once have fired. On Windows the group concept
+    // does not apply and `taskkill /T` walks the tree instead.
+    const detached = process.platform !== "win32";
+    const child = spawn(command, argv, { env, stdio: "ignore", windowsHide: true, detached });
     const handle = { pid: child.pid || null, failed: false, error: null, exited: false, child };
+    // A PROMISE, because `error` fires on a later tick: anything that reads a flag straight after
+    // spawn reads it before the failure has happened. Node emits `spawn` only on a real start.
+    handle.started = new Promise((resolve, reject) => {
+      child.once("spawn", () => resolve());
+      child.once("error", err => reject(err));
+    });
     child.on("error", err => {
       handle.failed = true;
       handle.error = String(err?.message || err);
@@ -91,6 +102,20 @@ export function invocationsOnDisk({ profileRoot = defaultProfileRoot(), io = fs 
 }
 
 async function run({ profileRoot = defaultProfileRoot(), env = process.env } = {}) {
+  // A SECOND LAUNCH REPORTS AND STOPS. Without this the incumbent's owner pointer is simply
+  // overwritten: two dedicated Herdrs and two dedicated aify-envs run with no refusal anywhere, and
+  // when the SECOND one exits it clears the pointer, leaving the first unowned. `profileOwnerState`
+  // existed for exactly this question and nothing asked it.
+  const incumbent = await profileOwnerState(profileRoot);
+  if (incumbent?.live) {
+    process.stderr.write(
+      `herdr-aify: an instance is already running here (invocation ${incumbent.invocation}${
+        incumbent.pid ? `, pid ${incumbent.pid}` : ""
+      }).\n  Close it first, or run --status to see what this host holds.\n`,
+    );
+    return 3;
+  }
+
   const invocation = randomUUID();
   const instance = new HerdrAifyInstance({ profileRoot, invocation, processes, clock });
 
@@ -105,16 +130,41 @@ async function run({ profileRoot = defaultProfileRoot(), env = process.env } = {
   const shutdown = async code => {
     if (closing) return;
     closing = true;
-    const result = await instance.stop({ env });
-    await owner.close();
-    clearProfileOwner(profileRoot, invocation);
-    process.stderr.write(
-      `herdr-aify: stopped (server ${result.serverStopped ? "stopped cleanly" : "did not stop"}` +
-        `${result.killed ? ", tree killed" : ""})\n`,
-    );
+    // TEARDOWN MUST NOT DIE HALFWAY. A rejection anywhere in here used to surface as an unhandled
+    // rejection that killed the process mid-shutdown, leaving whatever `stop()` had not yet reached.
+    let line = "herdr-aify: stopped";
+    try {
+      const result = await instance.stop({ env });
+      line =
+        `herdr-aify: stopped (server ${result.serverStopped ? "stopped cleanly" : "did not stop"}` +
+        `${result.killed ? ", tree killed" : ""}` +
+        // Reported separately from the request, because a stop that was ACCEPTED is not a server
+        // that is gone, and this command's whole promise is about what is actually gone.
+        `${result.confirmedGone ? ", confirmed gone" : ", STILL ANSWERING - check herdr-aify --status"})`;
+    } catch (err) {
+      line = `herdr-aify: teardown failed: ${err?.message || err}`;
+    }
+    try {
+      await owner.close();
+      clearProfileOwner(profileRoot, invocation);
+    } catch {
+      // The owner pointer is a courtesy to the next launch; failing to clear it must not stop exit.
+    }
+    process.stderr.write(`${line}\n`);
     process.exit(code);
   };
-  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, () => void shutdown(0));
+
+  // SIGBREAK IS THE WINDOWS ONE AND WAS MISSING. Node never emits SIGTERM on Windows, so a console
+  // Ctrl-Break — and several of the ways a terminal ends a command — reached no handler at all.
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"]) {
+    try {
+      process.on(signal, () => {
+        shutdown(0).catch(() => process.exit(1));
+      });
+    } catch {
+      // A platform that does not know a signal name is not a reason to fail the launch.
+    }
+  }
 
   const started = await instance.start({ env });
   if (!started.ok) {
@@ -148,7 +198,16 @@ async function main(argv) {
 export { run, processes };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main(process.argv.slice(2)).then(code => {
-    process.exitCode = code;
-  });
+  // A THROW FROM `run()` USED TO SURFACE AS A RAW UNHANDLED REJECTION. The reachable window is real:
+  // `owner.listen()` rejects on a bind failure, and `writeProfileOwner` can throw — both AFTER the
+  // owner is serving and BEFORE the signal handlers exist, which is the worst moment to exit with a
+  // stack trace and no teardown.
+  main(process.argv.slice(2))
+    .then(code => {
+      process.exitCode = code;
+    })
+    .catch(err => {
+      process.stderr.write(`herdr-aify: ${err?.message || err}\n`);
+      process.exitCode = 1;
+    });
 }

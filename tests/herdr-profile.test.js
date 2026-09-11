@@ -8,13 +8,13 @@
 //
 // MEASURED, NOT ASSUMED: `session.json` is written under XDG_CONFIG_HOME (not the state root), both
 // roots are honoured on Windows before the platform fallback, and children of a pane inherit them.
-// The third is why `agentEnv` exists at all.
+// The third is why the wrapper has to UNDO them, and why the markers below exist.
 
 import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
 
-import { agentEnv, dedicatedEnvArgv, herdrServerEnv, profilePaths } from "../lib/herdr-profile.mjs";
+import { HOST_XDG_MARKERS, ISOLATED_MARKER, dedicatedEnvArgv, herdrServerEnv, profilePaths } from "../lib/herdr-profile.mjs";
 
 const INVOCATION = "8c7cf6c8-2b3f-4a9e-9d6e-1f2a3b4c5d6e";
 const ROOT = path.join("C:", "Users", "Someone", ".aify", "herdr");
@@ -67,24 +67,28 @@ test("inherited Herdr wiring is cleared before the new wiring is set", () => {
   assert.notEqual(env.HERDR_SOCKET_PATH, inside.HERDR_SOCKET_PATH);
 });
 
-test("an agent started inside gets the isolation UNDONE, not passed on", () => {
-  // Children of a pane inherit the XDG roots. An agent that kept them would write its profile into a
-  // directory belonging to one invocation, and lose it when that invocation ends.
-  const inPane = { ...herdrServerEnv({ PATH: "/usr/bin" }, paths()), HERDR_PANE_ID: "w3:p1", HERDR_ENV: "1" };
-  const forAgent = agentEnv(inPane, { host: {} });
-  assert.equal(forAgent.XDG_CONFIG_HOME, undefined);
-  assert.equal(forAgent.XDG_STATE_HOME, undefined);
-  assert.equal(forAgent.HERDR_PANE_ID, undefined);
-  assert.equal(forAgent.PATH, "/usr/bin");
+test("the server environment carries the UNDO the wrapper needs for agents inside it", () => {
+  // THE DEFECT THIS REPLACES. There was a function here that built an agent's environment and it had
+  // ZERO callers, while HERDR.md stated the mitigation as done. The thing that starts an agent is
+  // the operator typing `claude-aify` into a pane -- a shell script -- so the undo cannot be a
+  // function here; it has to be data the wrapper can read, which is what these markers are.
+  const host = { PATH: "/usr/bin", XDG_CONFIG_HOME: "/home/someone/.config" };
+  const env = herdrServerEnv(host, paths());
+  assert.equal(env[ISOLATED_MARKER], "1", "a wrapper cannot tell it is inside a dedicated instance");
+  assert.equal(env[HOST_XDG_MARKERS.XDG_CONFIG_HOME], "/home/someone/.config");
+  // ABSENT MEANS ABSENT: a host that never set XDG_STATE_HOME must leave the agent without one,
+  // rather than handing it an empty string that reads as "set".
+  assert.equal(Object.prototype.hasOwnProperty.call(env, HOST_XDG_MARKERS.XDG_STATE_HOME), false);
+  // And the isolation itself is still applied, or there would be nothing to undo.
+  assert.equal(env.XDG_CONFIG_HOME, paths().configHome);
 });
 
-test("an agent gets back the host's own XDG values when the host had them", () => {
-  // Removing them would be wrong on a machine that genuinely uses XDG: the honest undo is to restore
-  // what the host had, and to remove only what the host did not set.
-  const inPane = herdrServerEnv({}, paths());
-  const forAgent = agentEnv(inPane, { host: { XDG_CONFIG_HOME: "/home/someone/.config" } });
-  assert.equal(forAgent.XDG_CONFIG_HOME, "/home/someone/.config");
-  assert.equal(forAgent.XDG_STATE_HOME, undefined, "a value the host never set must not be invented");
+test("a dedicated instance gets its OWN pane ledger", () => {
+  // Two Herdr servers sharing ~/.aify/herdr/panes.json means whichever restores first prunes away
+  // every record belonging to the other, because a prune keys on the labels IT can see.
+  const env = herdrServerEnv({}, paths());
+  assert.ok(env.AIFY_HERDR_LEDGER.includes(INVOCATION), "the ledger is not scoped to this invocation");
+  assert.ok(env.AIFY_HERDR_LEDGER.endsWith("panes.json"));
 });
 
 test("the daemon argv matches what aify-env's own reader accepts", () => {
