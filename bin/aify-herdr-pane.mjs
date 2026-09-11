@@ -131,6 +131,7 @@ function restore({ env = process.env, ledger, cli = { herdr, listPanes } }) {
   ledger.load();
   if (ledger.unreadable) return { restored: [], refused: [], why: "the ledger is unreadable; nothing was changed" };
 
+  const byPane = new Map(listing.panes.map(pane => [String(pane?.pane_id), pane]));
   const plan = restorePlan({ panes: listing.panes, records: ledger.all() });
   const restored = [];
   const refused = [];
@@ -148,6 +149,20 @@ function restore({ env = process.env, ledger, cli = { herdr, listPanes } }) {
   // RE-READ, so records the relaunched wrappers have just written are seen rather than overwritten.
   ledger.load();
   if (ledger.unreadable) return { restored, refused, why: "relaunched, but the ledger became unreadable" };
+
+  // THE RECORD NOW POINTS AT THE PANE'S CURRENT PTY, which is what stops this pass from being
+  // repeatable against the same pane. FOUND BY RUNNING IT, not by a unit test: after a restore the
+  // record still named the PRE-RESTART terminal, so the pane kept looking free and a second pass --
+  // the operator's `restore` action, or a live handoff seconds later -- typed the command in again.
+  //
+  // Normally the relaunched wrapper claims the pane itself within a second or two and supersedes
+  // this; this closes the window in between, and closes it permanently when that claim never lands.
+  for (const entry of restored) {
+    const held = ledger.get(entry.record);
+    const pane = byPane.get(entry.paneId);
+    const terminalId = pane?.terminal_id == null ? "" : String(pane.terminal_id);
+    if (held && terminalId) ledger.remember(entry.record, { ...held, terminalId });
+  }
   const pruned = ledger.pruneTo(listing.panes.map(pane => pane?.label).filter(Boolean));
   const saved = ledger.save();
   return {

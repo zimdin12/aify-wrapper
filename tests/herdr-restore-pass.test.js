@@ -77,6 +77,28 @@ test("a record written by a relaunched wrapper SURVIVES the pass that relaunched
   assert.ok(after.get("rec2"), "the relaunched wrapper's own record was deleted by the pass that started it");
 });
 
+test("the pass is not repeatable against the same pane — a second run types nothing", () => {
+  // FOUND BY RUNNING IT, against a real Herdr, after every unit test here was green. The record
+  // still named the PRE-RESTART terminal, so the pane kept looking free: a second pass — the
+  // operator's own `restore` action, or a live handoff moments later — typed the command in again,
+  // on top of whatever the first pass had started.
+  const file = ledgerFile();
+  new HerdrPaneLedger({ file })
+    .remember("rec1", { wrapper: "claude-aify", argv: ["claude-aify"], terminalId: OLD_TERMINAL })
+    .save();
+  // A pane that came back on a new PTY and whose relaunched command has NOT claimed it yet, which is
+  // the window this closes.
+  const panes = [{ pane_id: "w1:p1", label: OLD_LABEL, terminal_id: NEW_TERMINAL }];
+
+  const first = restore({ env: {}, ledger: new HerdrPaneLedger({ file }), cli: fakeHerdr(file, { panes }) });
+  assert.equal(first.restored.length, 1, "positive control: the first pass must relaunch");
+
+  const second = fakeHerdr(file, { panes });
+  const again = restore({ env: {}, ledger: new HerdrPaneLedger({ file }), cli: second });
+  assert.deepEqual(second.typed, [], "the second pass typed the command in again");
+  assert.deepEqual(again.restored, []);
+});
+
 test("an unreadable pane listing changes nothing at all", () => {
   // "Herdr told me there are no panes" and "I could not ask Herdr" must not lead to the same write.
   const file = ledgerFile();
