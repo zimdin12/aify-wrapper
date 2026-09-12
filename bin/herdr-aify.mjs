@@ -1,8 +1,13 @@
 #!/usr/bin/env node
-// herdr-aify — an integrated Herdr that belongs to one invocation and dies with it.
+// herdr-aify — this host's aify-flavoured Herdr, in two modes with two lifetimes.
 //
-//   herdr-aify            an isolated Herdr with WRAPPER SUPPORT and no daemon, for RESIDENT sessions
-//   herdr-aify env        the same, plus a dedicated aify-env in the first space, for MANAGED work
+//   herdr-aify            THE ONE THIS HOST KEEPS. Wrapper support, no daemon, for RESIDENT sessions:
+//                         leaving it DETACHES and the next launch comes back to the same spaces and
+//                         the same agents, exactly as an ordinary Herdr does.
+//   herdr-aify env        A FRESH INVOCATION THAT DIES WITH THE COMMAND, plus a dedicated aify-env in
+//                         the first space, for MANAGED work. A new one never adopts an old one's
+//                         workers -- that is what the invocation machinery is for, and it is why the
+//                         two modes do not share a profile.
 //   herdr-aify --status   what this host's invocations left behind
 //   herdr-aify --stop     end the recorded instance, even if its launcher was killed without a signal
 //   herdr-aify --prune    delete what dead invocations left behind
@@ -31,7 +36,8 @@ import { fileURLToPath } from "node:url";
 import { isMainModule } from "../lib/main-module.mjs";
 import { herdr } from "../lib/herdr-cli.mjs";
 import { resolveHerdrBinary } from "../lib/herdr-binary.mjs";
-import { herdrServerEnv, profilePaths } from "../lib/herdr-profile.mjs";
+import { herdrServerEnv, profilePaths, residentPaths } from "../lib/herdr-profile.mjs";
+import { ensureResident, serverEnvFor } from "../lib/herdr-resident.mjs";
 import { HerdrOwner, clearProfileOwner, profileOwnerState, writeProfileOwner } from "../lib/herdr-owner.mjs";
 import { HerdrAifyInstance } from "../lib/herdr-supervisor.mjs";
 
@@ -42,13 +48,25 @@ export function defaultProfileRoot({ home = os.homedir() } = {}) {
 
 /** The real process control the supervisor is given. Injected there; concrete only here. */
 const processes = {
-  spawn(command, argv, { env }) {
+  spawn(command, argv, { env, independent = false }) {
     // DETACHED ON POSIX, so the server leads a process GROUP and the backstop can reach its panes.
     // Without it `process.kill(-pid)` names a group that does not exist and fails with ESRCH every
     // time — the documented last resort could never once have fired. On Windows the group concept
     // does not apply and `taskkill /T` walks the tree instead.
-    const detached = process.platform !== "win32";
+    //
+    // `independent` IS THE RESIDENT'S, and it is the difference between the two lifetimes rather
+    // than a tuning knob. A dedicated instance's server must die with the command, so it stays a
+    // ref'd child this process waits on and kills. The resident must OUTLIVE the command — the
+    // launcher tells the operator "your agents keep running" as it exits — and a plain child makes
+    // that a lie twice over: MEASURED on Windows, the launcher could not exit at all after the TUI
+    // closed (a ref'd child handle holds the event loop open, and `main` sets `exitCode` rather than
+    // calling `exit`), and the server shared the launcher's console, so closing the terminal tab
+    // took it down with everything running inside it.
+    const detached = independent || process.platform !== "win32";
     const child = spawn(command, argv, { env, stdio: "ignore", windowsHide: true, detached });
+    // UNREF IS THE HALF THAT LETS THE LAUNCHER LEAVE. `detached` decides whether the child survives;
+    // only `unref` stops this process waiting for it.
+    if (independent) child.unref();
     const handle = { pid: child.pid || null, failed: false, error: null, exited: false, child };
     // A PROMISE, because `error` fires on a later tick: anything that reads a flag straight after
     // spawn reads it before the failure has happened. Node emits `spawn` only on a real start.
@@ -237,7 +255,22 @@ export function alreadyRunning(state) {
 async function stopRecorded({ profileRoot = defaultProfileRoot(), env = process.env } = {}) {
   const state = await profileOwnerState(profileRoot);
   if (!state?.invocation) {
-    process.stderr.write("herdr-aify: this host has no instance recorded; nothing to stop\n");
+    // THE RESIDENT IS THE OTHER THING THIS COMMAND CAN HOLD, and it outlives every launcher — so
+    // "nothing recorded" is not the same as "nothing running". Detaching from it is the ordinary
+    // way to leave; this is how an operator ends it on purpose.
+    const bin = resolveHerdrBinary({ env }).bin;
+    const paths = residentPaths({ profileRoot });
+    const resident = serverEnvFor(env, paths);
+    if (herdr(["pane", "list"], { bin, env: resident }).ok) {
+      const stopped = herdr(["server", "stop"], { bin, env: resident });
+      const gone = !herdr(["pane", "list"], { bin, env: resident }).ok;
+      process.stderr.write(
+        `herdr-aify: this host's herdr — ${stopped.ok ? "stop accepted" : `stop refused (${stopped.error})`}, ` +
+          `${gone ? "confirmed gone" : "STILL ANSWERING"}\n`,
+      );
+      return gone ? 0 : 1;
+    }
+    process.stderr.write("herdr-aify: nothing is running here to stop\n");
     return 0;
   }
   const paths = profilePaths({ profileRoot, invocation: state.invocation });
@@ -298,13 +331,76 @@ export function shouldAttach({ argv = [], io = process } = {}) {
  */
 const realInstance = ({ profileRoot, invocation }) => new HerdrAifyInstance({ profileRoot, invocation, processes, clock });
 
+/**
+ * Plain `herdr-aify`: attach to the ONE Herdr this host keeps, starting it only if nothing answers.
+ *
+ * NO INVOCATION, NO OWNER, NO INSTANCE CONTEXT. All of that exists to admit a dedicated aify-env and
+ * to guarantee a new invocation cannot adopt an old one's workers. This mode starts no daemon and is
+ * SUPPOSED to come back to the same session, so minting any of it would be machinery working against
+ * the feature — which is exactly what it did: a throwaway profile per launch meant nothing was ever
+ * restored, and a resident agent was left running with nothing pointing at it.
+ *
+ * CLOSING THE TUI DETACHES. The server stays up with its spaces and its agents, the way an ordinary
+ * Herdr does, and `herdr-aify --stop` is how an operator ends it on purpose.
+ */
+async function runResident({ profileRoot, env, attaching, bin }) {
+  const paths = residentPaths({ profileRoot });
+  const ready = await ensureResident({
+    paths, env, bin, cli: herdr, io: fs, sleep: clock.sleep,
+    spawn: (command, argv, options) => processes.spawn(command, argv, options),
+  });
+  if (!ready.ok) {
+    process.stderr.write(`herdr-aify: could not start the resident herdr: ${ready.error}\n`);
+    return 1;
+  }
+
+  // THE PLUGIN, LINKED ONCE INTO THIS PROFILE. It is what makes a `claude-aify` pane claim itself and
+  // come back after a restart, which is the whole reason this mode carries wrapper support.
+  const serverEnv = serverEnvFor(env, paths);
+  if (ready.started) {
+    const linked = herdr(["plugin", "link", fileURLToPath(new URL("../herdr-plugin/", import.meta.url))], { bin, env: serverEnv });
+    if (!linked.ok) process.stderr.write(`herdr-aify: WARNING the aify plugin did not link (${linked.error}); panes will not be restored\n`);
+  }
+
+  process.stderr.write(`herdr-aify: herdr socket ${paths.socketPath}\n`);
+  process.stderr.write(
+    ready.started
+      ? "herdr-aify: started this host's herdr — resident sessions only, no aify-env\n"
+      : "herdr-aify: attached to this host's herdr, with the spaces it already had\n",
+  );
+
+  if (!attaching) {
+    process.stderr.write("herdr-aify: no terminal to attach to; the herdr keeps running. Use --stop to end it\n");
+    return 0;
+  }
+  process.stderr.write("herdr-aify: leaving the session DETACHES — your agents keep running; --stop ends them\n");
+  const client = processes.attach(bin, [], { env: serverEnv });
+  await client.exited;
+  process.stderr.write("herdr-aify: detached; the herdr and its agents are still running\n");
+  return 0;
+}
+
 async function run({
   profileRoot = defaultProfileRoot(),
   env = process.env,
   attaching = shouldAttach({ argv: process.argv.slice(2) }),
   makeInstance = realInstance,
   withEnv = false,
+  // INJECTABLE FOR ONE REASON, and it is a defect this change caused: the plain branch starts a REAL
+  // Herdr, so any test calling `run()` without naming a mode started one. Three were left running by
+  // the suite before this was sealed.
+  resident = runResident,
 } = {}) {
+  // THE BINARY FIRST, because both modes need it and a missing one must name every place it looked
+  // rather than surfacing as ENOENT from whichever call happened to be first.
+  if (!withEnv) {
+    const binary = resolveHerdrBinary({ env });
+    if (!binary.ok) {
+      process.stderr.write(`herdr-aify: ${binary.why}\n`);
+      return 1;
+    }
+    return resident({ profileRoot, env, attaching, bin: binary.bin });
+  }
   // A SECOND LAUNCH REPORTS AND STOPS. Without this the incumbent's owner pointer is simply
   // overwritten: two dedicated Herdrs and two dedicated aify-envs run with no refusal anywhere, and
   // when the SECOND one exits it clears the pointer, leaving the first unowned. `profileOwnerState`
@@ -444,9 +540,11 @@ const USAGE = [
   "usage: herdr-aify [env] [--no-attach]",
   "       herdr-aify --status | --stop | --prune",
   "",
-  "  herdr-aify        an isolated Herdr with wrapper support, for RESIDENT sessions.",
-  "                    claude-aify panes claim themselves here and are restored here.",
-  "  herdr-aify env    the same, plus a dedicated aify-env in the first space, for MANAGED work.",
+  "  herdr-aify        this host's herdr, for RESIDENT sessions. claude-aify panes claim themselves",
+  "                    here and come back after a restart. Leaving it DETACHES; agents keep running.",
+  "  herdr-aify env    a fresh instance with a dedicated aify-env, for MANAGED work. Dies with the",
+  "                    command, and never adopts a previous instance's workers.",
+  "  --stop            end whichever of the two this host is running.",
 ].join(String.fromCharCode(10)) + String.fromCharCode(10);
 
 async function main(argv) {

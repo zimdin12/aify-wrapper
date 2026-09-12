@@ -116,7 +116,9 @@ test("THE CALL SITE: a run with a terminal ATTACHES, and ends when the session i
     },
   };
 
-  const finished = run({ profileRoot, env: {}, attaching: true, makeInstance: () => fake });
+  // `withEnv: true` because this drives the DEDICATED instance flow. Without it the run takes the
+  // resident path, which starts a real Herdr -- the suite left three running before this was sealed.
+  const finished = run({ profileRoot, env: {}, attaching: true, withEnv: true, makeInstance: () => fake });
   finished.catch(() => {});
   for (let i = 0; i < 200 && !endSession; i += 1) await new Promise(r => setTimeout(r, 10));
   assert.deepEqual(events, ["start", "attach"], "the run never attached a TUI");
@@ -148,7 +150,7 @@ test("NEGATIVE CONTROL: with no terminal the same run stays headless", { timeout
     stop: async () => ({ everServed: true, serverStopped: true, killed: false, confirmedGone: true }),
   };
 
-  const finished = run({ profileRoot, env: {}, attaching: false, makeInstance: () => fake });
+  const finished = run({ profileRoot, env: {}, attaching: false, withEnv: true, makeInstance: () => fake });
   finished.catch(() => {});
   for (let i = 0; i < 200 && !stopServer; i += 1) await new Promise(r => setTimeout(r, 10));
   assert.deepEqual(events, [], "a headless run started a TUI into a pipe");

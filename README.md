@@ -231,15 +231,20 @@ The wrappers do the rest by themselves: each labels its own pane and records the
 started with, gated on `HERDR_ENV` so an ordinary terminal launch pays nothing. It can never fail a
 launch, and its diagnostics go to `~/.aify/herdr/claim.log` rather than to nowhere.
 
-**`herdr-aify` is a separate, isolated instance** — its own Herdr socket and config roots, with a
-dedicated `aify-env` in its first space. Closing the command ends that Herdr, the dedicated env and
-its workers, and a later invocation cannot adopt the previous one's processes.
+**`herdr-aify` is a separate Herdr with two modes**, and the argument picks the LIFETIME:
 
 ```bash
-herdr-aify                       # start one
+herdr-aify                       # this host's persistent Herdr: resident sessions, no aify-env
+herdr-aify env                   # an isolated instance with a dedicated aify-env in its first space
 herdr-aify --status              # what previous invocations left on this host
-herdr-aify --stop                # end the recorded instance from any shell
+herdr-aify --stop                # end the recorded instance -- or the resident -- from any shell
 ```
+
+`env` is the isolated one: its own socket and config roots, a dedicated `aify-env` in its first
+space, and closing the command ends that Herdr, the env and its workers -- a later invocation cannot
+adopt the previous one's processes. Plain `herdr-aify` is the opposite and is meant to be: ONE
+persistent Herdr with wrapper support, where leaving the session DETACHES and the next launch comes
+back to the same spaces and the same agents. `--stop` is how you end that one.
 
 It does not touch an ordinary Herdr on the same machine, and it does not need the plugin. It also
 does not need `herdr` on your PATH — Herdr only puts itself on the PATH of the shells it starts, so

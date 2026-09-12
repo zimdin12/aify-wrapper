@@ -4,9 +4,12 @@ Two separate things the operator asked for, which need different mechanisms:
 
 1. **Ordinary Herdr keeps aify agents.** Start `claude-aify` or `hermes-aify` in an ordinary Herdr
    pane, restart the machine, and they should come back as `claude-aify` — not as bare `claude`.
-2. **`herdr-aify`, an isolated instance.** One command that owns its own Herdr, runs the actual
+2. **`herdr-aify env`, an isolated instance.** One command that owns its own Herdr, runs the actual
    dedicated `aify-env` daemon in its first space, lets that daemon open and close the other spaces
    for its workers, and takes the whole tree down when the command exits.
+3. **`herdr-aify`, this host's own Herdr.** The same command with no argument, and it is deliberately
+   the OPPOSITE lifetime: one persistent Herdr with wrapper support and no aify-env at all, for
+   resident sessions. Closing it DETACHES; the next launch comes back to the same spaces.
 
 **Stock Herdr 0.9.0, no fork.** A fork was ruled out by the operator, and it is blocked anyway: the
 vendored `libghostty-vt` needs Zig 0.15.2 to build, and Herdr's own build prints an external
@@ -33,14 +36,30 @@ aify-herdr-pane restore          # run the restore now instead of waiting for a 
 herdr plugin unlink aify.wrappers   # undo the install
 ```
 
-**The isolated instance is a separate command**, and it does not need the plugin:
+**`herdr-aify` is a separate command with TWO modes**, and neither needs the plugin installed by
+hand -- the resident links it into its own profile:
 
 ```bash
-herdr-aify                       # an isolated Herdr with a dedicated aify-env in its first space
+herdr-aify                       # this host's persistent Herdr: residents only, no aify-env
+herdr-aify env                   # an isolated Herdr with a dedicated aify-env in its first space
 herdr-aify --status              # what previous invocations left on this host
-herdr-aify --stop                # end the recorded instance from any shell
+herdr-aify --stop                # end the recorded instance -- or the resident -- from any shell
 herdr-aify --prune               # delete what dead invocations left behind
 ```
+
+**The argument decides the LIFETIME, which is the whole difference between them.** The operator:
+"ordinary herdr-aify should remember previous instance agents like ordinary herdr does, that
+herdr-aify env is the one that really acts differently. herdr-aify is like ordinary, but supports our
+-aify stuff so they could be saved etc." So `env` mints a fresh invocation that dies with the
+command, and plain `herdr-aify` uses ONE stable profile under `~/.aify/herdr/resident/` and starts a
+server only when nothing answers on its socket.
+
+**Leaving the plain one DETACHES.** Its `herdr server` is started independent -- detached from the
+console and unref'd -- so the launcher can exit while the server keeps running, exactly as an
+ordinary Herdr does. Both halves were measured on Windows and both were needed: a ref'd child handle
+kept the launcher alive after the TUI closed (`main` sets `exitCode` rather than calling `exit`), and
+a child sharing the console died with the terminal tab, taking every agent in it. `--stop` is how
+you end it on purpose.
 
 **`--prune` is there because every launch mints a directory and nothing removed one.** Twelve had
 accumulated in a day of testing, and `--status` — the command you reach for when something is wrong —
@@ -63,13 +82,18 @@ ordinary prompt. The launcher looks for `HERDR_BIN_PATH`, then Herdr's own
 `~/.herdr/packages/standalone/current`, then the newest release directory, and a refusal names every
 place it looked.
 
-Closing `herdr-aify` ends that Herdr, its dedicated env and its workers. A new invocation gets a
+Closing `herdr-aify env` ends that Herdr, its dedicated env and its workers. A new invocation gets a
 fresh UUID and the daemon refuses a context whose receipts already exist, so it cannot resurrect the
 previous invocation's agents. Your ordinary Herdr is untouched by it: different socket, different
 config and state roots.
 
-**Where things live.** Records: `~/.aify/herdr/panes.json` (`AIFY_HERDR_LEDGER` moves it).
-Invocations: `~/.aify/herdr/invocations/<uuid>/`.
+Plain `herdr-aify` is untouched by it too, and by your ordinary Herdr: it has its own socket, its own
+XDG roots and **its own pane ledger**. Sharing the default ledger would have had the two sessions
+pruning each other's records -- a restore deletes every record whose pane IT cannot see.
+
+**Where things live.** Records: `~/.aify/herdr/panes.json` (`AIFY_HERDR_LEDGER` moves it, and both
+`herdr-aify` modes do). Invocations: `~/.aify/herdr/invocations/<uuid>/`. The resident:
+`~/.aify/herdr/resident/`.
 
 ## What stock Herdr actually gives us
 
