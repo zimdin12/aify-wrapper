@@ -4,6 +4,8 @@
 //   herdr-aify            start an isolated Herdr with a dedicated aify-env in its first space
 //   herdr-aify --status   what this host's invocations left behind
 //   herdr-aify --stop     end the recorded instance, even if its launcher was killed without a signal
+//   herdr-aify --prune    delete what dead invocations left behind
+//   herdr-aify --no-attach  run headless instead of taking this terminal over with the Herdr TUI
 //
 // WHAT IT IS FOR, in the operator's words: "a dedicated Herdr instance with the actual aify-env
 // process in its own space. Ending herdr-aify ends that Herdr instance, its env, and its workers. A
@@ -60,6 +62,17 @@ const processes = {
       handle.exited = true;
     });
     return handle;
+  },
+  attach(command, argv, { env }) {
+    // THE OPERATOR'S OWN TERMINAL, which is the whole point of this operation and the reason it is
+    // separate from `spawn`. `stdio: "inherit"` hands this console to the Herdr TUI: it draws, it
+    // reads the keyboard, and Ctrl-C belongs to it rather than to this launcher.
+    const child = spawn(command, argv, { env, stdio: "inherit", windowsHide: false });
+    const exited = new Promise(resolve => {
+      child.once("exit", code => resolve(code ?? 0));
+      child.once("error", () => resolve(null));
+    });
+    return { child, exited, kill: () => child.kill() };
   },
   run(command, argv, { env }) {
     const result = herdr(argv, { bin: command, env });
@@ -243,7 +256,33 @@ async function stopRecorded({ profileRoot = defaultProfileRoot(), env = process.
   return gone ? 0 : 1;
 }
 
-async function run({ profileRoot = defaultProfileRoot(), env = process.env } = {}) {
+/**
+ * Is there a terminal for the Herdr TUI to take over?
+ *
+ * A TUI NEEDS A REAL CONSOLE. Attached to a pipe it draws escape sequences into whatever is reading,
+ * and there is no keyboard to serve — so a scripted or piped run stays headless and says so. BOTH
+ * streams, because Herdr draws to one and reads from the other, and a run with only stdin redirected
+ * is exactly the case that would half-work.
+ */
+export function shouldAttach({ argv = [], io = process } = {}) {
+  if (argv.includes("--no-attach")) return false;
+  return Boolean(io.stdout?.isTTY && io.stdin?.isTTY);
+}
+
+/**
+ * The instance this run drives. Injectable for ONE reason, and it is the reason this file exists in
+ * its current shape: the defect that reached the operator twice was a call site, not a helper. A
+ * `HerdrAifyInstance` built inline means no test can ask whether `run` actually attaches anything —
+ * which is exactly the question that went unasked while the command shipped with no TUI at all.
+ */
+const realInstance = ({ profileRoot, invocation }) => new HerdrAifyInstance({ profileRoot, invocation, processes, clock });
+
+async function run({
+  profileRoot = defaultProfileRoot(),
+  env = process.env,
+  attaching = shouldAttach({ argv: process.argv.slice(2) }),
+  makeInstance = realInstance,
+} = {}) {
   // A SECOND LAUNCH REPORTS AND STOPS. Without this the incumbent's owner pointer is simply
   // overwritten: two dedicated Herdrs and two dedicated aify-envs run with no refusal anywhere, and
   // when the SECOND one exits it clears the pointer, leaving the first unowned. `profileOwnerState`
@@ -264,7 +303,7 @@ async function run({ profileRoot = defaultProfileRoot(), env = process.env } = {
   }
 
   const invocation = randomUUID();
-  const instance = new HerdrAifyInstance({ profileRoot, invocation, processes, clock });
+  const instance = makeInstance({ profileRoot, invocation });
 
   // THE OWNER LISTENS BEFORE THE DAEMON EXISTS. aify-env refuses to start a dedicated instance until
   // something answers a fresh nonce on the private endpoint, so an owner started afterwards would be
@@ -292,7 +331,12 @@ async function run({ profileRoot = defaultProfileRoot(), env = process.env } = {
       // The owner pointer is a courtesy to the next launch; failing to clear it must not stop exit.
     }
     process.stderr.write(`${line}\n`);
-    process.exit(code);
+    // RETURNS THE CODE RATHER THAN EXITING, and the exit is the entry point's job. Calling
+    // `process.exit` here ended whatever process was hosting this run: under `node --test` it killed
+    // the runner mid-file, and the two tests that drive this function were reported as never having
+    // existed -- a plan line of `1..4` for a file holding six. A teardown that cannot be observed
+    // without ending the observer is a teardown nothing can test, which is how it stayed unexamined.
+    return code;
   };
 
   // SIGBREAK IS THE WINDOWS ONE AND WAS MISSING. Node never emits SIGTERM on Windows, so a console
@@ -300,7 +344,11 @@ async function run({ profileRoot = defaultProfileRoot(), env = process.env } = {
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"]) {
     try {
       process.on(signal, () => {
-        shutdown(0).catch(() => process.exit(1));
+        // A SIGNAL STILL ENDS THE PROCESS, because nothing is waiting on this path to return: the
+        // operator asked for it to stop. The teardown runs first, then the exit.
+        shutdown(0)
+          .then(code => process.exit(code))
+          .catch(() => process.exit(1));
       });
     } catch {
       // A platform that does not know a signal name is not a reason to fail the launch.
@@ -314,29 +362,44 @@ async function run({ profileRoot = defaultProfileRoot(), env = process.env } = {
   const binary = resolveHerdrBinary({ env });
   if (!binary.ok) {
     process.stderr.write(`herdr-aify: ${binary.why}\n`);
-    await shutdown(1);
-    return 1;
+    return await shutdown(1);
   }
 
   const started = await instance.start({ env, herdrBin: binary.bin });
   if (!started.ok) {
     process.stderr.write(`herdr-aify: could not start (${started.phase}): ${started.error}\n`);
-    await shutdown(1);
-    return 1;
+    return await shutdown(1);
   }
 
   process.stderr.write(`herdr-aify: invocation ${invocation}\n`);
   process.stderr.write(`herdr-aify: herdr socket ${instance.profile.socketPath}\n`);
-  process.stderr.write(`herdr-aify: aify-env in ${started.paneId}; close this command to end all of it\n`);
+  process.stderr.write(`herdr-aify: aify-env in ${started.paneId}\n`);
 
-  // THE COMMAND'S LIFETIME IS THE INSTANCE'S LIFETIME, in both directions. Waiting on a promise that
-  // never resolves held only one of them: stopping the server from elsewhere left this process alive
-  // in front of nothing. Waiting on the server itself closes the loop, and the teardown below still
-  // runs so the owner pointer is cleared rather than left for the next launch to trip over.
+  // ATTACH, WHICH IS THE THING AN OPERATOR ACTUALLY WANTED. `herdr server` is headless; a bare
+  // `herdr` is the client that draws it. Without this the command printed these three lines in front
+  // of a terminal where nothing opened and Ctrl-C did nothing, because the launcher owned a console
+  // it was not using and the TUI that should have owned it was never started.
+  if (attaching) {
+    process.stderr.write("herdr-aify: attaching — leaving the Herdr session ends this instance\n");
+    const client = instance.attachTui({ env, herdrBin: binary.bin });
+    // EITHER END CAN GO FIRST. Leaving the session is the ordinary exit; the server going away (a
+    // `--stop` from another shell, a crash) must not leave a client drawing a dead session.
+    await Promise.race([client.exited, instance.whenServerExits()]);
+    try {
+      client.kill();
+    } catch {
+      // Already gone, which is the common case: the client exits when its server does.
+    }
+    return await shutdown(0);
+  }
+
+  // NO TERMINAL TO ATTACH TO, so this stays headless and says so. THE COMMAND'S LIFETIME IS STILL THE
+  // INSTANCE'S LIFETIME, in both directions: waiting on a promise that never resolves held only one
+  // of them, and stopping the server from elsewhere left this process alive in front of nothing.
+  process.stderr.write("herdr-aify: no terminal to attach to; running headless. Close this command to end all of it\n");
   await instance.whenServerExits();
   process.stderr.write("herdr-aify: the dedicated herdr exited" + String.fromCharCode(10));
-  await shutdown(0);
-  return 0;
+  return await shutdown(0);
 }
 
 async function main(argv) {
@@ -347,7 +410,7 @@ async function main(argv) {
   if (argv.includes("--stop")) return stopRecorded();
   if (argv.includes("--prune")) return pruneInvocations();
   if (argv.includes("--help") || argv.includes("-h")) {
-    process.stdout.write("usage: herdr-aify [--status | --stop | --prune]\n");
+    process.stdout.write("usage: herdr-aify [--status | --stop | --prune | --no-attach]\n");
     return 0;
   }
   return run();
