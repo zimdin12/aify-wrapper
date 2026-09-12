@@ -238,9 +238,17 @@ its workers, and a later invocation cannot adopt the previous one's processes.
 ```bash
 herdr-aify                       # start one
 herdr-aify --status              # what previous invocations left on this host
+herdr-aify --stop                # end the recorded instance from any shell
 ```
 
-It does not touch an ordinary Herdr on the same machine, and it does not need the plugin.
+It does not touch an ordinary Herdr on the same machine, and it does not need the plugin. It also
+does not need `herdr` on your PATH — Herdr only puts itself on the PATH of the shells it starts, so
+the launcher resolves the binary itself and names every place it looked if it cannot.
+
+**`--stop` is for how Windows ends a command.** Only a console Ctrl-C or a window close delivers a
+signal, so a launcher ended any other way leaves its Herdr and its dedicated env running with an
+owner pointer nobody will clear. `--stop` reads that pointer and reports whether the server really
+went.
 
 **If a command here prints nothing, the package needs re-linking.** npm creates bin shims at install
 time, so a command added since the last `npm link` has none — and both of these were installed and

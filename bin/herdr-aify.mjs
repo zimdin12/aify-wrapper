@@ -112,6 +112,33 @@ export function invocationsOnDisk({ profileRoot = defaultProfileRoot(), io = fs 
  * and a test of `profileOwnerState` stayed green throughout, because the defect was in the CALLER.
  * Pulled out so the call site itself is something a test can drive.
  */
+/**
+ * What the operator is told a teardown did.
+ *
+ * DERIVED FROM THE OUTCOME, NOT ASSEMBLED FROM THE ATTEMPTS, because assembling it produced a line
+ * that contradicted itself in the most ordinary case there is. Stopping the instance from another
+ * shell printed `stopped (server did not stop, confirmed gone)`: the stop request failed BECAUSE the
+ * server had already exited, and "did not stop" is the one thing that was not true. The teardown had
+ * gone exactly to plan and the line read like a fault.
+ *
+ * So the sentence says WHAT IS GONE first -- which is this command's whole promise -- and how it went
+ * second, as one clause rather than three independent flags a reader has to reconcile.
+ */
+export function teardownLine(result) {
+  if (!result?.everServed) return "herdr-aify: nothing was started, so there is nothing to stop";
+  const how = result.alreadyGone
+    ? "the server had already exited"
+    : result.serverStopped
+      ? "server stopped cleanly"
+      : result.killed
+        ? "server refused to stop, tree killed"
+        : "server refused to stop";
+  // A stop that was ACCEPTED is still not a server that is gone, so the outcome is measured
+  // separately from the request and always said out loud.
+  const outcome = result.confirmedGone ? "confirmed gone" : "STILL ANSWERING - check herdr-aify --status";
+  return `herdr-aify: stopped (${how}, ${outcome})`;
+}
+
 export function alreadyRunning(state) {
   return Boolean(state?.owned);
 }
@@ -189,14 +216,7 @@ async function run({ profileRoot = defaultProfileRoot(), env = process.env } = {
     // rejection that killed the process mid-shutdown, leaving whatever `stop()` had not yet reached.
     let line = "herdr-aify: stopped";
     try {
-      const result = await instance.stop({ env, herdrBin: resolveHerdrBinary({ env }).bin });
-      line = !result.everServed
-        ? "herdr-aify: nothing was started, so there is nothing to stop"
-        : `herdr-aify: stopped (server ${result.serverStopped ? "stopped cleanly" : "did not stop"}` +
-          `${result.killed ? ", tree killed" : ""}` +
-          // Reported separately from the request, because a stop that was ACCEPTED is not a server
-          // that is gone, and this command's whole promise is about what is actually gone.
-          `${result.confirmedGone ? ", confirmed gone" : ", STILL ANSWERING - check herdr-aify --status"})`;
+      line = teardownLine(await instance.stop({ env, herdrBin: resolveHerdrBinary({ env }).bin }));
     } catch (err) {
       line = `herdr-aify: teardown failed: ${err?.message || err}`;
     }

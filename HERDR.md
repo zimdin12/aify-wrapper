@@ -38,7 +38,21 @@ herdr plugin unlink aify.wrappers   # undo the install
 ```bash
 herdr-aify                       # an isolated Herdr with a dedicated aify-env in its first space
 herdr-aify --status              # what previous invocations left on this host
+herdr-aify --stop                # end the recorded instance from any shell
 ```
+
+**`--stop` exists because of how Windows ends a command.** Only a real console Ctrl-C or a window
+close delivers a signal a Node process can handle; a launcher ended any other way leaves its Herdr,
+its dedicated aify-env and their panes running, with an owner pointer nobody will clear. `--stop`
+reads that pointer, addresses the instance it names and reports whether the server is actually gone.
+It is not a workaround for a missing Job object: the pointer names the invocation and the invocation
+names the socket, so it can only ever reach the instance this host recorded.
+
+**You do not need `herdr` on your PATH**, and you probably do not have it: Herdr puts itself on the
+PATH of the shells IT starts, which is why the bare name resolves inside a Herdr pane and fails at an
+ordinary prompt. The launcher looks for `HERDR_BIN_PATH`, then Herdr's own
+`~/.herdr/packages/standalone/current`, then the newest release directory, and a refusal names every
+place it looked.
 
 Closing `herdr-aify` ends that Herdr, its dedicated env and its workers. A new invocation gets a
 fresh UUID and the daemon refuses a context whose receipts already exist, so it cannot resurrect the
@@ -156,10 +170,50 @@ every running aify pane looked empty and would have been typed into — the guar
 `terminal_id`, measured to change across a restart. And `pruneTo([])` deleted every record on the
 host, which an empty listing (a hook firing before Herdr restored anything) would have reached.
 
-**What is still ASSUMED.** The `herdr-aify` command has not been run end to end, because doing so
-starts a real aify-env and starting one is the operator's action: supersession there reaps the
-predecessor's workers, and that has taken this fleet down before. Its isolated-Herdr half is proven
-(the runs above all used it); its dedicated-daemon half passes in tests and has never been executed.
+## `herdr-aify` proven end to end, 2026-09-12 — and it did not work until it was run
+
+This section used to say the command had never been executed. It has been now, and the first thing
+that happened is the operator ran it and got `spawn herdr ENOENT`. Four defects stood between the
+green suite and a working command, and **not one of them was reachable by any test** — each is a fact
+about this machine, about Herdr, or about a call site rather than a helper:
+
+1. **`herdr` is not on PATH.** Measured: the install directory is in neither the user nor the system
+   registry PATH. Herdr puts itself on the PATH of the shells it starts, so the bare name resolved in
+   a developer's Herdr pane and failed at the operator's prompt — the worst possible split, because
+   the person testing it cannot see the failure. `lib/herdr-binary.mjs` resolves it properly.
+2. **The socket was a named pipe.** It was spelled `\\.\pipe\...` by analogy with aify-env's
+   endpoints; Herdr uses a filesystem socket on Windows too and refused it, exiting 1 with
+   `PermissionDenied` while the launcher could only report "exited before it was ready".
+3. **The daemon's environment went to the wrong process.** `herdr pane run` TYPES a command into a
+   shell that already exists, so `AIFY_ADVERTISE=0` handed to the `herdr` CLI never reached the
+   daemon. The pane said so: `instance_context: advertisement must be explicitly disabled`. It
+   belongs on the SERVER, whose panes inherit it.
+4. **The second-launch refusal never fired once.** It read `incumbent?.live`; `profileOwnerState`
+   returns `{owned, reason, invocation}` and has never had a `live` field. A green test of that
+   helper stayed green while its only caller read a field it does not return.
+
+The run that closes it, with `herdr` deliberately absent from PATH exactly as at the operator's
+prompt:
+
+```
+start     invocation printed, socket printed, aify-env live in w1:p1 with its TUI rendering
+second    "an instance is already running here (invocation 3895f55e-...)"  <- refused
+--status  the invocations this host holds, spent flags correct
+--stop    "stop accepted, confirmed gone";  herdr.exe count 1 -> 0;  owner pointer cleared
+launcher  "the dedicated herdr exited" then
+          "stopped (the server had already exited, confirmed gone)"       <- noticed and shut down
+```
+
+The last line is itself a fix. It read `stopped (server did not stop, confirmed gone)` — two clauses
+from real flags, contradicting each other, describing a teardown that had gone exactly to plan: the
+stop request failed BECAUSE the server had already exited. A server that went first is now its own
+case, which also stops the backstop reaching for a pid that belongs to whatever Windows issues next.
+
+**What is still ASSUMED.** Nothing about the start, the refusal, the teardown or the output. What has
+not been exercised is a dedicated instance running real WORK — agents spawned by that aify-env, doing
+something, and dying with it. The teardown mechanism is proven at the Herdr layer (server stops,
+panes end, `herdr.exe` reaches zero); that the workers of a busy env go with it is inferred from the
+process structure, not measured under load.
 
 ## How the restore is completed
 
