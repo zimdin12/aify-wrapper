@@ -34,7 +34,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { isMainModule } from "../lib/main-module.mjs";
-import { herdr } from "../lib/herdr-cli.mjs";
+import { herdr, serverAnswer } from "../lib/herdr-cli.mjs";
 import { resolveHerdrBinary } from "../lib/herdr-binary.mjs";
 import { herdrServerEnv, profilePaths, residentPaths } from "../lib/herdr-profile.mjs";
 import { ensureResident, serverEnvFor } from "../lib/herdr-resident.mjs";
@@ -98,7 +98,7 @@ const processes = {
     const result = herdr(argv, { bin: command, env });
     // `workspace create` answers with the new space, and the first pane in it is where the env goes.
     const paneId = result.json?.result?.root_pane?.pane_id || result.json?.result?.pane?.pane_id || null;
-    return { ok: result.ok, error: result.error, paneId };
+    return { ok: result.ok, error: result.error, code: result.code, paneId };
   },
   kill(pid) {
     // A tree kill, because the panes are grandchildren. The backstop, never the mechanism.
@@ -160,7 +160,13 @@ export function teardownLine(result) {
         : "server refused to stop";
   // A stop that was ACCEPTED is still not a server that is gone, so the outcome is measured
   // separately from the request and always said out loud.
-  const outcome = result.confirmedGone ? "confirmed gone" : "STILL ANSWERING - check herdr-aify --status";
+  // AND "COULD NOT TELL" IS ITS OWN ANSWER. A read that timed out is not a server still answering,
+  // and saying it is sends the operator after a process that may already be gone.
+  const outcome = result.confirmedGone
+    ? "confirmed gone"
+    : result.goneUnknown
+      ? "could not confirm it is gone - check herdr-aify --status"
+      : "STILL ANSWERING - check herdr-aify --status";
   return `herdr-aify: stopped (${how}, ${outcome})`;
 }
 
@@ -178,13 +184,17 @@ export function teardownLine(result) {
  * A DIRECTORY WHOSE NAME IS NOT AN INVOCATION IS LEFT ALONE. Nothing here put it there, so nothing
  * here should decide it is rubbish.
  */
-export function prunePlan(records, { live = [] } = {}) {
+export function prunePlan(records, { live = [], unknown = [] } = {}) {
   const answering = new Set(live);
+  // A PROBE THAT COULD NOT TELL KEEPS THE DIRECTORY. Deleting on a timeout would remove the receipts
+  // of an instance that is merely slow -- the receipts that stop a later launch adopting its workers.
+  const unanswered = new Set(unknown);
   const remove = [];
   const keep = [];
   for (const record of records) {
     if (!UUID_V4.test(record.invocation)) keep.push({ ...record, why: "not an invocation" });
     else if (answering.has(record.invocation)) keep.push({ ...record, why: "still answering" });
+    else if (unanswered.has(record.invocation)) keep.push({ ...record, why: "could not tell whether it is running" });
     else remove.push(record);
   }
   return Object.freeze({ remove, keep });
@@ -206,15 +216,18 @@ const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
  */
 export function pruneInvocations({ profileRoot = defaultProfileRoot(), env = process.env, io = fs, cli = herdr } = {}) {
   const records = invocationsOnDisk({ profileRoot, io });
-  const live = records
+  const answers = records
     .filter(record => UUID_V4.test(record.invocation))
-    .filter(record => {
+    .map(record => {
       const paths = profilePaths({ profileRoot, invocation: record.invocation });
-      return cli(["pane", "list"], { bin: resolveHerdrBinary({ env }).bin, env: herdrServerEnv(env, paths) }).ok;
-    })
-    .map(record => record.invocation);
+      const read = cli(["pane", "list"], { bin: resolveHerdrBinary({ env }).bin, env: herdrServerEnv(env, paths) });
+      return { invocation: record.invocation, answer: serverAnswer(read) };
+    });
+  // ONLY HERDR SAYING "NOTHING IS RUNNING HERE" MAKES A DIRECTORY REMOVABLE. See `serverAnswer`.
+  const live = answers.filter(a => a.answer === "serving").map(a => a.invocation);
+  const unknown = answers.filter(a => a.answer === "unknown").map(a => a.invocation);
 
-  const plan = prunePlan(records, { live });
+  const plan = prunePlan(records, { live, unknown });
   let removed = 0;
   for (const record of plan.remove) {
     try {
@@ -261,14 +274,22 @@ async function stopRecorded({ profileRoot = defaultProfileRoot(), env = process.
     const bin = resolveHerdrBinary({ env }).bin;
     const paths = residentPaths({ profileRoot });
     const resident = serverEnvFor(env, paths);
-    if (herdr(["pane", "list"], { bin, env: resident }).ok) {
+    const before = herdr(["pane", "list"], { bin, env: resident });
+    const running = serverAnswer(before);
+    if (running === "serving") {
       const stopped = herdr(["server", "stop"], { bin, env: resident });
-      const gone = !herdr(["pane", "list"], { bin, env: resident }).ok;
+      const after = serverAnswer(herdr(["pane", "list"], { bin, env: resident }));
       process.stderr.write(
         `herdr-aify: this host's herdr — ${stopped.ok ? "stop accepted" : `stop refused (${stopped.error})`}, ` +
-          `${gone ? "confirmed gone" : "STILL ANSWERING"}\n`,
+          `${goneWords(after)}\n`,
       );
-      return gone ? 0 : 1;
+      return after === "not-running" ? 0 : 1;
+    }
+    // "COULD NOT ASK" WAS REPORTED AS "NOTHING IS RUNNING", which is false in exactly the case where
+    // the operator most needs the truth: a resident that is up but slow to answer.
+    if (running === "unknown") {
+      process.stderr.write(`herdr-aify: could not tell whether this host's herdr is running (${before.error}); nothing was stopped\n`);
+      return 1;
     }
     process.stderr.write("herdr-aify: nothing is running here to stop\n");
     return 0;
@@ -280,15 +301,22 @@ async function stopRecorded({ profileRoot = defaultProfileRoot(), env = process.
   const stopped = herdr(["server", "stop"], { bin, env: serverEnv });
   // ASKED AGAIN, because "the request was accepted" is not "the server is gone", and this command's
   // entire job is the second one.
-  const gone = !herdr(["pane", "list"], { bin, env: serverEnv }).ok;
+  const after = serverAnswer(herdr(["pane", "list"], { bin, env: serverEnv }));
   clearProfileOwner(profileRoot, state.invocation);
 
   process.stderr.write(
     `herdr-aify: invocation ${state.invocation} — ` +
       `${stopped.ok ? "stop accepted" : `stop refused (${stopped.error})`}, ` +
-      `${gone ? "confirmed gone" : "STILL ANSWERING"}\n`,
+      `${goneWords(after)}\n`,
   );
-  return gone ? 0 : 1;
+  return after === "not-running" ? 0 : 1;
+}
+
+/** What a post-stop read says, in words. Three answers, because "could not tell" is not "still up". */
+function goneWords(answer) {
+  if (answer === "not-running") return "confirmed gone";
+  if (answer === "serving") return "STILL ANSWERING";
+  return "could not confirm it is gone";
 }
 
 /**

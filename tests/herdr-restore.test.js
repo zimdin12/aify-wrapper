@@ -190,3 +190,57 @@ test("the ledger path is configurable, which is what keeps two Herdr servers off
     assert.ok(defaultLedgerPath({ home, env: { AIFY_HERDR_LEDGER: blank } }).includes(".aify"));
   }
 });
+
+// ── TWO WRITERS, ONE FILE ────────────────────────────────────────────────────────────────────────
+//
+// Found by review. Each wrapper that claims a pane loaded the whole ledger, added its record and wrote
+// the whole ledger back, so two panes launched together -- which is exactly what a restore does --
+// could both load one snapshot, and the second write erased the first pane's record. That pane then
+// never came back after the next reboot. The review's own probe printed ["old","b"].
+
+test("TWO CLAIMS FROM ONE SNAPSHOT BOTH SURVIVE", () => {
+  const file = ledgerFile();
+  new HerdrPaneLedger({ file }).remember("old", { wrapper: "claude-aify", argv: ["claude-aify"], terminalId: "t0" }).save();
+
+  const a = new HerdrPaneLedger({ file }).load();
+  const b = new HerdrPaneLedger({ file }).load();
+  a.remember("a", { wrapper: "claude-aify", argv: ["claude-aify"], terminalId: "ta" });
+  b.remember("b", { wrapper: "codex-aify", argv: ["codex-aify"], terminalId: "tb" });
+  assert.equal(a.save().saved, true);
+  assert.equal(b.save().saved, true);
+
+  const after = new HerdrPaneLedger({ file }).load();
+  assert.deepEqual([...after.all().keys()].sort(), ["a", "b", "old"], "a concurrent claim erased another pane's record");
+});
+
+test("a writer's DELETION is not undone by another writer's unrelated save", () => {
+  // The other half of applying only one's own changes: a writer that never touched a record must not
+  // write back the copy it happened to load.
+  const file = ledgerFile();
+  new HerdrPaneLedger({ file })
+    .remember("stale", { wrapper: "claude-aify", argv: ["claude-aify"], terminalId: "t0" })
+    .remember("kept", { wrapper: "claude-aify", argv: ["claude-aify"], terminalId: "t1" })
+    .save();
+  const pruner = new HerdrPaneLedger({ file }).load();
+  const claimer = new HerdrPaneLedger({ file }).load();
+  pruner.forget("stale");
+  pruner.save();
+  claimer.remember("new", { wrapper: "claude-aify", argv: ["claude-aify"], terminalId: "t2" });
+  claimer.save();
+  assert.deepEqual([...new HerdrPaneLedger({ file }).load().all().keys()].sort(), ["kept", "new"]);
+});
+
+test("A LISTING CANNOT PRUNE A RECORD WRITTEN AFTER IT WAS TAKEN, and still prunes an older one", () => {
+  const listedAt = Date.parse("2026-09-13T10:00:00.000Z");
+  const ledger = new HerdrPaneLedger({ file: ledgerFile() })
+    .remember("older", { wrapper: "claude-aify", argv: ["claude-aify"], terminalId: "t0", recordedAt: "2026-09-13T09:59:00.000Z" })
+    .remember("newer", { wrapper: "claude-aify", argv: ["claude-aify"], terminalId: "t1", recordedAt: "2026-09-13T10:00:01.000Z" })
+    .remember("unstamped", { wrapper: "claude-aify", argv: ["claude-aify"], terminalId: "t2" });
+  // A listing that names none of them, but is not empty.
+  const result = ledger.pruneTo([paneLabel({ wrapper: "claude-aify", record: "somebody-else" })], { listedAt });
+  assert.ok(ledger.get("newer"), "a record written after the listing was judged by it");
+  // CONTROLS: an older record, and one with no stamp at all, are still pruned exactly as before.
+  assert.equal(ledger.get("older"), null, "the rule stopped pruning records the listing could see");
+  assert.equal(ledger.get("unstamped"), null, "an unstamped record changed behaviour");
+  assert.equal(result.pruned, 2);
+});

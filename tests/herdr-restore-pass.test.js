@@ -27,6 +27,8 @@ const OLD_TERMINAL = "term_before";
 const NEW_TERMINAL = "term_after";
 const OLD_LABEL = paneLabel({ wrapper: "claude-aify", record: "rec1" });
 const NEW_LABEL = paneLabel({ wrapper: "claude-aify", record: "rec2" });
+//: The moment the pass takes its listing, injected so "written after the listing" is exact.
+const LISTED_AT = Date.parse("2026-09-13T10:00:00.000Z");
 
 function ledgerFile() {
   return path.join(fs.mkdtempSync(path.join(os.tmpdir(), "aify-herdr-pass-")), "panes.json");
@@ -40,7 +42,11 @@ function fakeHerdr(file, { panes, onRun }) {
   const typed = [];
   return {
     typed,
-    listPanes: () => ({ ok: true, panes, error: null }),
+    // A COPY, as a real CLI response is. This returned the SAME array the "wrapper" below renames a
+    // pane in, so a listing taken BEFORE the relaunch saw the label written AFTER it -- which made the
+    // test below pass against the exact defect it names. Found by review: detaching the response
+    // alone turned it 5 pass / 1 fail.
+    listPanes: () => ({ ok: true, panes: structuredClone(panes), error: null }),
     herdr: (argv) => {
       if (argv[0] === "pane" && argv[1] === "run") {
         typed.push(argv[3]);
@@ -62,14 +68,16 @@ test("a record written by a relaunched wrapper SURVIVES the pass that relaunched
     panes,
     onRun: () => {
       // The relaunched wrapper claims its pane: a new record, a new label on the pane.
-      const theirs = new HerdrPaneLedger({ file }).load();
-      theirs.remember("rec2", { wrapper: "claude-aify", argv: ["claude-aify"], terminalId: NEW_TERMINAL });
-      theirs.save();
+      // AS THE REAL `claim` DOES: rename the pane first, then write a record stamped with the moment
+      // it was written. A record with no stamp is not one a real wrapper ever writes.
       panes[0].label = NEW_LABEL;
+      const theirs = new HerdrPaneLedger({ file }).load();
+      theirs.remember("rec2", { wrapper: "claude-aify", argv: ["claude-aify"], terminalId: NEW_TERMINAL, recordedAt: new Date(LISTED_AT + 1000).toISOString() });
+      theirs.save();
     },
   });
 
-  const result = restore({ env: {}, ledger: new HerdrPaneLedger({ file }), cli });
+  const result = restore({ env: {}, ledger: new HerdrPaneLedger({ file }), cli, now: () => LISTED_AT });
   assert.equal(result.restored.length, 1, "the pane was not relaunched at all");
   assert.deepEqual(cli.typed, ["claude-aify --resume"], "the recorded argv was not replayed");
 

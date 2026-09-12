@@ -71,7 +71,11 @@ test("THE WHOLE COMMAND: the one whose socket answers still has its receipts aft
     env: {},
     cli: (argv, { env }) => {
       asked.push(env.HERDR_SOCKET_PATH);
-      return { ok: String(env.HERDR_SOCKET_PATH).includes(live), error: null };
+      // AS HERDR REALLY ANSWERS: a live socket succeeds, a dead one says `server_not_running` in its
+      // body. A bare `{ok: false}` is what a TIMEOUT looks like, and a timeout must delete nothing.
+      return String(env.HERDR_SOCKET_PATH).includes(live)
+        ? { ok: true, error: null, code: null }
+        : { ok: false, error: "herdr exited 1", code: "server_not_running" };
     },
   });
 
@@ -92,7 +96,32 @@ test("NEGATIVE CONTROL: with nothing answering, the same run removes the one it 
   // nobody -- so the survival above is a consequence of the probe and not of the code path.
   const live = randomUUID();
   const profileRoot = profileWith([live, randomUUID()]);
-  pruneInvocations({ profileRoot, env: {}, cli: () => ({ ok: false, error: "server_not_running" }) });
+  pruneInvocations({ profileRoot, env: {}, cli: () => ({ ok: false, error: "herdr exited 1", code: "server_not_running" }) });
   assert.equal(fs.existsSync(path.join(profileRoot, "invocations", live)), false);
   assert.deepEqual(invocationsOnDisk({ profileRoot }), []);
+});
+
+test("AN INVOCATION THAT COULD NOT BE ASKED KEEPS ITS RECEIPTS", () => {
+  // Found by review. The probe was `.ok`, so a Herdr that timed out -- busy, not dead -- lost its
+  // context file and the receipts that stop a later launch adopting its workers. Only Herdr saying
+  // `server_not_running` may delete; everything else is kept and named.
+  const slow = randomUUID();
+  const dead = randomUUID();
+  const profileRoot = profileWith([slow, dead]);
+  pruneInvocations({
+    profileRoot,
+    env: {},
+    cli: (argv, { env }) => (String(env.HERDR_SOCKET_PATH).includes(slow)
+      ? { ok: false, error: "spawnSync herdr ETIMEDOUT", code: null }
+      : { ok: false, error: "herdr exited 1", code: "server_not_running" }),
+  });
+  assert.ok(fs.existsSync(path.join(profileRoot, "invocations", slow, "ready.json")), "a slow instance lost its receipts");
+  assert.equal(fs.existsSync(path.join(profileRoot, "invocations", dead)), false, "the control: a dead one is still removed");
+});
+
+test("the plan names WHY an unanswered invocation was kept", () => {
+  const id = randomUUID();
+  const plan = prunePlan([{ invocation: id, root: "r" }], { live: [], unknown: [id] });
+  assert.deepEqual(plan.remove, []);
+  assert.equal(plan.keep[0].why, "could not tell whether it is running");
 });

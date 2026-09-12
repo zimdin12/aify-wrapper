@@ -199,6 +199,33 @@ test("the resident environment is the ISOLATED one, not three variables", () => 
   assert.equal(env.AIFY_HERDR_LEDGER, path.join(paths.root, "panes.json"), "the resident shares the host Herdr's pane ledger");
 });
 
+test("A BINARY THAT CANNOT BE SPAWNED IS REPORTED, not left to crash the launcher", async () => {
+  // Found by review. Node reports a spawn failure on a LATER tick by rejecting `started`; this code
+  // sampled `failed` synchronously, never observed the promise, and an unhandled rejection ended the
+  // launcher. Driven with the REAL adapter against a path that does not exist, so nothing starts --
+  // a double that set `failed` immediately is exactly how the shipped test missed it.
+  const { processes } = await import("../bin/herdr-aify.mjs");
+  const unhandled = [];
+  const onUnhandled = reason => unhandled.push(String(reason?.message || reason));
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    const paths = residentPaths({ profileRoot: root() });
+    const missing = path.join(root(), "no-such-herdr.exe");
+    const result = await ensureResident({
+      paths, env: {}, bin: missing, io: fs, sleep: async () => {}, attempts: 2,
+      cli: () => ({ ok: false, code: "server_not_running" }),
+      spawn: (command, argv, options) => processes.spawn(command, argv, options),
+    });
+    // Let any stray rejection surface before judging.
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.equal(result.ok, false);
+    assert.match(result.error, /ENOENT/, "the missing binary was not named as the reason");
+    assert.deepEqual(unhandled, [], "the spawn failure escaped as an unhandled rejection");
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
+});
+
 test("SEALED: no test here may start a real Herdr", async () => {
   // This file's own guard. Every path above injects `cli` and `spawn`; the moment one does not, a
   // real `herdr server` is started and left running -- which happened, three times, in one suite run.

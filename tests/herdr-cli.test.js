@@ -16,7 +16,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { herdr, listPanes } from "../lib/herdr-cli.mjs";
+import { SERVER_NOT_RUNNING, herdr, listPanes, serverAnswer } from "../lib/herdr-cli.mjs";
 
 /** A stand-in for spawnSync that returns whatever the test wants, and records how it was called. */
 function runner(result) {
@@ -113,4 +113,38 @@ test("listPanes distinguishes an empty fleet from an unanswerable question", () 
   const malformed = listPanes({ run: () => ok({ result: {} }) });
   assert.equal(malformed.ok, false);
   assert.match(malformed.error, /no panes array/);
+});
+
+// ── "IS IT GONE?" HAS THREE ANSWERS, NOT TWO ─────────────────────────────────────────────────────
+//
+// Found by review: `--prune` and `--stop` asked `!result.ok`, which a timeout satisfies as well as a
+// stopped server -- so a slow Herdr could have its invocation's receipts deleted. The shapes below are
+// the real ones, measured 2026-09-13 against Herdr 0.9.0 on Windows: a socket path with nothing
+// behind it AND a leftover socket file both exit 1 with this body, and a live server exits 0.
+
+const NOT_RUNNING_BODY = { id: "cli:pane:list", error: { code: "server_not_running", message: "no herdr server is running at C:/x/herdr.sock" } };
+
+test("a FAILING exit still yields Herdr's own code, which is where it says why", () => {
+  // ON STDERR, WITH STDOUT EMPTY -- measured, and the shape that matters: the first version of this
+  // fake put the body on stdout, the parser read stdout, and every real dead socket came back unknown.
+  const { run } = runner({ status: 1, stdout: "", stderr: JSON.stringify(NOT_RUNNING_BODY) });
+  const result = herdr(["pane", "list"], { run, bin: "herdr" });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, SERVER_NOT_RUNNING, "the body of a failing exit was thrown away");
+  // The prose is unchanged, so every existing reader of `error` sees what it always saw.
+  assert.equal(result.error, "herdr exited 1");
+});
+
+test("ONLY Herdr's refusal means not-running; a timeout, a spawn error or a bad body cannot tell", () => {
+  assert.equal(serverAnswer({ ok: true }), "serving");
+  assert.equal(serverAnswer(herdr(["pane", "list"], { run: runner({ status: 1, stdout: "", stderr: JSON.stringify(NOT_RUNNING_BODY) }).run, bin: "h" })), "not-running");
+
+  // NEGATIVE CONTROLS, each a real way the CLI fails without saying the server is gone.
+  const timedOut = herdr(["pane", "list"], { run: runner({ error: new Error("spawnSync herdr ETIMEDOUT") }).run, bin: "h" });
+  assert.equal(serverAnswer(timedOut), "unknown", "a timeout was read as a dead server");
+  const crashed = herdr(["pane", "list"], { run: runner({ status: 2, stdout: "", stderr: "panic" }).run, bin: "h" });
+  assert.equal(serverAnswer(crashed), "unknown", "an exit with no body was read as a dead server");
+  const otherRefusal = herdr(["pane", "list"], { run: runner(ok({ error: { code: "pane_not_found" } })).run, bin: "h" });
+  assert.equal(serverAnswer(otherRefusal), "unknown", "a different refusal was read as a dead server");
+  assert.equal(serverAnswer(null), "unknown");
 });

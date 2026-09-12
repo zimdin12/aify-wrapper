@@ -125,7 +125,10 @@ function claim({ wrapper, argv, env = process.env, ledger }) {
  * writes its OWN record; pruning against the snapshot taken before the relaunches deleted exactly
  * those records, so the feature worked once per pane and then silently stopped forever.
  */
-function restore({ env = process.env, ledger, cli = { herdr, listPanes } }) {
+function restore({ env = process.env, ledger, cli = { herdr, listPanes }, now = Date.now }) {
+  // STAMPED BEFORE THE LISTING IS TAKEN, so every record written after it is one this listing cannot
+  // have seen the label of. See `pruneTo`.
+  const listedAt = now();
   const listing = cli.listPanes({ env });
   if (!listing.ok) return { restored: [], refused: [], why: `could not read the pane list: ${listing.error}` };
 
@@ -164,7 +167,7 @@ function restore({ env = process.env, ledger, cli = { herdr, listPanes } }) {
     const terminalId = pane?.terminal_id == null ? "" : String(pane.terminal_id);
     if (held && terminalId) ledger.remember(entry.record, { ...held, terminalId });
   }
-  const pruned = ledger.pruneTo(listing.panes.map(pane => pane?.label).filter(Boolean));
+  const pruned = ledger.pruneTo(listing.panes.map(pane => pane?.label).filter(Boolean), { listedAt });
   const saved = ledger.save();
   return {
     restored,

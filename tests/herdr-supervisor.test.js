@@ -31,6 +31,7 @@ function fakeProcesses({
   envOk = true,
   stopOk = true,
   stillAnswering = false,
+  unanswered = false,
 } = {}) {
   const calls = [];
   let probes = 0;
@@ -64,9 +65,12 @@ function fakeProcesses({
       calls.push({ op: "run", command, argv, env: options.env });
       const verb = argv.join(" ");
       if (verb === "pane list") {
-        if (stopped) return { ok: stillAnswering, error: stillAnswering ? null : "server_not_running" };
+        // THE REAL REFUSAL CARRIES A CODE. See `serverAnswer`: only this code confirms a server gone.
+        // A TIMEOUT CARRIES NO CODE: spawnSync gives up and there is no body to read.
+        if (stopped && unanswered) return { ok: false, error: "spawnSync herdr ETIMEDOUT", code: null };
+        if (stopped) return stillAnswering ? { ok: true, error: null } : { ok: false, error: "herdr exited 1", code: "server_not_running" };
         probes += 1;
-        return probes > readyAfter ? { ok: true } : { ok: false, error: "server_not_running" };
+        return probes > readyAfter ? { ok: true } : { ok: false, error: "herdr exited 1", code: "server_not_running" };
       }
       if (verb.startsWith("workspace create")) {
         return spaceOk ? { ok: true, paneId: "w1:p1" } : { ok: false, error: "refused" };
@@ -211,6 +215,16 @@ test("a server that accepts the stop and keeps answering is NOT reported as gone
   const stopped = await instance.stop({});
   assert.equal(stopped.serverStopped, true, "the request was still accepted");
   assert.equal(stopped.confirmedGone, false, "a server still answering was reported as gone");
+});
+
+test("A POST-STOP READ THAT COULD NOT TELL IS NOT A CONFIRMATION", async () => {
+  // Found by review. `confirmedGone` read `!gone.ok`, and a timed-out read is `ok: false` exactly as a
+  // stopped server's refusal is -- so a slow Herdr was reported gone while its workers may still run.
+  const instance = instanceIn(fakeProcesses({ unanswered: true }));
+  await instance.start({ io: fakeIo() });
+  const stopped = await instance.stop({});
+  assert.equal(stopped.confirmedGone, false, "a read that timed out was reported as the server being gone");
+  assert.equal(stopped.goneUnknown, true, "an unanswered read was not reported as unanswered");
 });
 
 test("a server that will not stop IS killed, because the workers are downstream of it", async () => {
