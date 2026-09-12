@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // herdr-aify — an integrated Herdr that belongs to one invocation and dies with it.
 //
-//   herdr-aify            start an isolated Herdr with a dedicated aify-env in its first space
+//   herdr-aify            an isolated Herdr with WRAPPER SUPPORT and no daemon, for RESIDENT sessions
+//   herdr-aify env        the same, plus a dedicated aify-env in the first space, for MANAGED work
 //   herdr-aify --status   what this host's invocations left behind
 //   herdr-aify --stop     end the recorded instance, even if its launcher was killed without a signal
 //   herdr-aify --prune    delete what dead invocations left behind
@@ -25,6 +26,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { spawn, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import { isMainModule } from "../lib/main-module.mjs";
 import { herdr } from "../lib/herdr-cli.mjs";
@@ -264,6 +266,25 @@ async function stopRecorded({ profileRoot = defaultProfileRoot(), env = process.
  * streams, because Herdr draws to one and reads from the other, and a run with only stdin redirected
  * is exactly the case that would half-work.
  */
+/**
+ * Which of the two things this command is, decided by the operator's own split.
+ *
+ * `herdr-aify`      an isolated Herdr with WRAPPER SUPPORT and no daemon — for resident sessions, a
+ *                   place `claude-aify` runs, claims its pane, and is restored into.
+ * `herdr-aify env`  the same, plus a dedicated aify-env in the first space — for managed work.
+ *
+ * IT USED TO IGNORE THE WORD ENTIRELY. The operator's very first use was `herdr-aify env`, and the
+ * argument reached nothing: every launch started a daemon, including the launches meant to be a
+ * plain Herdr. A command that silently discards an argument is worse than one that refuses it,
+ * because the operator has no way to learn it was never read.
+ */
+export function modeFor(argv = []) {
+  const words = argv.filter(arg => !String(arg).startsWith("-"));
+  if (words.length === 0) return { ok: true, withEnv: false };
+  if (words.length === 1 && words[0] === "env") return { ok: true, withEnv: true };
+  return { ok: false, error: `unknown argument ${JSON.stringify(words.join(" "))}; expected "env" or nothing` };
+}
+
 export function shouldAttach({ argv = [], io = process } = {}) {
   if (argv.includes("--no-attach")) return false;
   return Boolean(io.stdout?.isTTY && io.stdin?.isTTY);
@@ -282,6 +303,7 @@ async function run({
   env = process.env,
   attaching = shouldAttach({ argv: process.argv.slice(2) }),
   makeInstance = realInstance,
+  withEnv = false,
 } = {}) {
   // A SECOND LAUNCH REPORTS AND STOPS. Without this the incumbent's owner pointer is simply
   // overwritten: two dedicated Herdrs and two dedicated aify-envs run with no refusal anywhere, and
@@ -365,7 +387,14 @@ async function run({
     return await shutdown(1);
   }
 
-  const started = await instance.start({ env, herdrBin: binary.bin });
+  const started = await instance.start({
+    env,
+    herdrBin: binary.bin,
+    withEnv,
+    // THE PLUGIN GOES INTO THIS PROFILE, not the operator's. Without it a `claude-aify` started in
+    // here claims no pane and nothing restores it -- which is the whole point of the plain mode.
+    pluginDir: fileURLToPath(new URL("../herdr-plugin/", import.meta.url)),
+  });
   if (!started.ok) {
     process.stderr.write(`herdr-aify: could not start (${started.phase}): ${started.error}\n`);
     return await shutdown(1);
@@ -373,7 +402,16 @@ async function run({
 
   process.stderr.write(`herdr-aify: invocation ${invocation}\n`);
   process.stderr.write(`herdr-aify: herdr socket ${instance.profile.socketPath}\n`);
-  process.stderr.write(`herdr-aify: aify-env in ${started.paneId}\n`);
+  // SAY WHICH OF THE TWO THIS IS. The modes differ in the one thing the operator cares about — whether
+  // managed work can run here — and a line that read the same for both would leave them guessing.
+  process.stderr.write(
+    withEnv
+      ? `herdr-aify: aify-env in ${started.paneId} — managed work runs here\n`
+      : "herdr-aify: no aify-env — resident sessions only; claude-aify panes are claimed and restored\n",
+  );
+  if (instance.pluginLinked === false) {
+    process.stderr.write(`herdr-aify: WARNING the aify plugin did not link (${instance.pluginError}); panes will not be restored\n`);
+  }
 
   // ATTACH, WHICH IS THE THING AN OPERATOR ACTUALLY WANTED. `herdr server` is headless; a bare
   // `herdr` is the client that draws it. Without this the command printed these three lines in front
@@ -402,6 +440,15 @@ async function run({
   return await shutdown(0);
 }
 
+const USAGE = [
+  "usage: herdr-aify [env] [--no-attach]",
+  "       herdr-aify --status | --stop | --prune",
+  "",
+  "  herdr-aify        an isolated Herdr with wrapper support, for RESIDENT sessions.",
+  "                    claude-aify panes claim themselves here and are restored here.",
+  "  herdr-aify env    the same, plus a dedicated aify-env in the first space, for MANAGED work.",
+].join(String.fromCharCode(10)) + String.fromCharCode(10);
+
 async function main(argv) {
   if (argv.includes("--status")) {
     process.stdout.write(`${JSON.stringify(invocationsOnDisk(), null, 1)}\n`);
@@ -410,10 +457,17 @@ async function main(argv) {
   if (argv.includes("--stop")) return stopRecorded();
   if (argv.includes("--prune")) return pruneInvocations();
   if (argv.includes("--help") || argv.includes("-h")) {
-    process.stdout.write("usage: herdr-aify [--status | --stop | --prune | --no-attach]\n");
+    process.stdout.write(USAGE);
     return 0;
   }
-  return run();
+  // AN ARGUMENT THE COMMAND DOES NOT UNDERSTAND IS REFUSED, NOT DISCARDED. `env` reached nothing for
+  // this feature's whole life while being the operator's very first use of it.
+  const mode = modeFor(argv);
+  if (!mode.ok) {
+    process.stderr.write(`herdr-aify: ${mode.error}\n${USAGE}`);
+    return 2;
+  }
+  return run({ withEnv: mode.withEnv });
 }
 
 export { run, processes, stopRecorded };
