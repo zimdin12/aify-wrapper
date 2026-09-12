@@ -29,9 +29,17 @@ test("a profile is derived from the invocation and sits under it", () => {
   assert.ok(p.socketPath.includes(INVOCATION), "two invocations would share one socket");
 });
 
-test("the socket is a named pipe on Windows and a file elsewhere", () => {
-  assert.ok(paths("win32").socketPath.startsWith("\\\\.\\pipe\\"));
-  assert.ok(paths("linux").socketPath.endsWith(".sock"));
+test("the socket is a FILE path on every platform, including Windows", () => {
+  // MEASURED, after the first real run failed. A `\.\pipe\...` named pipe -- written by analogy
+  // with the instance layout beside this -- made herdr exit 1 with PermissionDenied, and the
+  // launcher could only report "exited before it was ready". Herdr uses a filesystem socket on
+  // Windows too; a file path under the invocation root was measured starting cleanly.
+  for (const platform of ["win32", "linux", "darwin"]) {
+    const socket = paths(platform).socketPath;
+    assert.ok(socket.endsWith(".sock"), `${platform} socket is not a file path: ${socket}`);
+    assert.ok(!socket.includes("pipe"), `${platform} socket went back to a named pipe: ${socket}`);
+    assert.ok(socket.includes(INVOCATION), "two invocations would share one socket");
+  }
 });
 
 test("a bad invocation or a relative root is refused rather than defaulted", () => {

@@ -42,10 +42,13 @@ test("the binary Herdr itself named is the one used", () => {
   const { run, calls } = runner(ok({ result: {} }));
   herdr(["pane", "list"], { run, env: { HERDR_BIN_PATH: "C:\\herdr\\herdr.exe" } });
   assert.equal(calls[0].exe, "C:\\herdr\\herdr.exe");
-  // With nothing to go on, PATH is the honest fallback.
+  // With nothing naming a binary, the resolver decides -- and on a host where Herdr is installed
+  // that is a real path, not the bare name. The bare name is only what is left when nothing is
+  // found on disk, which is what made the operator's first run die with a spawn ENOENT.
   const plain = runner(ok({ result: {} }));
   herdr(["pane", "list"], { run: plain.run, env: {} });
-  assert.equal(plain.calls[0].exe, "herdr");
+  assert.ok(plain.calls[0].exe.length > 0);
+  assert.ok(plain.calls[0].exe === "herdr" || plain.calls[0].exe.includes("herdr"));
 });
 
 test("an error in the body is a failure even though the process exited 0", () => {

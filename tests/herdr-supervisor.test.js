@@ -131,6 +131,14 @@ test("the env is started with the context file, led by the flag aify-env require
   assert.equal(launch.argv[4], "--instance-context");
   assert.equal(launch.argv[5], instance.contextFile);
   assert.equal(launch.env.AIFY_ADVERTISE, "0", "a dedicated instance that advertised would claim for this host");
+
+  // AND IT MUST BE ON THE SERVER, not only on this CLI call. `pane run` TYPES a command into a shell
+  // that already exists, so environment given to the `herdr` process never reaches the daemon.
+  // Measured against a real Herdr: aify-env refused with `instance_context: advertisement must be
+  // explicitly disabled` while this assertion's CLI-level check was passing.
+  const server = processes.calls.find(call => call.op === "spawn");
+  assert.equal(server.env.AIFY_ADVERTISE, "0", "the pane inherits the SERVER's environment, and it lacks the flag");
+  assert.equal(server.env.AIFY_HERDR_INVOCATION, instance.invocation);
   // And it must not share the host's pane ledger, or a restore in one instance prunes the other's.
   assert.ok(String(launch.env.AIFY_HERDR_LEDGER).includes(instance.invocation));
 });

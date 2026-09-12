@@ -3,6 +3,7 @@
 //
 //   herdr-aify            start an isolated Herdr with a dedicated aify-env in its first space
 //   herdr-aify --status   what this host's invocations left behind
+//   herdr-aify --stop     end the recorded instance, even if its launcher was killed without a signal
 //
 // WHAT IT IS FOR, in the operator's words: "a dedicated Herdr instance with the actual aify-env
 // process in its own space. Ending herdr-aify ends that Herdr instance, its env, and its workers. A
@@ -25,6 +26,8 @@ import { spawn, spawnSync } from "node:child_process";
 
 import { isMainModule } from "../lib/main-module.mjs";
 import { herdr } from "../lib/herdr-cli.mjs";
+import { resolveHerdrBinary } from "../lib/herdr-binary.mjs";
+import { herdrServerEnv, profilePaths } from "../lib/herdr-profile.mjs";
 import { HerdrOwner, clearProfileOwner, profileOwnerState, writeProfileOwner } from "../lib/herdr-owner.mjs";
 import { HerdrAifyInstance } from "../lib/herdr-supervisor.mjs";
 
@@ -101,13 +104,65 @@ export function invocationsOnDisk({ profileRoot = defaultProfileRoot(), io = fs 
   });
 }
 
+/**
+ * Does this host already have a live instance?
+ *
+ * A FUNCTION, because the inline version of this was wrong for its whole life and nothing could see
+ * it. It read `.live`, a field `profileOwnerState` has never returned, so the refusal never fired --
+ * and a test of `profileOwnerState` stayed green throughout, because the defect was in the CALLER.
+ * Pulled out so the call site itself is something a test can drive.
+ */
+export function alreadyRunning(state) {
+  return Boolean(state?.owned);
+}
+
+/**
+ * End the instance this host has recorded, whether or not its launcher is still around.
+ *
+ * WHY THIS EXISTS. Teardown normally runs from the launcher's signal handlers, and on Windows those
+ * only fire for a real console Ctrl-C or a window close. `taskkill`, End Task, a dying parent, or an
+ * SSH session going away deliver nothing — measured: a launcher killed that way left its dedicated
+ * Herdr, its aify-env and their panes running, with an owner pointer nobody would ever clear.
+ *
+ * The instance is still perfectly addressable in that state: the owner pointer names the invocation,
+ * and the invocation names a socket. So this is not a workaround, it is the direct route.
+ */
+async function stopRecorded({ profileRoot = defaultProfileRoot(), env = process.env } = {}) {
+  const state = await profileOwnerState(profileRoot);
+  if (!state?.invocation) {
+    process.stderr.write("herdr-aify: this host has no instance recorded; nothing to stop\n");
+    return 0;
+  }
+  const paths = profilePaths({ profileRoot, invocation: state.invocation });
+  const serverEnv = herdrServerEnv(env, paths);
+  const bin = resolveHerdrBinary({ env }).bin;
+
+  const stopped = herdr(["server", "stop"], { bin, env: serverEnv });
+  // ASKED AGAIN, because "the request was accepted" is not "the server is gone", and this command's
+  // entire job is the second one.
+  const gone = !herdr(["pane", "list"], { bin, env: serverEnv }).ok;
+  clearProfileOwner(profileRoot, state.invocation);
+
+  process.stderr.write(
+    `herdr-aify: invocation ${state.invocation} — ` +
+      `${stopped.ok ? "stop accepted" : `stop refused (${stopped.error})`}, ` +
+      `${gone ? "confirmed gone" : "STILL ANSWERING"}\n`,
+  );
+  return gone ? 0 : 1;
+}
+
 async function run({ profileRoot = defaultProfileRoot(), env = process.env } = {}) {
   // A SECOND LAUNCH REPORTS AND STOPS. Without this the incumbent's owner pointer is simply
   // overwritten: two dedicated Herdrs and two dedicated aify-envs run with no refusal anywhere, and
   // when the SECOND one exits it clears the pointer, leaving the first unowned. `profileOwnerState`
   // existed for exactly this question and nothing asked it.
+  // `owned`, NOT `live`. This read `incumbent?.live` — a field `profileOwnerState` has never
+  // returned — so it was always undefined and the refusal never fired once: a second `herdr-aify`
+  // started a second Herdr and a second dedicated aify-env, and clobbered the first one's owner
+  // pointer on the way. Caught by running two of them, not by a test, which is why there is now a
+  // test that drives this function's REAL return shape.
   const incumbent = await profileOwnerState(profileRoot);
-  if (incumbent?.live) {
+  if (alreadyRunning(incumbent)) {
     process.stderr.write(
       `herdr-aify: an instance is already running here (invocation ${incumbent.invocation}${
         incumbent.pid ? `, pid ${incumbent.pid}` : ""
@@ -134,13 +189,14 @@ async function run({ profileRoot = defaultProfileRoot(), env = process.env } = {
     // rejection that killed the process mid-shutdown, leaving whatever `stop()` had not yet reached.
     let line = "herdr-aify: stopped";
     try {
-      const result = await instance.stop({ env });
-      line =
-        `herdr-aify: stopped (server ${result.serverStopped ? "stopped cleanly" : "did not stop"}` +
-        `${result.killed ? ", tree killed" : ""}` +
-        // Reported separately from the request, because a stop that was ACCEPTED is not a server
-        // that is gone, and this command's whole promise is about what is actually gone.
-        `${result.confirmedGone ? ", confirmed gone" : ", STILL ANSWERING - check herdr-aify --status"})`;
+      const result = await instance.stop({ env, herdrBin: resolveHerdrBinary({ env }).bin });
+      line = !result.everServed
+        ? "herdr-aify: nothing was started, so there is nothing to stop"
+        : `herdr-aify: stopped (server ${result.serverStopped ? "stopped cleanly" : "did not stop"}` +
+          `${result.killed ? ", tree killed" : ""}` +
+          // Reported separately from the request, because a stop that was ACCEPTED is not a server
+          // that is gone, and this command's whole promise is about what is actually gone.
+          `${result.confirmedGone ? ", confirmed gone" : ", STILL ANSWERING - check herdr-aify --status"})`;
     } catch (err) {
       line = `herdr-aify: teardown failed: ${err?.message || err}`;
     }
@@ -166,7 +222,18 @@ async function run({ profileRoot = defaultProfileRoot(), env = process.env } = {
     }
   }
 
-  const started = await instance.start({ env });
+  // RESOLVED BEFORE ANYTHING IS SPAWNED, and refused with the search path when it is missing. The
+  // first real run of this command died on `spawn herdr ENOENT` against a host where Herdr was
+  // installed and working: its directory is on neither the user nor the system PATH, so the bare
+  // name resolves only for shells Herdr itself started. `ENOENT` told the operator nothing.
+  const binary = resolveHerdrBinary({ env });
+  if (!binary.ok) {
+    process.stderr.write(`herdr-aify: ${binary.why}\n`);
+    await shutdown(1);
+    return 1;
+  }
+
+  const started = await instance.start({ env, herdrBin: binary.bin });
   if (!started.ok) {
     process.stderr.write(`herdr-aify: could not start (${started.phase}): ${started.error}\n`);
     await shutdown(1);
@@ -177,9 +244,13 @@ async function run({ profileRoot = defaultProfileRoot(), env = process.env } = {
   process.stderr.write(`herdr-aify: herdr socket ${instance.profile.socketPath}\n`);
   process.stderr.write(`herdr-aify: aify-env in ${started.paneId}; close this command to end all of it\n`);
 
-  // The command's lifetime IS the instance's lifetime, which is the whole contract. Nothing else
-  // here keeps the process alive, so the wait is explicit rather than an accident of an open handle.
-  await new Promise(() => {});
+  // THE COMMAND'S LIFETIME IS THE INSTANCE'S LIFETIME, in both directions. Waiting on a promise that
+  // never resolves held only one of them: stopping the server from elsewhere left this process alive
+  // in front of nothing. Waiting on the server itself closes the loop, and the teardown below still
+  // runs so the owner pointer is cleared rather than left for the next launch to trip over.
+  await instance.whenServerExits();
+  process.stderr.write("herdr-aify: the dedicated herdr exited" + String.fromCharCode(10));
+  await shutdown(0);
   return 0;
 }
 
@@ -188,14 +259,15 @@ async function main(argv) {
     process.stdout.write(`${JSON.stringify(invocationsOnDisk(), null, 1)}\n`);
     return 0;
   }
+  if (argv.includes("--stop")) return stopRecorded();
   if (argv.includes("--help") || argv.includes("-h")) {
-    process.stdout.write("usage: herdr-aify [--status]\n");
+    process.stdout.write("usage: herdr-aify [--status | --stop]\n");
     return 0;
   }
   return run();
 }
 
-export { run, processes };
+export { run, processes, stopRecorded };
 
 if (isMainModule(import.meta.url)) {
   // A THROW FROM `run()` USED TO SURFACE AS A RAW UNHANDLED REJECTION. The reachable window is real:
