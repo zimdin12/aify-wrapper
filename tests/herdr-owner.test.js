@@ -121,24 +121,52 @@ test("an owner that belongs to another invocation does not vouch for this daemon
   }
 });
 
-test("a service in the registry is refused before anything starts", { skip: skipWithoutEnv }, async () => {
+test("A REGISTERED SERVICE IS ADMITTED, because the instance is an ordinary environment", { skip: skipWithoutEnv }, async () => {
+  // THIS TEST IS INVERTED FROM WHAT IT WAS, and the inversion is the operator's decision rather than
+  // a relaxation. It used to require `scoped_service_contract_required` — a dedicated instance was
+  // refused any service at all — which is exactly what left the operator looking at
+  // `no services registered on this host`, a picker answering 503, and an environment that could
+  // start nothing. Their ruling, 2026-09-12: "it is same env. just herdr is management helper
+  // basically ... it should act same way as outside of herdr, but in this case it knows it is inside
+  // herdr and can control herdr". So an instance context binds a LIFETIME; it does not make this a
+  // lesser environment.
   const { context, contextFile, owner } = await invocation();
   try {
-    fs.writeFileSync(context.serviceRegistry, JSON.stringify({ version: 1, services: { "aify-comms": { url: "http://x" } } }));
-    await assert.rejects(
-      () => envBootstrap.prepareInstance(contextFile, { AIFY_ADVERTISE: "0" }),
-      /scoped_service_contract_required/,
-    );
+    fs.writeFileSync(context.serviceRegistry, JSON.stringify({ version: 1, services: { "aify-comms": { endpoint: "http://x" } } }));
+    const prepared = await envBootstrap.prepareInstance(contextFile, { AIFY_ADVERTISE: "0" });
+    assert.equal(prepared.invocation, context.invocation, "a populated registry was refused");
   } finally {
     await owner.close();
   }
 });
 
-test("leaving advertisement on is refused, so a dedicated instance cannot publish itself", { skip: skipWithoutEnv }, async () => {
+test("a registry it cannot READ is still refused, because the contents would be a guess", { skip: skipWithoutEnv }, async () => {
+  // THE CONTROL for the inversion above. Admitting services must not become admitting anything: a
+  // registry this daemon cannot parse is one whose contents it would be inventing.
+  for (const bad of ["{ not json", JSON.stringify({ version: 2, services: {} }), JSON.stringify({ version: 1, services: [] })]) {
+    const { context, contextFile, owner } = await invocation();
+    try {
+      fs.writeFileSync(context.serviceRegistry, bad);
+      await assert.rejects(
+        () => envBootstrap.prepareInstance(contextFile, { AIFY_ADVERTISE: "0" }),
+        /readable service registry required/,
+        `a registry of ${bad.slice(0, 24)} was admitted`,
+      );
+    } finally {
+      await owner.close();
+    }
+  }
+});
+
+test("ADVERTISEMENT IS THE HOST'S SETTING, not something the instance contract dictates", { skip: skipWithoutEnv }, async () => {
+  // ALSO INVERTED. `prepareInstance` refused to boot unless `AIFY_ADVERTISE` was exactly "0", so a
+  // dedicated instance described no runtimes and no terminal — the service saw a host that could run
+  // nothing, and the operator saw a dashboard with no environment online. An environment that
+  // behaves like every other one advertises like every other one.
   const { contextFile, owner } = await invocation();
   try {
-    await assert.rejects(() => envBootstrap.prepareInstance(contextFile, {}), /advertisement must be explicitly disabled/);
-    await assert.rejects(() => envBootstrap.prepareInstance(contextFile, { AIFY_ADVERTISE: "1" }), /advertisement/);
+    const prepared = await envBootstrap.prepareInstance(contextFile, {});
+    assert.ok(prepared.invocation, "an instance was refused for advertising");
   } finally {
     await owner.close();
   }

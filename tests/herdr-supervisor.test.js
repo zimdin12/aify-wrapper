@@ -130,15 +130,18 @@ test("the env is started with the context file, led by the flag aify-env require
   assert.equal(launch.argv[2], "w1:p1", "the env did not land in the first space");
   assert.equal(launch.argv[4], "--instance-context");
   assert.equal(launch.argv[5], instance.contextFile);
-  assert.equal(launch.env.AIFY_ADVERTISE, "0", "a dedicated instance that advertised would claim for this host");
+  // ADVERTISING IS NO LONGER FORCED OFF. It was, and that made the instance describe no runtimes and
+  // no terminal -- the service saw a host that could run nothing, the dashboard showed no environment
+  // online, and nothing the instance started was reachable. The operator's ruling: it behaves like any
+  // other aify-env and additionally knows it is inside a Herdr it can drive.
+  assert.equal("AIFY_ADVERTISE" in launch.env, false, "the instance still overrides the host's advertising");
 
-  // AND IT MUST BE ON THE SERVER, not only on this CLI call. `pane run` TYPES a command into a shell
-  // that already exists, so environment given to the `herdr` process never reaches the daemon.
-  // Measured against a real Herdr: aify-env refused with `instance_context: advertisement must be
-  // explicitly disabled` while this assertion's CLI-level check was passing.
+  // THE INVOCATION STILL TRAVELS ON THE SERVER, not only on this CLI call: `pane run` TYPES a command
+  // into a shell that already exists, so environment given to the `herdr` process never reaches the
+  // daemon. That is a measured defect, and the assertion below is what keeps it fixed.
   const server = processes.calls.find(call => call.op === "spawn");
-  assert.equal(server.env.AIFY_ADVERTISE, "0", "the pane inherits the SERVER's environment, and it lacks the flag");
-  assert.equal(server.env.AIFY_HERDR_INVOCATION, instance.invocation);
+  assert.equal("AIFY_ADVERTISE" in server.env, false, "the server still forces the host's advertising off");
+  assert.equal(server.env.AIFY_HERDR_INVOCATION, instance.invocation, "the pane inherits the SERVER's environment, and it lacks the invocation");
   // And it must not share the host's pane ledger, or a restore in one instance prunes the other's.
   assert.ok(String(launch.env.AIFY_HERDR_LEDGER).includes(instance.invocation));
 });

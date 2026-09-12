@@ -87,11 +87,25 @@ test("the policy fields are constants: a dedicated instance never takes over and
 
 test("writing a context creates the two files the daemon reads, and NONE of the three it publishes", () => {
   const { context, contextFile } = minted();
-  const file = writeInstanceContext(context);
+  // SEALED. A host registry is named explicitly, so this never reads the operator's live
+  // `~/.aify/services.json` -- which the default would, making the assertion depend on whatever this
+  // machine happens to have installed.
+  const hostRegistry = path.join(os.tmpdir(), `aify-host-${Date.now()}.json`);
+  fs.writeFileSync(hostRegistry, JSON.stringify({ services: { "aify-comms": { endpoint: "http://127.0.0.1:8800" } } }));
+  const file = writeInstanceContext(context, { hostRegistry });
   assert.equal(file, contextFile);
   // Positive: the two that must exist.
   assert.ok(fs.existsSync(contextFile), "instance.json was not written");
-  assert.deepEqual(JSON.parse(fs.readFileSync(context.serviceRegistry, "utf8")), EMPTY_SERVICE_REGISTRY);
+  // THE INSTANCE SEES THE HOST'S SERVICES. An empty registry here is what left the operator with a
+  // picker answering 503 and an environment that could start nothing.
+  assert.deepEqual(
+    JSON.parse(fs.readFileSync(context.serviceRegistry, "utf8")),
+    { version: 1, services: { "aify-comms": { endpoint: "http://127.0.0.1:8800" } } },
+  );
+  // NEGATIVE CONTROL: a host with nothing installed still yields a registry the daemon accepts.
+  const bare = minted();
+  writeInstanceContext(bare.context, { hostRegistry: path.join(os.tmpdir(), "absent-registry.json") });
+  assert.deepEqual(JSON.parse(fs.readFileSync(bare.context.serviceRegistry, "utf8")), EMPTY_SERVICE_REGISTRY);
   // Negative: the three whose prior existence means "this invocation is already used". If the
   // launcher ever pre-created one, every launch would be refused as a reused invocation.
   for (const name of ["owned-processes.json", "ready.json", "claimed.json"]) {
@@ -105,11 +119,14 @@ test("an invocation directory cannot be minted twice", () => {
   assert.throws(() => writeInstanceContext(context), /EEXIST/);
 });
 
-test("the daemon environment disables advertisement, and leaves the agent's own profile alone", () => {
+test("the daemon environment leaves advertising to the host, and the agent's own profile alone", () => {
   const { context } = minted();
   const base = { PATH: "/usr/bin", HOME: "/home/steven", APPDATA: "C:/Users/x/AppData/Roaming" };
   const env = dedicatedDaemonEnv(base, context);
-  assert.equal(env.AIFY_ADVERTISE, "0");
+  // ADVERTISING IS THE HOST'S SETTING NOW. Forcing it off made the instance describe no runtimes and
+  // no terminal, so the service saw a host that could run nothing and the dashboard showed no
+  // environment online. The instance context binds a lifetime; it does not decide this.
+  assert.equal("AIFY_ADVERTISE" in env, false, "the instance still overrides the host's advertising");
   assert.equal(env.AIFY_HERDR_INVOCATION, context.invocation);
   // Redirecting these would reach every shell, wrapper and agent started under this Herdr.
   assert.equal(env.HOME, base.HOME);
