@@ -39,7 +39,16 @@ herdr plugin unlink aify.wrappers   # undo the install
 herdr-aify                       # an isolated Herdr with a dedicated aify-env in its first space
 herdr-aify --status              # what previous invocations left on this host
 herdr-aify --stop                # end the recorded instance from any shell
+herdr-aify --prune               # delete what dead invocations left behind
 ```
+
+**`--prune` is there because every launch mints a directory and nothing removed one.** Twelve had
+accumulated in a day of testing, and `--status` — the command you reach for when something is wrong —
+prints all of them, so the line you need sinks under the residue of launches that failed weeks ago.
+Each invocation is probed on its OWN socket before anything is deleted, so an instance that is still
+running keeps its context file and its receipts: those receipts are what stop a later invocation
+adopting its workers, and a prune that deleted them would quietly remove the guarantee this whole
+design is built on.
 
 **`--stop` exists because of how Windows ends a command.** Only a real console Ctrl-C or a window
 close delivers a signal a Node process can handle; a launcher ended any other way leaves its Herdr,

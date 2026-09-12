@@ -105,14 +105,6 @@ export function invocationsOnDisk({ profileRoot = defaultProfileRoot(), io = fs 
 }
 
 /**
- * Does this host already have a live instance?
- *
- * A FUNCTION, because the inline version of this was wrong for its whole life and nothing could see
- * it. It read `.live`, a field `profileOwnerState` has never returned, so the refusal never fired --
- * and a test of `profileOwnerState` stayed green throughout, because the defect was in the CALLER.
- * Pulled out so the call site itself is something a test can drive.
- */
-/**
  * What the operator is told a teardown did.
  *
  * DERIVED FROM THE OUTCOME, NOT ASSEMBLED FROM THE ATTEMPTS, because assembling it produced a line
@@ -139,6 +131,79 @@ export function teardownLine(result) {
   return `herdr-aify: stopped (${how}, ${outcome})`;
 }
 
+/**
+ * Which recorded invocations may be deleted, given which ones something is still answering for.
+ *
+ * PURE, and separate from the deleting, because the deciding is the part that can be wrong in a way
+ * nobody notices until state is already gone.
+ *
+ * A LIVE INVOCATION IS ONE WHOSE OWN SOCKET ANSWERS, not one the owner pointer happens to name. The
+ * pointer records a single current instance, so keying on it would delete the directory of a Herdr
+ * that is still running because its launcher was killed without a signal -- which is the exact
+ * situation this feature already has a command for.
+ *
+ * A DIRECTORY WHOSE NAME IS NOT AN INVOCATION IS LEFT ALONE. Nothing here put it there, so nothing
+ * here should decide it is rubbish.
+ */
+export function prunePlan(records, { live = [] } = {}) {
+  const answering = new Set(live);
+  const remove = [];
+  const keep = [];
+  for (const record of records) {
+    if (!UUID_V4.test(record.invocation)) keep.push({ ...record, why: "not an invocation" });
+    else if (answering.has(record.invocation)) keep.push({ ...record, why: "still answering" });
+    else remove.push(record);
+  }
+  return Object.freeze({ remove, keep });
+}
+
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/**
+ * Delete what previous invocations left behind, keeping anything still running.
+ *
+ * WHY THIS EXISTS. Every launch mints a directory and nothing ever removed one, so `--status` -- the
+ * command an operator reaches for when something is wrong -- grows a page longer every time the
+ * feature is used, and the useful line is buried under the residue of launches that failed months
+ * ago. Twelve had accumulated in a day of testing.
+ *
+ * EACH ONE IS PROBED ON ITS OWN SOCKET before it is deleted, so a running instance whose launcher
+ * was killed keeps its context file and its receipts -- which are what stop a later invocation
+ * adopting its workers.
+ */
+export function pruneInvocations({ profileRoot = defaultProfileRoot(), env = process.env, io = fs, cli = herdr } = {}) {
+  const records = invocationsOnDisk({ profileRoot, io });
+  const live = records
+    .filter(record => UUID_V4.test(record.invocation))
+    .filter(record => {
+      const paths = profilePaths({ profileRoot, invocation: record.invocation });
+      return cli(["pane", "list"], { bin: resolveHerdrBinary({ env }).bin, env: herdrServerEnv(env, paths) }).ok;
+    })
+    .map(record => record.invocation);
+
+  const plan = prunePlan(records, { live });
+  let removed = 0;
+  for (const record of plan.remove) {
+    try {
+      io.rmSync(record.root, { recursive: true, force: true });
+      removed += 1;
+    } catch (err) {
+      process.stderr.write(`herdr-aify: could not remove ${record.invocation}: ${err?.message || err}\n`);
+    }
+  }
+  const kept = plan.keep.map(record => `${record.invocation} (${record.why})`);
+  process.stderr.write(`herdr-aify: removed ${removed} of ${records.length} invocation(s)${kept.length ? `; kept ${kept.join(", ")}` : ""}\n`);
+  return 0;
+}
+
+/**
+ * Does this host already have a live instance?
+ *
+ * A FUNCTION, because the inline version of this was wrong for its whole life and nothing could see
+ * it. It read `.live`, a field `profileOwnerState` has never returned, so the refusal never fired --
+ * and a test of `profileOwnerState` stayed green throughout, because the defect was in the CALLER.
+ * Pulled out so the call site itself is something a test can drive.
+ */
 export function alreadyRunning(state) {
   return Boolean(state?.owned);
 }
@@ -280,8 +345,9 @@ async function main(argv) {
     return 0;
   }
   if (argv.includes("--stop")) return stopRecorded();
+  if (argv.includes("--prune")) return pruneInvocations();
   if (argv.includes("--help") || argv.includes("-h")) {
-    process.stdout.write("usage: herdr-aify [--status | --stop]\n");
+    process.stdout.write("usage: herdr-aify [--status | --stop | --prune]\n");
     return 0;
   }
   return run();
