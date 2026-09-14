@@ -76,11 +76,12 @@ reads that pointer, addresses the instance it names and reports whether the serv
 It is not a workaround for a missing Job object: the pointer names the invocation and the invocation
 names the socket, so it can only ever reach the instance this host recorded.
 
-**You do not need `herdr` on your PATH**, and you probably do not have it: Herdr puts itself on the
-PATH of the shells IT starts, which is why the bare name resolves inside a Herdr pane and fails at an
-ordinary prompt. The launcher looks for `HERDR_BIN_PATH`, then Herdr's own
-`~/.herdr/packages/standalone/current`, then the newest release directory, and a refusal names every
-place it looked.
+**You do not need `herdr` on your PATH**, and on Windows you probably do not have it: Herdr puts itself
+on the PATH of the shells IT starts, which is why the bare name resolves inside a Herdr pane and fails at an
+ordinary prompt. The launcher looks for `HERDR_BIN_PATH`, then wherever Herdr's installer for this
+platform puts it -- on Windows `~/.herdr/packages/standalone/current` (or `HERDR_HOME`), the newest
+release directory and the visible bin; on Linux and macOS `~/.local/bin` -- with `HERDR_INSTALL_DIR`
+replacing the default bin directory on both, then PATH. A refusal names every place it looked.
 
 Closing `herdr-aify env` ends that Herdr, its dedicated env and its workers. A new invocation gets a
 fresh UUID and the daemon refuses a context whose receipts already exist, so it cannot resurrect the

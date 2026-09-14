@@ -19,6 +19,7 @@ import { candidatePaths, resolveHerdrBinary } from "../lib/herdr-binary.mjs";
 
 const HOME = path.join("C:", "Users", "Someone");
 const STANDALONE = path.join(HOME, ".herdr", "packages", "standalone");
+const LINUX_HOME = path.join("/home", "someone");
 
 /** An `io` that says only the named paths exist. */
 function diskWith(present = [], releases = []) {
@@ -94,9 +95,7 @@ test("the newest release is preferred when there are several", () => {
   assert.equal(resolved.bin, newer);
 });
 
-test("nothing on disk still falls back to the bare name, and SAYS the search failed", () => {
-  // A host where Herdr lives somewhere this does not know about but IS on PATH must keep working;
-  // spending one spawn to find that out is cheaper than refusing a working configuration.
+test("nothing found anywhere still falls back to the bare name, and SAYS the search failed", () => {
   const resolved = resolveHerdrBinary({ env: {}, home: HOME, platform: "win32", io: diskWith([]) });
   assert.equal(resolved.ok, false);
   assert.equal(resolved.bin, "herdr", "the bare name is still worth trying");
@@ -135,4 +134,69 @@ test("a disk that throws on every question does not crash the resolver", () => {
   const resolved = resolveHerdrBinary({ env: {}, home: HOME, platform: "win32", io: angry });
   assert.equal(resolved.ok, false);
   assert.equal(resolved.bin, "herdr");
+});
+
+// THE SECOND DEFECT, reported on WSL: `herdr-aify` refused on a host where `herdr --version` worked,
+// having looked only in `~/.herdr/packages/standalone/current`. That is where Herdr's WINDOWS
+// installer puts it. Its Linux/macOS installer (`distribution/install.sh`, v0.9.0) writes
+// `${HERDR_INSTALL_DIR:-$HOME/.local/bin}/herdr` and nothing under `~/.herdr`. So the search follows
+// each installer's own contract, and then PATH, which is what every shell does.
+
+test("Linux: the install.sh default, ~/.local/bin, is found -- the reported case", () => {
+  const installed = path.join(LINUX_HOME, ".local", "bin", "herdr");
+  const resolved = resolveHerdrBinary({ env: {}, home: LINUX_HOME, platform: "linux", io: diskWith([installed]) });
+  assert.equal(resolved.ok, true);
+  assert.equal(resolved.bin, installed);
+});
+
+test("Linux: the Windows package layout is not searched, so a refusal names real places", () => {
+  const tried = candidatePaths({ env: {}, home: LINUX_HOME, platform: "linux", io: diskWith([], ["0.9.0"]) });
+  assert.ok(tried.every(candidate => !candidate.includes("packages")), `searched a Windows-only layout: ${tried}`);
+});
+
+test("HERDR_INSTALL_DIR replaces the default install directory, as both installers honour it", () => {
+  const custom = path.join("/opt", "herdr");
+  const tried = candidatePaths({ env: { HERDR_INSTALL_DIR: custom }, home: LINUX_HOME, platform: "linux", io: diskWith([]) });
+  assert.equal(tried[0], path.join(custom, "herdr"));
+  assert.ok(!tried.includes(path.join(LINUX_HOME, ".local", "bin", "herdr")), "the default is not where this install went");
+
+  const windowsDir = path.join("D:", "Tools", "Herdr");
+  const onWindows = candidatePaths({ env: { HERDR_INSTALL_DIR: windowsDir }, home: HOME, platform: "win32", io: diskWith([]) });
+  assert.ok(onWindows.includes(path.join(windowsDir, "herdr.exe")));
+});
+
+test("Windows: the visible bin under LOCALAPPDATA is searched after the standalone package", () => {
+  const localAppData = path.join(HOME, "AppData", "Local");
+  const visible = path.join(localAppData, "Programs", "Herdr", "bin", "herdr.exe");
+  const tried = candidatePaths({ env: { LOCALAPPDATA: localAppData }, home: HOME, platform: "win32", io: diskWith([]) });
+  assert.ok(tried.includes(visible));
+  assert.ok(tried.indexOf(path.join(STANDALONE, "current", "herdr.exe")) < tried.indexOf(visible));
+});
+
+test("Windows: HERDR_HOME relocates the standalone package root", () => {
+  const relocated = path.join("E:", "herdr-home");
+  const current = path.join(relocated, "packages", "standalone", "current", "herdr.exe");
+  const resolved = resolveHerdrBinary({ env: { HERDR_HOME: relocated }, home: HOME, platform: "win32", io: diskWith([current]) });
+  assert.equal(resolved.bin, current);
+});
+
+test("a herdr on PATH is found by its full path, after the install locations", () => {
+  const brew = path.join("/home", "linuxbrew", ".linuxbrew", "bin");
+  const onPath = path.join(brew, "herdr");
+  const env = { PATH: ["", "/usr/bin", brew].join(":") };
+  const resolved = resolveHerdrBinary({ env, home: LINUX_HOME, platform: "linux", io: diskWith([onPath]) });
+  assert.equal(resolved.ok, true);
+  assert.equal(resolved.bin, onPath);
+  const tried = candidatePaths({ env, home: LINUX_HOME, platform: "linux", io: diskWith([]) });
+  assert.ok(tried.indexOf(path.join(LINUX_HOME, ".local", "bin", "herdr")) < tried.indexOf(onPath));
+  assert.ok(!tried.includes("herdr"), "an empty PATH entry must not become the bare name");
+
+  const winDir = path.join("C:", "scoop", "shims");
+  const onWindows = resolveHerdrBinary({
+    env: { Path: [path.join("C:", "Windows"), winDir].join(";") },
+    home: HOME,
+    platform: "win32",
+    io: diskWith([path.join(winDir, "herdr.exe")]),
+  });
+  assert.equal(onWindows.bin, path.join(winDir, "herdr.exe"), "Windows spells it Path, delimited by ;");
 });
