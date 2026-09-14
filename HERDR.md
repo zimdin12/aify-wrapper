@@ -139,6 +139,33 @@ Authority is arbitrated by Herdr itself: `release_agent_with_mutation` refuses a
 it. So the wrapper claims authority once and Herdr's own claude hook stops overwriting it. We are
 using the mechanism as designed rather than racing it.
 
+**Holding authority also means owning the status dot.** `recompute_effective_state` shows the
+authority's reported state and ignores screen detection for any source outside its lifecycle list,
+which `herdr:aify` is. The claim reports `idle`, so until the launcher also reported state, every
+claimed pane read idle while its agent worked (observed on a live pane mid-turn). `claude-aify` now
+adds `aify-herdr-state.sh` to the agent's hooks when the claim succeeds: `UserPromptSubmit`,
+`PostToolUse` and `PostToolUseFailure` report working, a permission or input `Notification` reports
+blocked, `Stop` and `StopFailure` (a turn an API error ended) report idle. The hooks run synchronously
+on every tool call, so the script sends Herdr a state only when it CHANGES: the last report is kept
+per pane under `TMPDIR`, tagged with the launcher's pid (`AIFY_HERDR_LAUNCH`) so a later launch in a
+reused pane id starts clean, and written only after Herdr accepted it. A managed worker is not in the pane that shows it, so it reports to the pane id aify-env writes
+to `AIFY_HERDR_PANE_FILE`.
+
+`codex-aify` does the same through the `codex app-server` it starts, which is the process that runs
+the agent's hooks. They go on that command line as `-c hooks.<Event>=...`, so nothing is written to
+`~/.codex`: `UserPromptSubmit` and `PostToolUse` report working, `PermissionRequest` blocked, `Stop`
+and `Interrupt` idle. **Codex runs a hook only once it is trusted** (measured on codex-cli 0.154.0,
+in `lib/codex-herdr-hooks.mjs`). A resident launch shows codex's "hooks are new or changed" review
+once, and "Trust all and continue" records the hashes in `config.toml`. A managed **resume** would
+show that review to nobody, even with `--dangerously-bypass-hook-trust`, so it gets the hooks only
+after they are trusted. A moved bridge directory changes the command, so it needs trusting again.
+
+`hermes-aify` exports `AIFY_HERDR_HERMES_PLUGIN`, and the aify-comms hermes plugin registers
+`lib/hermes-herdr-state.py` from it, because hermes runs hooks only for enabled plugins:
+`pre_llm_call` reports working, `pre_approval_request` blocked, `post_approval_response` working,
+`on_session_end` (fired at the end of every turn) idle. A turn that dies on a non-retryable API error
+fires none of them and leaves the dot at working until the next turn. pi still has the stuck dot.
+
 ## MEASURED, not inferred — the run this design now rests on
 
 Everything above was read out of Herdr's source. On 2026-09-12 it was **driven against a live Herdr

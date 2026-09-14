@@ -100,7 +100,9 @@ if [ "${HERDR_ENV:-}" = "1" ]; then
   # if it cannot be. Both lines return 0 whatever happens.
   AIFY_HERDR_LOG="${HOME:-.}/.aify/herdr/claim.log"
   mkdir -p "${HOME:-.}/.aify/herdr" 2>/dev/null || AIFY_HERDR_LOG=/dev/null
-  node "$AIFY_HERDR_HELPER" claim --wrapper "${0##*/}" -- "${AIFY_HERDR_ARGV[@]}" >/dev/null 2>>"$AIFY_HERDR_LOG" || true
+  # The claim prints `claimed` only when the pane is ours, which is what lets the hooks below report
+  # its state. `|| AIFY_HERDR_CLAIM=""` keeps a failed claim from aborting under `set -e`.
+  AIFY_HERDR_CLAIM="$(node "$AIFY_HERDR_HELPER" claim --wrapper "${0##*/}" -- "${AIFY_HERDR_ARGV[@]}" 2>>"$AIFY_HERDR_LOG")" || AIFY_HERDR_CLAIM=""
 fi
 
 # ── The harness wrapper contract ────────────────────────────────────────────
@@ -646,6 +648,30 @@ fi
 # OWN session instead of a machine-global filesystem guess (the cause of
 # cross-agent session bleed when a whole team runs in one directory).
 # Always on — both strict and default MCP modes.
+#
+# HERDR STATE. A claimed Herdr pane shows the state its claim last reported, not what Herdr sees on
+# screen, so the claim's `idle` stood for the life of the pane. When this pane is claimed, or aify-env
+# will name the pane showing this managed worker (AIFY_HERDR_PANE_FILE), the agent's own hooks report
+# working / blocked / idle. PostToolUse re-asserts working after a permission prompt is answered and
+# covers a turn a channel wake starts without a UserPromptSubmit; PostToolUseFailure does the same for a
+# tool that failed. StopFailure ends a turn an API error killed, which runs no Stop. Nothing is added otherwise, so a
+# launch outside Herdr runs no extra hook.
+AIFY_HERDR_WORKING=""
+AIFY_HERDR_EVENTS=""
+if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then
+  export AIFY_HERDR_AGENT="${0##*/}"
+  export AIFY_HERDR_LAUNCH="$$"
+  _aify_state_hook() {
+    printf '{ "type": "command", "command": "sh \\"%s/node_modules/aify-wrapper/bin/aify-herdr-state.sh\\" %s", "timeout": 5 }' "$AIFY_BRIDGE_DIR_FWD" "$1"
+  }
+  AIFY_HERDR_WORKING=", $(_aify_state_hook working)"
+  AIFY_HERDR_EVENTS=",
+    \"PostToolUse\": [ { \"hooks\": [ $(_aify_state_hook working) ] } ],
+    \"PostToolUseFailure\": [ { \"hooks\": [ $(_aify_state_hook working) ] } ],
+    \"Notification\": [ { \"matcher\": \"permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input\", \"hooks\": [ $(_aify_state_hook blocked) ] } ],
+    \"Stop\": [ { \"hooks\": [ $(_aify_state_hook idle) ] } ],
+    \"StopFailure\": [ { \"hooks\": [ $(_aify_state_hook idle) ] } ]"
+fi
 AIFY_HOOK_SETTINGS="$(mktemp -t aify-hooks.XXXXXX.json 2>/dev/null || mktemp -t aify-hooks)"
 cat > "$AIFY_HOOK_SETTINGS" <<JSON
 {
@@ -654,8 +680,8 @@ cat > "$AIFY_HOOK_SETTINGS" <<JSON
       { "hooks": [ { "type": "command", "command": "node \"${AIFY_BRIDGE_DIR_FWD}/claude-session-hook.js\"" } ] }
     ],
     "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "node \"${AIFY_BRIDGE_DIR_FWD}/claude-session-hook.js\"" } ] }
-    ]
+      { "hooks": [ { "type": "command", "command": "node \"${AIFY_BRIDGE_DIR_FWD}/claude-session-hook.js\"" }${AIFY_HERDR_WORKING} ] }
+    ]${AIFY_HERDR_EVENTS}
   }
 }
 JSON
