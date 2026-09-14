@@ -652,7 +652,9 @@ fi
 # HERDR STATE. A claimed Herdr pane shows the state its claim last reported, not what Herdr sees on
 # screen, so the claim's `idle` stood for the life of the pane. When this pane is claimed, or aify-env
 # will name the pane showing this managed worker (AIFY_HERDR_PANE_FILE), the agent's own hooks report
-# working / blocked / idle. PostToolUse re-asserts working after a permission prompt is answered and
+# working / blocked / idle. PermissionRequest reports blocked the moment an approval dialog opens; the
+# Notification matchers stay for input prompts, and lag about six seconds on a permission prompt.
+# PostToolUse re-asserts working after a permission prompt is answered and
 # covers a turn a channel wake starts without a UserPromptSubmit; PostToolUseFailure does the same for a
 # tool that failed. StopFailure ends a turn an API error killed, which runs no Stop. Nothing is added otherwise, so a
 # launch outside Herdr runs no extra hook.
@@ -669,6 +671,7 @@ if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]
     \"PostToolUse\": [ { \"hooks\": [ $(_aify_state_hook working) ] } ],
     \"PostToolUseFailure\": [ { \"hooks\": [ $(_aify_state_hook working) ] } ],
     \"Notification\": [ { \"matcher\": \"permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input\", \"hooks\": [ $(_aify_state_hook blocked) ] } ],
+    \"PermissionRequest\": [ { \"hooks\": [ $(_aify_state_hook blocked) ] } ],
     \"Stop\": [ { \"hooks\": [ $(_aify_state_hook idle) ] } ],
     \"StopFailure\": [ { \"hooks\": [ $(_aify_state_hook idle) ] } ]"
 fi
@@ -686,7 +689,22 @@ cat > "$AIFY_HOOK_SETTINGS" <<JSON
 }
 JSON
 CLAUDE_MCP_FLAGS+=(--settings "$AIFY_HOOK_SETTINGS")
-trap 'rm -f "$AIFY_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null' EXIT
+# THE RUNTIME'S EXIT IS REPORTED, HOWEVER IT EXITS. No hook fires when claude itself goes away --
+# killed, crashed, or its terminal closed mid-turn -- so the agent read `working` until something
+# else cleared it. This launcher waits on claude, so the EXIT trap reports a turn-end (and idle to a
+# pane the hooks above report to). The trap also runs for a non-zero exit under `set -e` and for a
+# hangup, and bash keeps the exit status it had. AIFY_RUNTIME_RUNNING is set only on the line before
+# claude, so an early exit or the `--shared` exec below reports nothing, and cleared on the first run
+# so nothing reports twice.
+AIFY_RUNTIME_RUNNING=0
+_aify_runtime_exited() {
+  [ "$AIFY_RUNTIME_RUNNING" = 1 ] || return 0
+  AIFY_RUNTIME_RUNNING=0
+  _aify_exit_herdr=""
+  if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then _aify_exit_herdr=herdr; fi
+  sh "@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-runtime-exited.sh" "@@BRIDGE_DIR@@" "$_aify_exit_herdr" </dev/null >/dev/null 2>&1 || true
+}
+trap 'rm -f "$AIFY_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null; _aify_runtime_exited' EXIT
 
 # Managed kill-prior (2026-05-31): exactly one managed claude per agent. Reap
 # any orphaned claude.exe still bound to this agent's stable --resume handle
@@ -747,6 +765,7 @@ if [ "$CLAUDE_AIFY_SHARED" = true ]; then
   exec aify-env run     --service "@@SERVICE_NAME@@"     --launcher "$0"     --label "${CLAUDE_AIFY_AGENT_ID:-}"     -- "${CLAUDE_AIFY_PASSTHRU[@]}"
 fi
 
+AIFY_RUNTIME_RUNNING=1
 claude --dangerously-load-development-channels server:@@SERVICE_NAME@@-channel "${CLAUDE_MCP_FLAGS[@]}" "${CLAUDE_PERMISSION_FLAGS[@]}" "${CLAUDE_ARGS[@]}"
 STATUS=$?
 exit "$STATUS"

@@ -109,21 +109,30 @@ const IN_A_PANE = { HERDR_ENV: "1", HERDR_PANE_ID: "w1:p2", HERDR_WORKSPACE_ID: 
 
 test("A CLAIMED PANE FOLLOWS THE AGENT: working, blocked, working again, idle", { skip: WIN }, () => {
   const { config, fire, reports } = launch({ env: IN_A_PANE });
-  // The one idle report is the claim's own, made at launch.
-  assert.deepEqual(reports(), ["pane report-agent w1:p2 --source herdr:aify --agent claude-aify --state idle"]);
+  // Two idle reports before any hook: the claim's own at launch, and the launcher's when the stub
+  // claude exited (a-launcher-reports-its-runtimes-exit.test.js).
+  const IDLE = "pane report-agent w1:p2 --source herdr:aify --agent claude-aify --state idle";
+  assert.deepEqual(reports(), [IDLE, IDLE]);
 
   fire("UserPromptSubmit");
   fire("Notification");
   fire("PostToolUse");
   fire("Stop");
-  const states = reports().slice(1).map(line => line.split(" --state ")[1]);
+  const states = reports().slice(2).map(line => line.split(" --state ")[1]);
   assert.deepEqual(states, ["working", "blocked", "working", "idle"]);
   // A turn that a failed tool keeps going and an API error ends: neither runs PostToolUse or Stop.
   fire("UserPromptSubmit");
   fire("Notification");
   fire("PostToolUseFailure");
   fire("StopFailure");
-  assert.deepEqual(reports().slice(5).map(line => line.split(" --state ")[1]), ["working", "blocked", "working", "idle"]);
+  assert.deepEqual(reports().slice(6).map(line => line.split(" --state ")[1]), ["working", "blocked", "working", "idle"]);
+  // PermissionRequest fires the moment the approval dialog opens; the Notification matcher lags
+  // about six seconds and only when the user seems away.
+  fire("UserPromptSubmit");
+  fire("PermissionRequest");
+  fire("PostToolUse");
+  fire("Stop");
+  assert.deepEqual(reports().slice(10).map(line => line.split(" --state ")[1]), ["working", "blocked", "working", "idle"]);
   for (const line of reports()) assert.match(line, /^pane report-agent w1:p2 --source herdr:aify --agent claude-aify /);
 
   // Only prompts that wait on a person make it blocked; an idle-at-prompt notice is not one.
@@ -141,13 +150,14 @@ test("AN UNCHANGED STATE IS NOT SENT: a tool call per hook does not cost a Herdr
   for (let i = 0; i < 5; i += 1) fire("PostToolUse");
   fire("Stop");
   fire("Stop");
-  assert.deepEqual(reports().slice(1).map(line => line.split(" --state ")[1]), ["working", "idle"]);
+  // slice(2): the claim's idle and the launcher's own exit report come first.
+  assert.deepEqual(reports().slice(2).map(line => line.split(" --state ")[1]), ["working", "idle"]);
 
   // CONTROL: another launch in the same pane id starts clean, so its first report is not skipped.
   const other = { ...hookEnv, AIFY_HERDR_LAUNCH: `${hookEnv.AIFY_HERDR_LAUNCH}9` };
   const again = spawnSync("sh", [STATE_SCRIPT, "idle"], { input: "", encoding: "utf8", env: other });
   assert.equal(again.status, 0);
-  assert.equal(reports().length, 4, "a different launch's idle was skipped as a repeat");
+  assert.equal(reports().length, 5, "a different launch's idle was skipped as a repeat");
 });
 
 test("OUTSIDE HERDR the settings are exactly what they were", { skip: WIN }, () => {

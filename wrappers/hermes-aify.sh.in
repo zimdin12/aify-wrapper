@@ -753,7 +753,21 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
   # so the agent flips resident-lost and nothing orphans. This reaps correctly for
   # BOTH the managed (windowless dashboard PTY) and resident (operator terminal)
   # launches: the managed reap was already correct, this keeps it correct.
-  _aify_hermes_on_exit() { kill "$HERMES_LOOP_PID" >/dev/null 2>&1 || true; }
+  #
+  # THE TUI'S EXIT IS ALSO REPORTED, however it exits: a turn-end, and idle to a pane the hooks report
+  # to. No hook fires when hermes itself goes away, so the agent read `working` until something else
+  # cleared it (see claude-aify). A hangup is not trapped here, and bash still runs the EXIT trap for
+  # it. AIFY_RUNTIME_RUNNING is set on the line before each TUI below and cleared on the first report,
+  # because the teardown runs both explicitly after the TUI and again from the EXIT trap.
+  AIFY_RUNTIME_RUNNING=0
+  _aify_hermes_on_exit() {
+    kill "$HERMES_LOOP_PID" >/dev/null 2>&1 || true
+    [ "$AIFY_RUNTIME_RUNNING" = 1 ] || return 0
+    AIFY_RUNTIME_RUNNING=0
+    _aify_exit_herdr=""
+    if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then _aify_exit_herdr=herdr; fi
+    sh "@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-runtime-exited.sh" "@@BRIDGE_DIR@@" "$_aify_exit_herdr" </dev/null >/dev/null 2>&1 || true
+  }
   trap _aify_hermes_on_exit EXIT INT TERM
   # NOTE (2026-06-02 hotfix/restore-hermes-tui): the former "(3a) HEALTH-GATE"
   # (a bounded 30s poll on the loop-ready marker before launching the TUI) was
@@ -831,6 +845,7 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
       # it so the in-session bridge heartbeats the SESSION ACTUALLY RESUMED, not the stale request.
       export HERMES_SESSION_ID="$HERMES_EXPLICIT_RESOLVED"
       export AIFY_SESSION_HANDLE="$HERMES_EXPLICIT_RESOLVED"
+      AIFY_RUNTIME_RUNNING=1
       "$HERMES_RUNTIME_COMMAND" --tui --resume "$HERMES_EXPLICIT_RESOLVED" "${HERMES_PERMISSION_FLAGS[@]}"
     else
       echo "[hermes-aify] explicit session '$HERMES_SESSION_HANDLE' is not resumable (gone from the SessionDB) — starting fresh." >&2
@@ -840,6 +855,7 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
       # cycle that never captures the fresh session (the next-tech-lead 'fresh on every stop+start'
       # bug). Cleared, the bridge DISCOVERS the fresh session's real id and reports THAT.
       unset HERMES_SESSION_ID AIFY_SESSION_HANDLE AIFY_EXPLICIT_SESSION_HANDLE HERMES_EXPLICIT_SESSION_HANDLE
+      AIFY_RUNTIME_RUNNING=1
       "$HERMES_RUNTIME_COMMAND" --tui "${HERMES_PERMISSION_FLAGS[@]}"
     fi
     _aify_hermes_on_exit
@@ -849,6 +865,7 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
     echo "[hermes-aify] resuming real hermes session '$HERMES_RESUME_REAL_ID' for agent '$HERMES_AIFY_AGENT_ID'." >&2
     # FIX SET A1: run as a CHILD (not exec) so the EXIT/INT/TERM trap reaps the
     # delivery loop (and its gateway host) when the TUI closes.
+    AIFY_RUNTIME_RUNNING=1
     "$HERMES_RUNTIME_COMMAND" --tui --resume "$HERMES_RESUME_REAL_ID" "${HERMES_PERMISSION_FLAGS[@]}"
     _aify_hermes_on_exit
     exit $?
@@ -856,6 +873,7 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
   echo "[hermes-aify] no stored session for agent '$HERMES_AIFY_AGENT_ID' — starting a fresh hermes session (bridge will capture its real id on register)." >&2
   # FIX SET A1: run as a CHILD (not exec) so the EXIT/INT/TERM trap reaps the
   # delivery loop (and its gateway host) when the TUI closes.
+  AIFY_RUNTIME_RUNNING=1
   "$HERMES_RUNTIME_COMMAND" --tui "${HERMES_PERMISSION_FLAGS[@]}"
   _aify_hermes_on_exit
   exit $?
