@@ -232,6 +232,40 @@ test("a probe proves liveness by the echoed nonce, not by something listening", 
   assert.equal(await probeOwner(context.ownerEndpoint, context, { timeoutMs: 500 }), false);
 });
 
+// THE LAUNCHER'S ORDER, NOT THE FIXTURE'S. `invocation()` above writes the context -- which creates the
+// invocation directory -- before starting the owner. `herdr-aify env` does the opposite on purpose:
+// the owner listens before `start()` mints the context and spawns the daemon. On Windows the endpoint
+// is a named pipe and needs no directory; on Linux it is `<root>/owner.sock`, and binding a socket in
+// a directory that does not exist fails with EACCES (libuv's spelling of ENOENT for a bind). Reported
+// from WSL as `listen EACCES: permission denied .../invocations/<uuid>/owner.sock`, with every test
+// here green because every test used the fixture's order.
+test("an owner listens BEFORE the context is written, as the launcher starts it", { skip: process.platform === "win32" && "unix sockets" }, async () => {
+  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "aify-herdr-owner-"));
+  const context = buildInstanceContext({ profileRoot, invocation: randomUUID(), profileRef: "integrated" });
+  assert.equal(fs.existsSync(context.root), false, "precondition: nothing has created the invocation yet");
+  const owner = new HerdrOwner(context);
+  try {
+    await owner.listen();
+    assert.equal(await probeOwner(context.ownerEndpoint, context), true);
+    // The directory is the access control for a unix socket, so it is created private.
+    assert.equal(fs.statSync(context.root).mode & 0o777, 0o700);
+    // And the context still mints into it afterwards, which is the order `start()` needs.
+    assert.ok(fs.existsSync(writeInstanceContext(context)));
+  } finally {
+    await owner.close();
+  }
+});
+
+test("a named-pipe endpoint creates no directory", async () => {
+  const profileRoot = path.join(os.tmpdir(), "never-created");
+  const context = buildInstanceContext({ profileRoot, invocation: randomUUID(), profileRef: "integrated", platform: "win32" });
+  const made = [];
+  const io = { mkdirSync: dir => made.push(dir) };
+  const netModule = { createServer: () => ({ once() {}, off() {}, listen: (_endpoint, ready) => ready() }) };
+  await new HerdrOwner(context, { netModule, io }).listen();
+  assert.deepEqual(made, [], "a pipe lives in the pipe namespace, not on disk");
+});
+
 test("a profile with no pointer, and one with an unreadable pointer, are free", async () => {
   const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "aify-herdr-free-"));
   assert.deepEqual(await profileOwnerState(profileRoot), { owned: false, reason: "no-pointer" });
