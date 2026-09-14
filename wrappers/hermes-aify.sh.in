@@ -444,6 +444,7 @@ fi
 # hermes starts and each inherits this environment.
 if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then
   export AIFY_HERDR_AGENT="${0##*/}"
+  export AIFY_HERDR_LAUNCH="$$"
   export AIFY_HERDR_HERMES_PLUGIN="$AIFY_HERDR_BRIDGE/node_modules/aify-wrapper/lib/hermes-herdr-state.py"
 fi
 

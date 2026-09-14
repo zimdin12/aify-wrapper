@@ -653,20 +653,24 @@ fi
 # screen, so the claim's `idle` stood for the life of the pane. When this pane is claimed, or aify-env
 # will name the pane showing this managed worker (AIFY_HERDR_PANE_FILE), the agent's own hooks report
 # working / blocked / idle. PostToolUse re-asserts working after a permission prompt is answered and
-# covers a turn a channel wake starts without a UserPromptSubmit. Nothing is added otherwise, so a
+# covers a turn a channel wake starts without a UserPromptSubmit; PostToolUseFailure does the same for a
+# tool that failed. StopFailure ends a turn an API error killed, which runs no Stop. Nothing is added otherwise, so a
 # launch outside Herdr runs no extra hook.
 AIFY_HERDR_WORKING=""
 AIFY_HERDR_EVENTS=""
 if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then
   export AIFY_HERDR_AGENT="${0##*/}"
+  export AIFY_HERDR_LAUNCH="$$"
   _aify_state_hook() {
     printf '{ "type": "command", "command": "sh \\"%s/node_modules/aify-wrapper/bin/aify-herdr-state.sh\\" %s", "timeout": 5 }' "$AIFY_BRIDGE_DIR_FWD" "$1"
   }
   AIFY_HERDR_WORKING=", $(_aify_state_hook working)"
   AIFY_HERDR_EVENTS=",
     \"PostToolUse\": [ { \"hooks\": [ $(_aify_state_hook working) ] } ],
+    \"PostToolUseFailure\": [ { \"hooks\": [ $(_aify_state_hook working) ] } ],
     \"Notification\": [ { \"matcher\": \"permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input\", \"hooks\": [ $(_aify_state_hook blocked) ] } ],
-    \"Stop\": [ { \"hooks\": [ $(_aify_state_hook idle) ] } ]"
+    \"Stop\": [ { \"hooks\": [ $(_aify_state_hook idle) ] } ],
+    \"StopFailure\": [ { \"hooks\": [ $(_aify_state_hook idle) ] } ]"
 fi
 AIFY_HOOK_SETTINGS="$(mktemp -t aify-hooks.XXXXXX.json 2>/dev/null || mktemp -t aify-hooks)"
 cat > "$AIFY_HOOK_SETTINGS" <<JSON

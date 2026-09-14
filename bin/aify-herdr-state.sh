@@ -34,6 +34,20 @@ case "$pane" in
   *) exit 0 ;;
 esac
 
+# AN UNCHANGED STATE IS NOT SENT AGAIN. The hooks run synchronously inside the agent's turn, and
+# PostToolUse fires on every tool call, so each report added a Herdr round trip to every tool call --
+# and a Herdr that hangs holds the agent for the hook's whole timeout. Only a change reaches Herdr.
+# The last report is kept per pane and tagged with the launcher that made it (AIFY_HERDR_LAUNCH), so a
+# later launch in a reused pane id starts clean. It is written only after Herdr accepted the report,
+# so a failed one is retried by the next hook.
+cache=""
+if [ -n "${AIFY_HERDR_LAUNCH:-}" ]; then
+  cache="${TMPDIR:-/tmp}/aify-herdr-$(printf '%s' "$pane" | tr ':' '-').state"
+  [ "$(cat "$cache" 2>/dev/null || true)" = "$AIFY_HERDR_LAUNCH $state" ] && exit 0
+fi
+
 # The source must be the claim's, or Herdr refuses the report as coming from another owner.
-"${HERDR_BIN_PATH:-herdr}" pane report-agent "$pane" --source herdr:aify --agent "$AIFY_HERDR_AGENT" --state "$state" >/dev/null 2>&1 || true
+if "${HERDR_BIN_PATH:-herdr}" pane report-agent "$pane" --source herdr:aify --agent "$AIFY_HERDR_AGENT" --state "$state" >/dev/null 2>&1; then
+  if [ -n "$cache" ]; then printf '%s' "$AIFY_HERDR_LAUNCH $state" > "$cache" 2>/dev/null || true; fi
+fi
 exit 0
