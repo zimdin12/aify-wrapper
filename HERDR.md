@@ -139,6 +139,15 @@ Authority is arbitrated by Herdr itself: `release_agent_with_mutation` refuses a
 it. So the wrapper claims authority once and Herdr's own claude hook stops overwriting it. We are
 using the mechanism as designed rather than racing it.
 
+**Holding authority also means owning the status dot.** `recompute_effective_state` shows the
+authority's reported state and ignores screen detection for any source outside its lifecycle list,
+which `herdr:aify` is. The claim reports `idle`, so until the launcher also reported state, every
+claimed pane read idle while its agent worked (observed on a live pane mid-turn). `claude-aify` now
+adds `aify-herdr-state.sh` to the agent's hooks when the claim succeeds: `UserPromptSubmit` and
+`PostToolUse` report working, a permission or input `Notification` reports blocked, `Stop` reports
+idle. A managed worker is not in the pane that shows it, so it reports to the pane id aify-env writes
+to `AIFY_HERDR_PANE_FILE`. The codex, hermes and pi launchers claim too and still have the stuck dot.
+
 ## MEASURED, not inferred — the run this design now rests on
 
 Everything above was read out of Herdr's source. On 2026-09-12 it was **driven against a live Herdr

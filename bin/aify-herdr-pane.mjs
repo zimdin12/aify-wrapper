@@ -250,6 +250,9 @@ function main(argv) {
       return 0;
     }
     note(result.why ? `not claimed: ${result.why}` : `claimed ${result.label}`);
+    // ON STDOUT, AND ONLY WHEN IT IS TRUE. The launcher reads this to decide whether the agent's
+    // hooks may report state under the aify source; a pane it does not own must not get them.
+    if (!result.why) process.stdout.write("claimed\n");
     return 0;
   }
 
