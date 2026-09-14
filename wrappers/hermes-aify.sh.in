@@ -60,11 +60,12 @@ fi
 # and keep Herdr's native resume, which is the half of the contract that must not regress.
 #
 # GATED ON HERDR_ENV so an ordinary terminal launch pays nothing: that variable is set only inside a
-# pane, and without it this block never starts node at all.
+# pane, and without it this block never starts node at all. A managed worker whose pane aify-env
+# names in AIFY_HERDR_PANE_FILE resolves the paths too, for the status hooks below, but claims nothing.
 #
 # IT CAN NEVER FAIL THE LAUNCH. This runs on the path of the operator starting an agent, so a Herdr
 # that is busy, mid-handoff or gone costs the pane its label and never costs the agent its start.
-if [ "${HERDR_ENV:-}" = "1" ]; then
+if [ "${HERDR_ENV:-}" = "1" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then
   # THE UNCONVERTED PATH FIRST, because this assignment cannot fail. `@@BRIDGE_DIR@@` is substituted
   # MSYS-style (/c/Users/...), which native Windows node cannot open, so cygpath converts it where
   # cygpath exists -- but the conversion only ever REPLACES a value that is already usable.
@@ -92,7 +93,11 @@ if [ "${HERDR_ENV:-}" = "1" ]; then
   # if it cannot be. Both lines return 0 whatever happens.
   AIFY_HERDR_LOG="${HOME:-.}/.aify/herdr/claim.log"
   mkdir -p "${HOME:-.}/.aify/herdr" 2>/dev/null || AIFY_HERDR_LOG=/dev/null
-  node "$AIFY_HERDR_HELPER" claim --wrapper "${0##*/}" -- "${AIFY_HERDR_ARGV[@]}" >/dev/null 2>>"$AIFY_HERDR_LOG" || true
+  # The claim prints `claimed` only when the pane is ours, which is what lets the agent's hooks report
+  # its state. `|| AIFY_HERDR_CLAIM=""` keeps a failed claim from aborting under `set -e`.
+  if [ "${HERDR_ENV:-}" = "1" ]; then
+    AIFY_HERDR_CLAIM="$(node "$AIFY_HERDR_HELPER" claim --wrapper "${0##*/}" -- "${AIFY_HERDR_ARGV[@]}" 2>>"$AIFY_HERDR_LOG")" || AIFY_HERDR_CLAIM=""
+  fi
 fi
 
 # The version this wrapper was GENERATED from, read by `aify-comms doctor`'s wrapper-current check.
@@ -427,6 +432,19 @@ if [ "${AIFY_HERMES_DISABLE_PLUGIN:-0}" != "1" ]; then
   fi
 else
   unset AIFY_HERMES_PLUGIN
+fi
+
+# ── Herdr: the pane's status dot follows the agent ───
+#
+# A claimed pane shows the state its claim last reported, not what Herdr sees on screen, so the
+# claim's `idle` stood for the life of the pane. When this pane is claimed, or aify-env will name the
+# pane showing this managed worker (AIFY_HERDR_PANE_FILE), the aify-comms hermes plugin loads
+# lib/hermes-herdr-state.py, which reports working / blocked / idle from hermes' own lifecycle hooks.
+# Exported here, ahead of the gateway host and the TUI, because the agent runs in whichever of them
+# hermes starts and each inherits this environment.
+if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then
+  export AIFY_HERDR_AGENT="${0##*/}"
+  export AIFY_HERDR_HERMES_PLUGIN="$AIFY_HERDR_BRIDGE/node_modules/aify-wrapper/lib/hermes-herdr-state.py"
 fi
 
 # Node >=22 guarantee. The Hermes Ink TUI's gateway client attaches over a

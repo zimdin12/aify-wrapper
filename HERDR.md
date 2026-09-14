@@ -146,7 +146,22 @@ claimed pane read idle while its agent worked (observed on a live pane mid-turn)
 adds `aify-herdr-state.sh` to the agent's hooks when the claim succeeds: `UserPromptSubmit` and
 `PostToolUse` report working, a permission or input `Notification` reports blocked, `Stop` reports
 idle. A managed worker is not in the pane that shows it, so it reports to the pane id aify-env writes
-to `AIFY_HERDR_PANE_FILE`. The codex, hermes and pi launchers claim too and still have the stuck dot.
+to `AIFY_HERDR_PANE_FILE`.
+
+`codex-aify` does the same through the `codex app-server` it starts, which is the process that runs
+the agent's hooks. They go on that command line as `-c hooks.<Event>=...`, so nothing is written to
+`~/.codex`: `UserPromptSubmit` and `PostToolUse` report working, `PermissionRequest` blocked, `Stop`
+and `Interrupt` idle. **Codex runs a hook only once it is trusted** (measured on codex-cli 0.154.0,
+in `lib/codex-herdr-hooks.mjs`). A resident launch shows codex's "hooks are new or changed" review
+once, and "Trust all and continue" records the hashes in `config.toml`. A managed **resume** would
+show that review to nobody, even with `--dangerously-bypass-hook-trust`, so it gets the hooks only
+after they are trusted. A moved bridge directory changes the command, so it needs trusting again.
+
+`hermes-aify` exports `AIFY_HERDR_HERMES_PLUGIN`, and the aify-comms hermes plugin registers
+`lib/hermes-herdr-state.py` from it, because hermes runs hooks only for enabled plugins:
+`pre_llm_call` reports working, `pre_approval_request` blocked, `post_approval_response` working,
+`on_session_end` (fired at the end of every turn) idle. A turn that dies on a non-retryable API error
+fires none of them and leaves the dot at working until the next turn. pi still has the stuck dot.
 
 ## MEASURED, not inferred — the run this design now rests on
 
