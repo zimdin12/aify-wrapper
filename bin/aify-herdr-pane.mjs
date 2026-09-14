@@ -6,6 +6,8 @@
 //   aify-herdr-pane claim --wrapper claude-aify -- claude-aify --resume
 //   aify-herdr-pane restore                        run by the plugin's [[startup]] hook
 //   aify-herdr-pane status                         what the ledger holds, for a human
+//   aify-herdr-pane codex-hooks --state-script <sh> [--require-trust <config.toml>]
+//                                                  the `-c` hook arguments codex-aify passes, one per line
 //
 // WHAT MAKES THIS WORK, measured against a live Herdr 0.9.0 rather than inferred:
 //
@@ -20,9 +22,11 @@
 // Herdr used to cost 30 seconds of dead terminal before the agent started, with the reason discarded.
 
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import { codexHookArgs, codexHooksTrusted } from "../lib/codex-herdr-hooks.mjs";
 import { isMainModule } from "../lib/main-module.mjs";
 import { herdr, listPanes } from "../lib/herdr-cli.mjs";
 import { paneLabel, parsePaneLabel, readPaneContext, renamePaneArgv, reportAgentArgv } from "../lib/herdr-pane.mjs";
@@ -256,6 +260,28 @@ function main(argv) {
     return 0;
   }
 
+  if (options.command === "codex-hooks") {
+    // PRINTS NOTHING RATHER THAN FAILING. The launcher reads these lines into codex's argv, so the
+    // only safe answers are "every hook" or "no hooks"; a launch never depends on this.
+    const flags = argv.slice(1);
+    const value = (name) => (flags.indexOf(name) === -1 ? null : flags[flags.indexOf(name) + 1] ?? null);
+    const stateScript = value("--state-script");
+    if (!stateScript) return 0;
+    const trustFile = value("--require-trust");
+    if (trustFile !== null) {
+      let text = "";
+      try {
+        text = fs.readFileSync(trustFile, "utf8");
+      } catch {}
+      if (!codexHooksTrusted(text, stateScript)) {
+        note("codex hooks withheld: this managed resume would stop at codex's hook review, and config.toml does not trust them yet");
+        return 0;
+      }
+    }
+    process.stdout.write(`${codexHookArgs(stateScript).join("\n")}\n`);
+    return 0;
+  }
+
   if (options.command === "restore") {
     let result;
     try {
@@ -297,7 +323,7 @@ function main(argv) {
   // 2 on it made an honest question look like a usage error, and made a symlink-install check that
   // simply asked both commands for help read as a broken install.
   const asked = options.command === "--help" || options.command === "-h";
-  process.stdout.write("usage: aify-herdr-pane <install | claim --wrapper <name> -- <argv...> | restore | status>\n");
+  process.stdout.write("usage: aify-herdr-pane <install | claim --wrapper <name> -- <argv...> | restore | status | codex-hooks --state-script <sh> [--require-trust <config.toml>]>\n");
   return options.command && !asked ? 2 : 0;
 }
 
