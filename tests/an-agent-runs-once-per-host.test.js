@@ -60,8 +60,9 @@ async function until(check, ms = 15_000) {
 
 function lease(dir, ...args) {
   // A lease this test runner inherited from its own launcher would make every claim here read as nested.
+  // No watch: these judge what a CLAIM stops, and a watch would stop a killed instance's leftovers first.
   const { AIFY_AGENT_LEASE, AIFY_START_INTENT, ...inherited } = process.env;
-  const res = spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8", env: { ...inherited, AIFY_AGENT_LEASE_DIR: dir }, timeout: 60_000 });
+  const res = spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8", env: { ...inherited, AIFY_AGENT_LEASE_DIR: dir, AIFY_AGENT_LEASE_WATCH: "0" }, timeout: 60_000 });
   return { status: res.status, stderr: res.stderr };
 }
 
@@ -95,6 +96,29 @@ test("REAL PROCESSES: an automatic start is refused by a live instance; an expli
     `still alive: ${[oldLauncher.pid, runtime, gateway.pid].filter(alive)}`);
   assert.ok(alive(newLauncher.pid), "the new launcher must survive its own claim");
   assert.equal(JSON.parse(fs.readFileSync(path.join(dir, "real-a.json"), "utf8")).instance.pid, newLauncher.pid);
+});
+
+test("REAL PROCESSES: a KILLED instance leaves nothing running, with no next start: the watch stops its gateway and its runtime", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-lease-watch-"));
+  // The launcher starts its runtime as an ordinary child; on Windows it breaks away from node's job, so
+  // only the watch can reach it once the launcher is gone.
+  const launcher = sleeper({ child: true });
+  const runtime = await grandchildOf(launcher);
+  const gateway = sleeper();
+  const bystander = sleeper();
+  const { AIFY_AGENT_LEASE, AIFY_START_INTENT, AIFY_AGENT_LEASE_WATCH, ...inherited } = process.env;
+  const env = { ...inherited, AIFY_AGENT_LEASE_DIR: dir };
+  const claim = spawnSync(process.execPath, [CLI, "claim", "--agent", "real-w", "--pid", String(launcher.pid), "--mode", "managed"], { encoding: "utf8", env, timeout: 60_000 });
+  assert.equal(claim.status, 0, claim.stderr);
+  lease(dir, "attach", "--agent", "real-w", "--instance", String(launcher.pid), "--pid", String(gateway.pid), "--kind", "gateway");
+  await new Promise((r) => setTimeout(r, 1_500));
+  assert.ok([launcher.pid, runtime, gateway.pid, bystander.pid].every(alive), "control: the watch stopped something while its instance was alive");
+
+  launcher.kill("SIGKILL");
+  assert.ok(await until(() => !alive(launcher.pid)), "control: the instance really died");
+  assert.ok(await until(() => !alive(gateway.pid) && !alive(runtime), 30_000), `left running after its instance was killed: ${[gateway.pid, runtime].filter(alive)}`);
+  assert.ok(alive(bystander.pid), "a process the instance never started was stopped");
+  assert.ok(await until(() => !fs.existsSync(path.join(dir, "real-w.json"))), "the watch left the record of an instance it collected");
 });
 
 test("REAL PROCESSES: a hard-killed instance's gateway is stopped by the next start, and a pid recorded with another start time is not", async () => {

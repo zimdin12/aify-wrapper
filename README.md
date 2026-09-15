@@ -198,8 +198,19 @@ started). The claimer's own ancestry is never stopped, and another agent's lease
 crossed into.
 
 The launcher exports `AIFY_AGENT_LEASE` (its own pid) to the runtime so detached helpers can attach to
-the instance. A clean exit releases the record, unless an attached process is still alive; then the
-record stays so the next claim stops that process.
+the instance.
+
+**An agent that ends leaves nothing running, however it ends.**
+
+- **A clean exit** stops every process the instance attached, then releases the record.
+- **A killed launcher** (a closed terminal, `taskkill`, a host tier stopped hard) runs no exit path.
+  So every claim also starts a **watch**: one small detached process outside the launcher's tree. When
+  the instance ends, the watch stops what it attached and every process it left running, then exits.
+  It also exits as soon as the record names another instance, or none.
+- **Anything that will not stop**, or a process table that cannot be read, keeps the record. The next
+  claim stops what is left.
+
+`AIFY_AGENT_LEASE_WATCH=0` starts no watch; the suites set it where they judge the claim alone.
 
 **Failure is open, except for the refusal.** A helper failure (a bad argument, an unwritable directory)
 prints a warning and lets the launch through without the guarantee; a missing helper, or no `node` on

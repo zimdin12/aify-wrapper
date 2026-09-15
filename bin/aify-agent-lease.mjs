@@ -4,6 +4,11 @@
 //   aify-agent-lease claim   --agent ID --pid PID [--runtime R] [--mode M] [--intent start|replace]
 //   aify-agent-lease attach  --agent ID --pid PID --kind K [--instance PID]
 //   aify-agent-lease release --agent ID --pid PID
+//   aify-agent-lease watch   --agent ID --instance PID --pid PID
+//
+// A CLAIM STARTS A WATCH (lib/agent-lease-watch.mjs): a detached process that, once the instance ends however
+// it ends, stops everything it attached and everything it left running. `release` stops what was attached
+// before it gives the lease up.
 //
 // EXIT 75 MEANS REFUSED and nothing else does. A start is refused when it meets:
 //   - a live instance, and its intent is `start`;
@@ -20,14 +25,20 @@
 // (measured 2026-09-15: launcher 88808, ppid 130368, 58336, 19600). The launcher passes /proc/$$/winpid.
 // --instance defaults to AIFY_AGENT_LEASE, which the launcher exports once it holds the lease.
 
+import { fileURLToPath } from "node:url";
 import process from "node:process";
 
 import { AgentLease, LeaseBusyError, REFUSED_EXIT_CODE, startIntent } from "../lib/agent-lease.mjs";
+import { startWatch, watchInstance } from "../lib/agent-lease-watch.mjs";
 import { isMainModule } from "../lib/main-module.mjs";
+import { isAlive } from "../lib/process-identity.mjs";
+
+/** The commands this helper runs. The parser and the usage line both come from here. */
+const COMMANDS = Object.freeze(["claim", "attach", "release", "watch"]);
 
 /** Every flag this helper reads, with its placeholder. The usage line and the parser both come from here. */
 const FLAGS = Object.freeze({ agent: "ID", pid: "PID", runtime: "R", mode: "M", intent: "start|replace", kind: "K", instance: "PID" });
-const USAGE = `usage: aify-agent-lease claim|attach|release ${Object.entries(FLAGS).map(([flag, value]) => `--${flag} ${value}`).join(" ")}`;
+const USAGE = `usage: aify-agent-lease ${COMMANDS.join("|")} ${Object.entries(FLAGS).map(([flag, value]) => `--${flag} ${value}`).join(" ")}`;
 
 export function parseLeaseArgs(argv, env = process.env) {
   const [command, ...rest] = argv;
@@ -38,7 +49,7 @@ export function parseLeaseArgs(argv, env = process.env) {
     if (!Object.hasOwn(FLAGS, match[1])) throw new Error(`unknown flag --${match[1]}`);
     options[match[1]] = match[2] ?? rest[++i];
   }
-  if (!["claim", "attach", "release"].includes(command)) throw new Error(`unknown command ${JSON.stringify(command)}`);
+  if (!COMMANDS.includes(command)) throw new Error(`unknown command ${JSON.stringify(command)}`);
   const pid = Number(options.pid);
   if (!Number.isInteger(pid) || pid <= 0) throw new Error(`--pid must be a process id, got ${JSON.stringify(options.pid)}`);
   const instance = Number(options.instance ?? env.AIFY_AGENT_LEASE);
@@ -62,8 +73,8 @@ function describe(entry) {
   return `${kind} pid ${entry?.pid}, started ${started}`;
 }
 
-/** Run one command. Returns the exit status; writes only to `err`. */
-export function runLease(argv, { env = process.env, err = process.stderr, lease = (options) => new AgentLease(options) } = {}) {
+/** Run one command. Returns the exit status; writes only to `err`. `watch` is async and is run by `runWatch`. */
+export function runLease(argv, { env = process.env, err = process.stderr, lease = (options) => new AgentLease(options), watch = startWatch } = {}) {
   const say = (line) => err.write(`[aify-agent-lease] ${line}\n`);
   let args;
   try {
@@ -88,6 +99,11 @@ export function runLease(argv, { env = process.env, err = process.stderr, lease 
         return REFUSED_EXIT_CODE;
       }
       for (const entry of result.stopped) say(`${args.agentId}: stopped ${describe(entry)} before this start.`);
+      try {
+        watch({ agentId: args.agentId, instance: args.pid, env, script: fileURLToPath(import.meta.url) });
+      } catch (error) {
+        say(`WARN: ${args.agentId}: could not start the watch that stops what this instance leaves when it is killed (${error?.message || error}); the next start still stops it.`);
+      }
       return 0;
     }
     if (args.command === "attach") {
@@ -95,6 +111,7 @@ export function runLease(argv, { env = process.env, err = process.stderr, lease 
       agent.attach({ instance: args.instance, pid: args.pid, kind: args.kind });
       return 0;
     }
+    if (args.command === "watch") throw new Error("watch runs through runWatch");
     agent.release({ pid: args.pid });
     return 0;
   } catch (error) {
@@ -107,6 +124,19 @@ export function runLease(argv, { env = process.env, err = process.stderr, lease 
   }
 }
 
+/** The watch: waits for the instance, then collects it. Never throws; it has nobody to report to. */
+export async function runWatch(argv, { env = process.env, lease = (options) => new AgentLease(options), sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), alive = isAlive } = {}) {
+  try {
+    const args = parseLeaseArgs(argv, env);
+    if (!args.instance) return 0;
+    await watchInstance({ lease: lease({ agentId: args.agentId }), instance: args.instance, isAlive: alive, sleep });
+  } catch {
+    // A watch that cannot work leaves its instance to the next claim.
+  }
+  return 0;
+}
+
 if (isMainModule(import.meta.url)) {
-  process.exitCode = runLease(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  process.exitCode = argv[0] === "watch" ? await runWatch(argv) : runLease(argv);
 }

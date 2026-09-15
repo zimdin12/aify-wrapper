@@ -14,14 +14,15 @@ import { test } from "node:test";
 import { AgentLease, LEASE_VERSION, LeaseBusyError, REFUSED_EXIT_CODE, START_INTENTS, leaseDirectory, leaseFileName, planClaim, startIntent } from "../lib/agent-lease.mjs";
 import {
   START_TIME_TOLERANCE_MS, ancestors, descendants, identify, isAlive, isProtected, killTree, parseLinuxStartedAt, parseLinuxState,
-  parseProcessTable, parseStartedAtLines, processTable, sleepMs, startTimes,
+  orphanedChildren, parseLinuxGroup, parseProcessTable, parseStartedAtLines, processTable, sleepMs, startTimes,
 } from "../lib/process-identity.mjs";
-import { parseLeaseArgs, runLease } from "../bin/aify-agent-lease.mjs";
+import { parseLeaseArgs, runLease, runWatch } from "../bin/aify-agent-lease.mjs";
+import { startWatch, watchInstance } from "../lib/agent-lease-watch.mjs";
 
 const T0 = Date.parse("2026-09-15T10:00:00Z");
 
-/** A fake host: pid -> start ms. A kill removes the pid unless it is listed as unkillable. */
-function host(processes, { unkillable = [] } = {}) {
+/** A fake host: pid -> start ms, with `parents` naming each pid's parent (1 otherwise). A kill removes the pid unless it is listed as unkillable. */
+function host(processes, { unkillable = [], parents = {} } = {}) {
   const live = new Map(Object.entries(processes).map(([pid, at]) => [Number(pid), at]));
   const killed = [];
   return {
@@ -33,7 +34,7 @@ function host(processes, { unkillable = [] } = {}) {
     tableFails: false,
     processTable() {
       if (this.tableFails) return null;
-      return new Map([...live].filter(([, at]) => at !== null).map(([pid, at]) => [pid, { pid, ppid: 1, startedAtMs: at }]));
+      return new Map([...live].filter(([, at]) => at !== null).map(([pid, at]) => [pid, { pid, ppid: parents[pid] ?? 1, startedAtMs: at }]));
     },
     killTree: (pid) => {
       killed.push(pid);
@@ -119,9 +120,9 @@ test("AgentLease: claim writes the record with the launcher's OS start time; rel
   assert.equal(record.version, LEASE_VERSION);
   assert.deepEqual({ ...record.instance, seenAliveAtMs: 0 },
     { pid: 100, startedAtMs: T0, seenAliveAtMs: 0, runtime: "claude", mode: "resident", intent: "replace", attached: [] });
-  assert.deepEqual(agent.release({ pid: 555 }), { released: false, reason: "not-the-holder" });
+  assert.deepEqual(agent.release({ pid: 555 }), { released: false, reason: "not-the-holder", stopped: [] });
   assert.ok(fs.existsSync(agent.file));
-  assert.deepEqual(agent.release({ pid: 100 }), { released: true });
+  assert.deepEqual(agent.release({ pid: 100 }), { released: true, stopped: [] });
   assert.equal(fs.existsSync(agent.file), false);
 });
 
@@ -213,22 +214,147 @@ test("AgentLease: a replace never enters another agent's leased processes, even 
   assert.deepEqual(seen, [["/F", "/PID", "100", "/PID", "150"]]);
 });
 
-test("AgentLease: release keeps the record while something the instance attached still runs", () => {
-  const probe = host({ 100: T0, 101: T0 + 5 });
+test("AgentLease: release STOPS what the instance attached, and keeps the record when it cannot", () => {
+  // THE OPERATOR'S RULE (2026-09-15): an agent that is gone leaves nothing running. A launcher's exit only
+  // signals what it started, so the detached gateway was left to run on with no agent behind it.
+  const probe = host({ 100: T0, 101: T0 + 5, 102: T0 + 6 }, { unkillable: [102] });
   const agent = lease(probe);
   agent.claim({ pid: 100, intent: "start" });
   agent.attach({ instance: 100, pid: 101, kind: "gateway" });
-  assert.deepEqual(agent.release({ pid: 100 }), { released: false, reason: "attached-still-running" });
-  assert.equal(agent.read().instance.pid, 100, "the record naming a still-running gateway was deleted");
-  // A probe that fails keeps it too.
-  const realStartTimes = probe.startTimes;
-  probe.startTimes = (pids, options) => (options?.strict ? null : realStartTimes(pids));
-  assert.equal(agent.release({ pid: 100 }).released, false);
-  probe.startTimes = realStartTimes;
-  // CONTROL: once the gateway is gone, release removes the record, and the next start is clean.
-  probe.live.delete(101);
-  assert.deepEqual(agent.release({ pid: 100 }), { released: true });
-  assert.deepEqual(agent.release({ pid: 555 }), { released: false, reason: "not-the-holder" });
+  probe.tableFails = true;
+  assert.deepEqual(agent.release({ pid: 100 }), { released: false, reason: "unreadable-processes", stopped: [] });
+  assert.deepEqual([agent.read().instance.pid, probe.killed], [100, []], "a table nobody could read still let release act");
+  probe.tableFails = false;
+  agent.attach({ instance: 100, pid: 102, kind: "app-server" });
+  const stuck = agent.release({ pid: 100 });
+  assert.deepEqual([stuck.released, stuck.reason, stuck.live.pid], [false, "could-not-stop", 102]);
+  assert.equal(agent.read().instance.pid, 100, "the record naming a process that would not stop was deleted");
+  probe.live.delete(102);
+  const released = agent.release({ pid: 100 });
+  assert.deepEqual([released.released, released.stopped.map((e) => e.pid)], [true, []], "control: nothing left running, nothing to stop");
+  assert.equal(fs.existsSync(agent.file), false);
+  assert.ok(probe.killed.includes(101), "the attached gateway was not stopped");
+  assert.deepEqual(agent.release({ pid: 555 }), { released: false, reason: "not-the-holder", stopped: [] });
+});
+
+test("AgentLease: collect stops what a GONE instance attached and left running, and nothing of anybody else's", () => {
+  // 100 is the instance. 101 it attached; 110 is its runtime and 111 a server that runtime started, both
+  // left running when 100 was killed; 120 took a pid 100 never had; 130 is another agent's, started beneath it.
+  const probe = host({ 100: T0, 101: T0 + 5, 110: T0 + 2, 111: T0 + 3, 120: T0 - 60_000, 130: T0 + 4 },
+    { parents: { 110: 100, 111: 110, 120: 100, 130: 100 } });
+  const trees = [];
+  probe.killTree = (pid, options) => { trees.push({ pid, boundaries: [...(options?.boundaries || [])] }); probe.live.delete(pid); if (pid === 110) probe.live.delete(111); return true; };
+  const agent = lease(probe);
+  agent.claim({ pid: 100, intent: "start" });
+  agent.attach({ instance: 100, pid: 101, kind: "gateway" });
+  const other = new AgentLease({ agentId: "agent-b", directory: agent.directory, probe, stopWaitMs: 50, lockWaitMs: 200 });
+  other.claim({ pid: 130, intent: "start" });
+
+  assert.deepEqual(agent.collect({ instance: 100 }), { collected: false, reason: "still-running", stopped: [] });
+  assert.deepEqual(trees, [], "a live instance was collected");
+  assert.deepEqual(agent.collect({ instance: 555 }).reason, "not-the-holder");
+
+  probe.live.delete(100);
+  probe.tableFails = true;
+  assert.equal(agent.collect({ instance: 100 }).reason, "unreadable-processes");
+  assert.ok(fs.existsSync(agent.file), "a collect that could not read the table deleted the record");
+  probe.tableFails = false;
+
+  const result = agent.collect({ instance: 100 });
+  assert.equal(result.collected, true);
+  assert.deepEqual(trees.map((t) => t.pid).sort(), [101, 110], "the attached gateway and the orphaned runtime are what a collect stops");
+  assert.ok(probe.live.has(120), "a process started before the instance was taken for its child");
+  assert.ok(probe.live.has(130), "another agent's leased process was stopped");
+  assert.ok(trees.every((t) => t.boundaries.includes(130)), "the tree kills were not bounded by the other agent's lease");
+  assert.equal(fs.existsSync(agent.file), false);
+});
+
+test("AgentLease: a claim over a DEAD instance also stops what it left running unattached", () => {
+  const probe = host({ 100: T0, 110: T0 + 2, 300: T0 + 90_000 }, { parents: { 110: 100 } });
+  const agent = lease(probe);
+  agent.claim({ pid: 100, intent: "start" });
+  probe.live.delete(100);
+  const claimed = agent.claim({ pid: 300, intent: "start" });
+  assert.deepEqual([claimed.decision, probe.killed], ["claim", [110]]);
+  // CONTROL: a LIVE instance refuses an automatic start and nothing beneath it is touched.
+  const live = host({ 100: T0, 110: T0 + 2, 300: T0 + 90_000 }, { parents: { 110: 100 } });
+  const again = lease(live);
+  again.claim({ pid: 100, intent: "start" });
+  assert.deepEqual([again.claim({ pid: 300, intent: "start" }).decision, live.killed], ["refuse", []]);
+});
+
+test("orphanedChildren: children named by a gone pid, within its life, outside the boundaries", () => {
+  const rows = table([[110, 100, T0 + 2], [111, 110, T0 + 3], [120, 100, T0 - 1], [130, 100, T0 + 4], [140, 7, T0 + 5]]);
+  assert.deepEqual(orphanedChildren({ pid: 100, startedAtMs: T0 }, rows).map((r) => r.pid), [110, 130], "only direct children, started after the parent");
+  assert.deepEqual(orphanedChildren({ pid: 100, startedAtMs: T0 }, rows, { boundaries: new Set([130]) }).map((r) => r.pid), [110]);
+  // A process that took the pid afterwards names it for ITS children: those started after it are not the gone parent's.
+  const reused = table([[100, 1, T0 + 10], [110, 100, T0 + 2], [150, 100, T0 + 11]]);
+  assert.deepEqual(orphanedChildren({ pid: 100, startedAtMs: T0 }, reused).map((r) => r.pid), [110]);
+  assert.deepEqual(orphanedChildren({ pid: 100, seenAliveAtMs: T0 }, rows).map((r) => r.pid), [110, 130], "a moment it was seen dates it too");
+  assert.deepEqual(orphanedChildren({ pid: 100 }, rows), [], "an entry with nothing to date it by has no findable children");
+  // An older build wrote `startedAtMs: null`, and `row.startedAtMs >= null` is true for every row.
+  assert.deepEqual(orphanedChildren({ pid: 100, startedAtMs: null, seenAliveAtMs: null }, rows), [], "a null start time matched every child of the pid");
+  // LINUX re-parents a dead launcher's runtime to init; its process group still names the launcher.
+  const linux = new Map([[210, { pid: 210, ppid: 1, pgid: 100, startedAtMs: T0 + 2 }], [220, { pid: 220, ppid: 1, pgid: 100, startedAtMs: T0 - 5 }], [230, { pid: 230, ppid: 1, pgid: 7, startedAtMs: T0 + 3 }]]);
+  assert.deepEqual(orphanedChildren({ pid: 100, startedAtMs: T0 }, linux).map((r) => r.pid), [210], "a re-parented member of the launcher's group was not found, or one outside its life was");
+  assert.deepEqual(orphanedChildren({ pid: 100, startedAtMs: T0 }, null), []);
+});
+
+test("watchInstance: collects once the instance is gone, and leaves when the lease names another", async () => {
+  const calls = [];
+  const fakeLease = (states, collect = { collected: true, stopped: [] }) => ({
+    holderState: () => { const s = states.shift() ?? "gone"; calls.push(s); return s; },
+    collect: () => { calls.push("collect"); return typeof collect === "function" ? collect() : collect; },
+  });
+  let alive = true;
+  const sleeps = [];
+  const sleep = async (ms) => { sleeps.push(ms); if (sleeps.length === 3) alive = false; };
+  const collected = await watchInstance({ lease: fakeLease(["gone"]), instance: 9, isAlive: () => alive, sleep, recheckEvery: 100 });
+  assert.deepEqual([collected.collected, calls], [true, ["gone", "collect"]], "the watch did not collect a dead instance");
+  assert.equal(sleeps.length, 3, "control: it looked while the instance was alive, without asking the lease every time");
+
+  calls.length = 0;
+  const replaced = await watchInstance({ lease: fakeLease(["ours", "not-the-holder"]), instance: 9, isAlive: () => true, sleep: async () => {}, recheckEvery: 2 });
+  assert.deepEqual([replaced.reason, calls], ["not-the-holder", ["ours", "not-the-holder"]]);
+
+  // A pid that stays alive but belongs to another process now is an ended instance.
+  calls.length = 0;
+  const reused = await watchInstance({ lease: fakeLease(["reused"]), instance: 9, isAlive: () => true, sleep: async () => {}, recheckEvery: 1 });
+  assert.deepEqual([reused.collected, calls], [true, ["reused", "collect"]]);
+
+  // A collect that could not finish is retried, then left to the next claim.
+  calls.length = 0;
+  let tries = 0;
+  const flaky = await watchInstance({ lease: fakeLease(["gone"], () => (++tries < 3 ? { collected: false, reason: "unreadable-processes", stopped: [] } : { collected: true, stopped: [] })),
+    instance: 9, isAlive: () => false, sleep: async () => {}, attempts: 5 });
+  assert.deepEqual([flaky.collected, tries], [true, 3]);
+  tries = 0;
+  const gaveUp = await watchInstance({ lease: fakeLease(["gone"], () => { tries += 1; return { collected: false, reason: "could-not-stop", stopped: [] }; }),
+    instance: 9, isAlive: () => false, sleep: async () => {}, attempts: 2 });
+  assert.deepEqual([gaveUp.reason, tries], ["could-not-stop", 2]);
+});
+
+test("startWatch: detached from the launcher, holding no directory, carrying no lease; none when switched off", () => {
+  const spawned = [];
+  const spawn = (cmd, args, options) => { spawned.push({ cmd, args, options }); return { unref() { spawned.at(-1).unref = true; } }; };
+  const env = { AIFY_AGENT_LEASE: "77", AIFY_AGENT_LEASE_DIR: "/leases", PATH: "/bin" };
+  startWatch({ agentId: "agent-a", instance: 100, env, script: "/w/bin/aify-agent-lease.mjs", spawn, execPath: "/node/bin/node" });
+  assert.equal(spawned.length, 1);
+  const [{ cmd, args, options, unref }] = spawned;
+  assert.deepEqual([cmd, args], ["/node/bin/node", ["/w/bin/aify-agent-lease.mjs", "watch", "--agent", "agent-a", "--instance", "100", "--pid", "100"]]);
+  assert.deepEqual([options.detached, options.stdio, options.windowsHide, options.cwd, unref], [true, "ignore", true, path.dirname("/node/bin/node"), true]);
+  assert.deepEqual([options.env.AIFY_AGENT_LEASE, options.env.AIFY_AGENT_LEASE_DIR], ["", "/leases"], "the watch inherited the instance's own lease, or lost the lease directory");
+  assert.equal(startWatch({ agentId: "a", instance: 1, env: { AIFY_AGENT_LEASE_WATCH: "0" }, script: "s", spawn }), null);
+  assert.equal(spawned.length, 1, "a switched-off watch was started anyway");
+});
+
+test("runWatch: a watch that cannot work never throws", async () => {
+  assert.equal(await runWatch(["watch", "--agent", "a/b", "--pid", "5", "--instance", "5"], { env: {} }), 0);
+  assert.equal(await runWatch(["watch", "--agent", "a", "--pid", "5"], { env: {}, lease: () => { throw new Error("no"); } }), 0);
+  let asked = 0;
+  const fake = () => ({ holderState: () => { asked += 1; return "not-the-holder"; }, collect: () => ({}) });
+  assert.equal(await runWatch(["watch", "--agent", "a", "--pid", "5", "--instance", "5"], { env: {}, lease: fake, alive: () => false, sleep: async () => {} }), 0);
+  assert.equal(asked, 1, "control: a well-formed watch asked the lease");
 });
 
 test("AgentLease: seenAliveAtMs is stamped BEFORE the claim observes anything", () => {
@@ -537,6 +663,10 @@ test("processTable on THIS host lists this process with its parent and the start
   const procs = { "/proc/stat": "btime 1700000000", "/proc/5/stat": "5 (a) S 1 5 5 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 100", "/proc/6/stat": "6 (b) Z 1 6 6 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 100" };
   const linux = processTable({ platform: "linux", readDir: () => ["5", "6", "self"], readFile: (f) => { if (!(f in procs)) throw new Error("ENOENT"); return procs[f]; } });
   assert.deepEqual([...linux.keys()], [5], "a zombie is not a running process");
+  const grouped = { "/proc/stat": "btime 1700000000", "/proc/7/stat": "7 (a (b)) S 1 42 42 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 100" };
+  const row = processTable({ platform: "linux", readDir: () => ["7"], readFile: (f) => grouped[f] }).get(7);
+  assert.deepEqual([row.ppid, row.pgid], [1, 42], "the group is read after the last parenthesis, like every other field");
+  assert.equal(parseLinuxGroup("garbage"), null);
 });
 
 test("parseProcessTable reads CIM and ps rows", () => {
@@ -568,11 +698,17 @@ test("CLI: 75 means refused, and every failure of the helper itself exits 0 with
   const make = (options) => new AgentLease({ ...options, directory, probe, stopWaitMs: 50 });
   const lines = [];
   const err = { write: (s) => lines.push(s) };
-  assert.equal(runLease(["claim", "--agent", "agent-a", "--pid", "100", "--mode", "managed"], { err, lease: make }), 0);
-  assert.equal(runLease(["claim", "--agent", "agent-a", "--pid", "200", "--mode", "managed"], { err, lease: make }), REFUSED_EXIT_CODE);
+  const watched = [];
+  const watch = (options) => watched.push(options);
+  assert.equal(runLease(["claim", "--agent", "agent-a", "--pid", "100", "--mode", "managed"], { err, lease: make, watch }), 0);
+  assert.deepEqual(watched.map((w) => [w.agentId, w.instance, path.basename(w.script)]), [["agent-a", 100, "aify-agent-lease.mjs"]], "a claim did not start its watch");
+  assert.equal(runLease(["claim", "--agent", "agent-a", "--pid", "200", "--mode", "managed"], { err, lease: make, watch }), REFUSED_EXIT_CODE);
+  assert.equal(watched.length, 1, "a refused start started a watch");
   assert.match(lines.at(-1), /agent-a is already running \(process pid 100/);
-  assert.equal(runLease(["claim", "--agent=agent-a", "--pid=200", "--intent=replace"], { err, lease: make }), 0);
+  assert.equal(runLease(["claim", "--agent=agent-a", "--pid=200", "--intent=replace"], { err, lease: make, watch }), 0);
   assert.match(lines.at(-1), /stopped process pid 100/);
+  assert.equal(runLease(["claim", "--agent=agent-a", "--pid=200"], { err, lease: make, watch: () => { throw new Error("spawn EAGAIN"); } }), 0, "a watch that failed to start failed the start");
+  assert.match(lines.at(-1), /could not start the watch/);
   for (const bad of [["claim", "--agent", "a/b", "--pid", "5"], ["claim", "--pid", "x"], ["nope"], ["attach", "--agent", "agent-a", "--pid", "5"], ["claim", "--agnet", "agent-a", "--pid", "5"]]) {
     assert.equal(runLease(bad, { err, lease: make, env: {} }), 0, bad.join(" "));
     assert.match(lines.at(-1), /WARN/);
