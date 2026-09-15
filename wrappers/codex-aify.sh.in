@@ -158,8 +158,8 @@ fi
 
 # --check answers "is this configured and can it find its runtime" WITHOUT starting anything. The
 # identity scan here is a deliberate SUBSET of the real parser below — the two flag spellings, and no
-# more — because the full parse runs after the app-server has started, which is the one thing --check
-# must not do. It reports what it resolved rather than implying it ran the whole parser.
+# more — because the full parse is followed by a service lookup and the app-server launch, neither of which
+# --check may do. It reports what it resolved rather than implying it ran the whole parser.
 for ARG in "$@"; do
   case "$ARG" in
     --check)
@@ -254,76 +254,17 @@ if [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ]; then
   CODEX_PERMISSION_FLAGS+=(--disable apps)
 fi
 
-# ── Herdr: the pane's status dot follows the agent ───
+# ── Identity and endpoint, BEFORE the app-server starts ───
 #
-# A claimed pane shows the state its claim last reported, not what Herdr sees on screen, so the
-# claim's `idle` stood for the life of the pane. When this pane is claimed, or aify-env will name the
-# pane showing this managed worker (AIFY_HERDR_PANE_FILE), the app-server gets codex hooks that report
-# working / blocked / idle through aify-herdr-state.sh. They go on the APP-SERVER's command line
-# because that process runs the agent and its hooks; nothing is written to ~/.codex.
-#
-# CODEX ASKS BEFORE RUNNING A HOOK IT HAS NOT SEEN, and lib/codex-herdr-hooks.mjs records exactly how.
-# A resident launch shows the review once and the operator decides. A managed RESUME would show it to
-# nobody and never start, so the helper withholds the hooks there until config.toml trusts them.
-CODEX_HERDR_HOOKS=()
-if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then
-  export AIFY_HERDR_AGENT="${0##*/}"
-  export AIFY_HERDR_LAUNCH="$$"
-  _aify_herdr_trust=()
-  if [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ]; then
-    for _aify_arg in "$@"; do
-      case "$_aify_arg" in
-        --resume|--resume=*|--session-id|--session-id=*) _aify_herdr_trust=(--require-trust "${CODEX_HOME:-$HOME/.codex}/config.toml") ;;
-      esac
-    done
-  fi
-  while IFS= read -r _aify_line; do
-    CODEX_HERDR_HOOKS+=("$_aify_line")
-  done < <(node "$AIFY_HERDR_HELPER" codex-hooks --state-script "$AIFY_HERDR_BRIDGE/node_modules/aify-wrapper/bin/aify-herdr-state.sh" "${_aify_herdr_trust[@]}" 2>>"$AIFY_HERDR_LOG" || true)
-fi
-
-if command -v setsid >/dev/null 2>&1; then
-  setsid codex "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_HERDR_HOOKS[@]}" app-server --listen "$APP_SERVER_URL" </dev/null >>"$LOG_FILE" 2>&1 &
-else
-  codex "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_HERDR_HOOKS[@]}" app-server --listen "$APP_SERVER_URL" </dev/null >>"$LOG_FILE" 2>&1 &
-fi
-APP_SERVER_PID=$!
-RUNTIME_PID=""
-
-# The runtime marker is written by the long-lived aify-comms MCP bridge
-# itself (mcp/stdio/server.js) on startup when it sees
-# AIFY_CODEX_APP_SERVER_URL in its environment.
-
-cleanup() {
-  if [ -n "${RUNTIME_PID:-}" ] && kill -0 "$RUNTIME_PID" >/dev/null 2>&1; then
-    kill "$RUNTIME_PID" >/dev/null 2>&1 || true
-    wait "$RUNTIME_PID" 2>/dev/null || true
-  fi
-  if kill -0 "$APP_SERVER_PID" >/dev/null 2>&1; then
-    kill "$APP_SERVER_PID" >/dev/null 2>&1 || true
-    wait "$APP_SERVER_PID" 2>/dev/null || true
-  fi
-}
-trap cleanup EXIT INT TERM HUP
-
-run_codex_foreground() {
-  set +e
-  # Keep Codex in the foreground. In a non-interactive bash wrapper, async
-  # commands (`codex ... &`) receive /dev/null on stdin, so the Codex TUI exits
-  # with "stdin is not a terminal" even when the operator launched from a TTY.
-  codex "$@"
-  local status=$?
-  set -e
-  RUNTIME_PID=""
-  return "$status"
-}
-
-if ! wait_for_port "$PORT"; then
-  echo "codex-aify could not reach the local app-server at $APP_SERVER_URL." >&2
-  echo "Check $LOG_FILE for details." >&2
-  exit 1
-fi
-
+# THE APP-SERVER RUNS THE AGENT'S HOOKS, AND IT RUNS THEM WITH THE ENVIRONMENT IT STARTED WITH. codex
+# builds every hook command with `env_clear()` and replays a snapshot of the owning process's
+# environment (codex-rs rust-v0.154.0, hooks/src/engine/command_runner.rs; the snapshot is
+# `std::env::vars_os()` in hooks/src/registry.rs). This block used to sit below the app-server launch,
+# so a resident `codex-aify --aify-agent x` exported AIFY_AGENT_ID, AIFY_AGENT_ROLE and AIFY_COMMS_URL
+# to the TUI only: the app-server, and so every turn and state hook, saw none of them and posted
+# nothing. Proven with a stub app-server that recorded its environment. The parse is pure and the
+# lookup is one read-only request, so running them before the launch changes what the app-server
+# inherits and nothing else.
 CODEX_ARGS=()
 # --shared: let the HOST TIER own this session's terminal, so closing this window does not end it.
 # Recognised here, acted on at the very bottom; every path in between is unchanged, which is the
@@ -458,6 +399,9 @@ fi
 # on ${AIFY_COMMS_URL:-}.
 export AIFY_COMMS_URL="$HARNESS_ENDPOINT"
 
+# These reach the aify-comms MCP bridge as well as the hooks: codex starts MCP servers from the
+# APP-SERVER, not the TUI (observed 2026-09-15, `.aify-comms/mcp/stdio/server.js` a child of
+# `codex app-server`), so an export made after the launch below is one the bridge never sees.
 # Session-mode resolution: explicit flag/env > TTY auto-detect. See
 # claude-aify for the rationale; same contract applies here.
 # INFERRED, NOT CHOSEN -- and that distinction has to survive a `--shared` relaunch (R9-M10,
@@ -492,6 +436,93 @@ else
   # 60s after launch.
   export CODEX_THREAD_ID="$CODEX_RESUME_HANDLE"
   export AIFY_SESSION_HANDLE="$CODEX_RESUME_HANDLE"
+fi
+
+# ── Herdr: the pane's status dot follows the agent ───
+#
+# A claimed pane shows the state its claim last reported, not what Herdr sees on screen, so the
+# claim's `idle` stood for the life of the pane. When this pane is claimed, or aify-env will name the
+# pane showing this managed worker (AIFY_HERDR_PANE_FILE), the app-server gets codex hooks that report
+# working / blocked / idle through aify-herdr-state.sh. They go on the APP-SERVER's command line
+# because that process runs the agent and its hooks; nothing is written to ~/.codex.
+#
+# CODEX ASKS BEFORE RUNNING A HOOK IT HAS NOT SEEN, and lib/codex-herdr-hooks.mjs records exactly how.
+# A resident launch shows the review once and the operator decides. A managed RESUME would show it to
+# nobody and never start, so the helper withholds the hooks there until config.toml trusts them.
+CODEX_HERDR_HOOKS=()
+if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then
+  export AIFY_HERDR_AGENT="${0##*/}"
+  export AIFY_HERDR_LAUNCH="$$"
+  _aify_herdr_trust=()
+  if [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ]; then
+    for _aify_arg in "$@"; do
+      case "$_aify_arg" in
+        --resume|--resume=*|--session-id|--session-id=*) _aify_herdr_trust=(--require-trust "${CODEX_HOME:-$HOME/.codex}/config.toml") ;;
+      esac
+    done
+  fi
+  while IFS= read -r _aify_line; do
+    CODEX_HERDR_HOOKS+=("$_aify_line")
+  done < <(node "$AIFY_HERDR_HELPER" codex-hooks --state-script "$AIFY_HERDR_BRIDGE/node_modules/aify-wrapper/bin/aify-herdr-state.sh" "${_aify_herdr_trust[@]}" 2>>"$AIFY_HERDR_LOG" || true)
+fi
+
+if command -v setsid >/dev/null 2>&1; then
+  setsid codex "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_HERDR_HOOKS[@]}" app-server --listen "$APP_SERVER_URL" </dev/null >>"$LOG_FILE" 2>&1 &
+else
+  codex "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_HERDR_HOOKS[@]}" app-server --listen "$APP_SERVER_URL" </dev/null >>"$LOG_FILE" 2>&1 &
+fi
+APP_SERVER_PID=$!
+RUNTIME_PID=""
+
+# The runtime marker is written by the long-lived aify-comms MCP bridge
+# itself (mcp/stdio/server.js) on startup when it sees
+# AIFY_CODEX_APP_SERVER_URL in its environment.
+
+# THE TUI'S EXIT IS REPORTED, HOWEVER IT EXITS: a turn-end, and idle to a pane the hooks report to.
+# No hook fires when codex itself goes away, so the agent read `working` until something else cleared
+# it. See claude-aify for the full reasoning. It runs from `cleanup`, after the app-server is gone so
+# no later hook can undo it. `cleanup` is trapped on four signals and runs again on EXIT, and the
+# `--shared` block calls it before its exec; AIFY_RUNTIME_RUNNING is set only while the TUI runs and
+# cleared on the first report, so none of those report twice or report a TUI that never started.
+AIFY_RUNTIME_RUNNING=0
+_aify_runtime_exited() {
+  [ "$AIFY_RUNTIME_RUNNING" = 1 ] || return 0
+  AIFY_RUNTIME_RUNNING=0
+  _aify_exit_herdr=""
+  if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then _aify_exit_herdr=herdr; fi
+  sh "@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-runtime-exited.sh" "@@BRIDGE_DIR@@" "$_aify_exit_herdr" </dev/null >/dev/null 2>&1 || true
+}
+
+cleanup() {
+  if [ -n "${RUNTIME_PID:-}" ] && kill -0 "$RUNTIME_PID" >/dev/null 2>&1; then
+    kill "$RUNTIME_PID" >/dev/null 2>&1 || true
+    wait "$RUNTIME_PID" 2>/dev/null || true
+  fi
+  if kill -0 "$APP_SERVER_PID" >/dev/null 2>&1; then
+    kill "$APP_SERVER_PID" >/dev/null 2>&1 || true
+    wait "$APP_SERVER_PID" 2>/dev/null || true
+  fi
+  _aify_runtime_exited
+}
+trap cleanup EXIT INT TERM HUP
+
+run_codex_foreground() {
+  set +e
+  AIFY_RUNTIME_RUNNING=1
+  # Keep Codex in the foreground. In a non-interactive bash wrapper, async
+  # commands (`codex ... &`) receive /dev/null on stdin, so the Codex TUI exits
+  # with "stdin is not a terminal" even when the operator launched from a TTY.
+  codex "$@"
+  local status=$?
+  set -e
+  RUNTIME_PID=""
+  return "$status"
+}
+
+if ! wait_for_port "$PORT"; then
+  echo "codex-aify could not reach the local app-server at $APP_SERVER_URL." >&2
+  echo "Check $LOG_FILE for details." >&2
+  exit 1
 fi
 
 # Plan 6 follow-up (2026-05-26): dashboard-spawned managed codex wrappers

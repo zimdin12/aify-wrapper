@@ -144,8 +144,9 @@ authority's reported state and ignores screen detection for any source outside i
 which `herdr:aify` is. The claim reports `idle`, so until the launcher also reported state, every
 claimed pane read idle while its agent worked (observed on a live pane mid-turn). `claude-aify` now
 adds `aify-herdr-state.sh` to the agent's hooks when the claim succeeds: `UserPromptSubmit`,
-`PostToolUse` and `PostToolUseFailure` report working, a permission or input `Notification` reports
-blocked, `Stop` and `StopFailure` (a turn an API error ended) report idle. The hooks run synchronously
+`PostToolUse` and `PostToolUseFailure` report working, `PermissionRequest` (fired the moment an
+approval dialog opens) and a permission or input `Notification` report blocked, `Stop` and
+`StopFailure` (a turn an API error ended) report idle. The hooks run synchronously
 on every tool call, so the script sends Herdr a state only when it CHANGES: the last report is kept
 per pane under `TMPDIR`, tagged with the launcher's pid (`AIFY_HERDR_LAUNCH`) so a later launch in a
 reused pane id starts clean, and written only after Herdr accepted it. A managed worker is not in the pane that shows it, so it reports to the pane id aify-env writes
@@ -165,6 +166,14 @@ after they are trusted. A moved bridge directory changes the command, so it need
 `pre_llm_call` reports working, `pre_approval_request` blocked, `post_approval_response` working,
 `on_session_end` (fired at the end of every turn) idle. A turn that dies on a non-retryable API error
 fires none of them and leaves the dot at working until the next turn. pi still has the stuck dot.
+
+**The runtime's own exit is reported too.** No hook fires when the runtime itself goes away: killed,
+crashed, or its terminal closed mid-turn. `claude-aify`, `codex-aify` and the TUI paths of
+`hermes-aify` wait on the runtime, so their exit trap runs `bin/aify-runtime-exited.sh` once: `idle`
+to a pane the hooks report to, and a `turn-end` through the bridge's `agent-state-event.mjs` when
+`AIFY_AGENT_ID` is set and the bridge has that script. It never prints, keeps the runtime's exit
+status, and holds the exit for at most about 3 seconds. A launcher that `exec`s its runtime, or
+hands the session to aify-env with `--shared`, is not there to see the exit and reports nothing.
 
 ## MEASURED, not inferred — the run this design now rests on
 

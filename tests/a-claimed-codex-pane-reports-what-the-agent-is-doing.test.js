@@ -116,13 +116,16 @@ const states = (lines) => lines.map(line => line.split(" --state ")[1]);
 
 test("A CLAIMED CODEX PANE FOLLOWS THE AGENT: working, blocked, working, idle, and idle after an interrupt", { skip: WIN }, () => {
   const { argv, hooks, fire, reports } = launch({ env: IN_A_PANE });
-  assert.deepEqual(reports(), ["pane report-agent w1:p2 --source herdr:aify --agent codex-aify --state idle"]);
+  // The claim's idle at launch, and the launcher's when the stub TUI exited
+  // (a-launcher-reports-its-runtimes-exit.test.js).
+  const IDLE = "pane report-agent w1:p2 --source herdr:aify --agent codex-aify --state idle";
+  assert.deepEqual(reports(), [IDLE, IDLE]);
   assert.deepEqual(Object.keys(hooks).sort(), ["Interrupt", "PermissionRequest", "PostToolUse", "Stop", "UserPromptSubmit"]);
   // Before the subcommand: codex reads `-c` as a global flag.
   assert.ok(argv.indexOf("-c") < argv.indexOf("app-server"));
 
   for (const event of ["UserPromptSubmit", "PermissionRequest", "PostToolUse", "Stop", "UserPromptSubmit", "Interrupt"]) fire(event);
-  assert.deepEqual(states(reports().slice(1)), ["working", "blocked", "working", "idle", "working", "idle"]);
+  assert.deepEqual(states(reports().slice(2)), ["working", "blocked", "working", "idle", "working", "idle"]);
   for (const line of reports()) assert.match(line, /^pane report-agent w1:p2 --source herdr:aify --agent codex-aify /);
 });
 
@@ -145,7 +148,7 @@ test("a hook fired without the agent variable reports nothing", { skip: WIN }, (
   const { hooks, hookEnv, reports } = launch({ env: IN_A_PANE });
   const result = spawnSync("sh", ["-c", hooks.UserPromptSubmit], { encoding: "utf8", env: { ...hookEnv, AIFY_HERDR_AGENT: "" } });
   assert.equal(result.status, 0);
-  assert.equal(reports().length, 1, "only the claim's own report should be there");
+  assert.equal(reports().length, 2, "only the claim's and the launcher's exit reports should be there");
 });
 
 const MANAGED = (paneFile) => ({ AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_HERDR_PANE_FILE: paneFile });
