@@ -29,8 +29,12 @@ function host(processes, { unkillable = [] } = {}) {
     live,
     startTimes: (pids) => new Map(pids.filter((pid) => live.has(pid) && live.get(pid) !== null).map((pid) => [pid, live.get(pid)])),
     isAlive: (pid) => live.has(pid),
-    // A readable table in which nothing is anybody's ancestor.
-    processTable: () => new Map(),
+    // The table every claim decides from: each live pid whose start can be read, parented to nothing.
+    tableFails: false,
+    processTable() {
+      if (this.tableFails) return null;
+      return new Map([...live].filter(([, at]) => at !== null).map(([pid, at]) => [pid, { pid, ppid: 1, startedAtMs: at }]));
+    },
     killTree: (pid) => {
       killed.push(pid);
       if (!unkillable.includes(pid)) live.delete(pid);
@@ -44,12 +48,12 @@ function lease(probe, extra = {}) {
   return new AgentLease({ agentId: "agent-a", directory, probe, stopWaitMs: 50, lockWaitMs: 200, ...extra });
 }
 
-const STATES = { ours: "ours", gone: "gone", reused: "reused", unverified: "unverified" };
+const STATES = { ours: "ours", gone: "gone", reused: "reused", unknown: "unknown" };
 const stateTable = (table) => (entry) => table[entry.pid];
 
 test("planClaim: no record claims and stops nothing", () => {
   assert.deepEqual(planClaim(null, { selfPid: 9, intent: "start", stateOf: () => "gone" }),
-    { decision: "claim", live: null, stop: [], unverified: [], write: true, keepAttached: false });
+    { decision: "claim", live: null, stop: [], keepAttached: false });
 });
 
 test("planClaim: a LIVE instance refuses a start and is stopped, with its processes, by a replace", () => {
@@ -67,19 +71,18 @@ test("planClaim: a LIVE instance refuses a start and is stopped, with its proces
 test("planClaim: a DEAD instance's leftovers are stopped whatever the intent", () => {
   const record = { instance: { pid: 1, attached: [{ pid: 2 }, { pid: 3 }] } };
   for (const dead of [STATES.gone, STATES.reused]) {
-    const plan = planClaim(record, { selfPid: 9, intent: "start", stateOf: stateTable({ 1: dead, 2: STATES.ours, 3: STATES.unverified }) });
+    const plan = planClaim(record, { selfPid: 9, intent: "start", stateOf: stateTable({ 1: dead, 2: STATES.ours, 3: STATES.unknown }) });
     assert.equal(plan.decision, "claim");
-    assert.deepEqual(plan.stop.map((e) => e.pid), [2]);
-    assert.deepEqual(plan.unverified.map((e) => e.pid), [3]);
+    assert.deepEqual(plan.stop.map((e) => e.pid), [2], "an entry of unknown identity is never stopped");
   }
 });
 
-test("planClaim: an UNVERIFIED instance neither refuses nor loses anything", () => {
+test("planClaim: an instance of UNKNOWN identity neither refuses nor has anything of it stopped", () => {
   const record = { instance: { pid: 1, attached: [{ pid: 2 }] } };
-  const plan = planClaim(record, { selfPid: 9, intent: "start", stateOf: stateTable({ 1: STATES.unverified, 2: STATES.ours }) });
-  assert.equal(plan.decision, "claim");
-  assert.deepEqual(plan.stop, [], "its attached process may belong to a live instance");
-  assert.deepEqual(plan.unverified.map((e) => e.pid), [1]);
+  for (const intent of ["start", "replace"]) {
+    const plan = planClaim(record, { selfPid: 9, intent, stateOf: stateTable({ 1: STATES.unknown, 2: STATES.ours }) });
+    assert.deepEqual([plan.decision, plan.stop], ["claim", []], "its attached process may belong to a live instance");
+  }
 });
 
 test("planClaim: the same launcher claiming again keeps its attachments; a recycled launcher pid does not", () => {
@@ -166,6 +169,28 @@ test("AgentLease: a process that will not die REFUSES the start rather than make
   assert.equal(agent.read().instance.pid, 100);
 });
 
+test("AgentLease: a probe that fails while waiting for a stop is not a stopped process", () => {
+  const probe = host({ 100: T0, 200: T0 + 60_000 }, { unkillable: [100] });
+  const agent = lease(probe);
+  agent.claim({ pid: 100, intent: "start" });
+  const realStartTimes = probe.startTimes;
+  probe.startTimes = (pids, options) => (options?.strict ? null : realStartTimes(pids));
+  const result = agent.claim({ pid: 200, intent: "replace" });
+  assert.deepEqual([result.decision, result.reason], ["refuse", "could-not-stop"]);
+  assert.equal(agent.read().instance.pid, 100);
+});
+
+test("AgentLease: an older build's record whose instance is NOT running leaves leftovers that are stopped", () => {
+  // No identity is needed to know a pid nobody holds is dead; what it attached is a leftover.
+  const probe = host({ 101: T0 + 5, 200: T0 + 60_000 });
+  const agent = lease(probe);
+  fs.mkdirSync(agent.directory, { recursive: true });
+  fs.writeFileSync(agent.file, JSON.stringify({ version: LEASE_VERSION, agentId: "agent-a",
+    instance: { pid: 100, startedAtMs: null, attached: [{ pid: 101, startedAtMs: T0 + 5, kind: "gateway" }] } }));
+  assert.equal(agent.claim({ pid: 200, intent: "start" }).decision, "claim");
+  assert.deepEqual(probe.killed, [101]);
+});
+
 test("AgentLease: attach is ignored for an instance that no longer holds the lease", () => {
   const probe = host({ 100: T0, 101: T0 + 5 });
   const agent = lease(probe);
@@ -247,18 +272,6 @@ test("planClaim: a start INSIDE the live instance is refused as nested, even a r
   assert.deepEqual(dead.stop, []);
 });
 
-test("planClaim: a claim that cannot verify something writes NOTHING, so the record keeps it for a later claim", () => {
-  const record = { instance: { pid: 1, attached: [{ pid: 2 }, { pid: 3 }, { pid: 4 }] } };
-  for (const intent of ["start", "replace"]) {
-    const plan = planClaim(record, { selfPid: 9, intent, stateOf: stateTable({ 1: STATES.unverified, 2: STATES.ours, 3: STATES.gone, 4: STATES.ours }) });
-    assert.deepEqual([plan.decision, plan.write, plan.stop], ["claim", false, []], intent);
-  }
-  const dead = planClaim(record, { selfPid: 9, intent: "start", stateOf: stateTable({ 1: STATES.gone, 2: STATES.unverified, 3: STATES.gone, 4: STATES.ours }) });
-  assert.deepEqual([dead.stop.map((e) => e.pid), dead.unverified.map((e) => e.pid), dead.write], [[4], [2], false]);
-  // CONTROL: with everything verifiable the claim writes.
-  assert.equal(planClaim(record, { selfPid: 9, intent: "start", stateOf: stateTable({ 1: STATES.gone, 2: STATES.gone, 3: STATES.gone, 4: STATES.ours }) }).write, true);
-});
-
 test("identify: an entry recorded with no start time is still decided by when it was seen alive", () => {
   assert.equal(identify({ seenAliveAtMs: T0 }, { alive: true, startedAt: T0 - 60_000 }), "ours");
   assert.equal(identify({ seenAliveAtMs: T0 }, { alive: true, startedAt: T0 }), "ours");
@@ -268,18 +281,25 @@ test("identify: an entry recorded with no start time is still decided by when it
   assert.equal(START_TIME_TOLERANCE_MS, 2_000);
 });
 
-test("AgentLease: no process table means no blind kill: a live instance is not replaced, leftovers stay on record", () => {
+test("AgentLease: an unreadable process table with a recorded process still running REFUSES, whatever the intent", () => {
+  // THE HOLE THIS CLOSES: a claim that let the start through without recording it (a probe hiccup) left a
+  // live launcher off the record, so the next automatic start was not refused. Nothing starts blind now.
   const probe = host({ 100: T0, 101: T0 + 5, 200: T0 + 60_000 });
-  probe.processTable = () => null;
   const agent = lease(probe);
   agent.claim({ pid: 100, intent: "start" });
   agent.attach({ instance: 100, pid: 101, kind: "gateway" });
-  const replace = agent.claim({ pid: 200, intent: "replace" });
-  assert.deepEqual([replace.decision, replace.reason, probe.killed], ["refuse", "could-not-stop", []]);
+  probe.tableFails = true;
+  for (const intent of ["start", "replace"]) {
+    const result = agent.claim({ pid: 200, intent });
+    assert.deepEqual([result.decision, result.reason, probe.killed], ["refuse", "unreadable-processes", []], intent);
+  }
+  // Only the gateway still runs: still refused, since it may belong to a live instance.
   probe.live.delete(100);
-  const leftover = agent.claim({ pid: 200, intent: "start" });
-  assert.deepEqual([leftover.decision, leftover.written, probe.killed], ["claim", false, []]);
-  assert.equal(agent.read().instance.pid, 100, "the leftover's record was overwritten without stopping it");
+  assert.equal(agent.claim({ pid: 200, intent: "start" }).reason, "unreadable-processes");
+  // CONTROL: nothing recorded is running, so the table is not needed and the start claims.
+  probe.live.delete(101);
+  assert.equal(agent.claim({ pid: 200, intent: "start" }).decision, "claim");
+  assert.equal(agent.read().instance.pid, 200);
 });
 
 test("AgentLease: a launcher whose start time could not be read is still refused against, and still stopped by a replace", () => {
@@ -294,17 +314,15 @@ test("AgentLease: a launcher whose start time could not be read is still refused
   assert.deepEqual(probe.killed, [100]);
 });
 
-test("AgentLease: an unverifiable instance keeps its record whole, and a one-off probe failure is retried", () => {
-  const probe = host({ 100: null, 101: T0 + 5, 200: T0 + 60_000 });
+test("AgentLease: a record with no identity (an older build's) never blocks, and nothing of it is stopped; a probe failure is retried", () => {
+  const probe = host({ 100: T0, 101: T0 + 5, 200: T0 + 60_000 });
   const agent = lease(probe);
   fs.mkdirSync(agent.directory, { recursive: true });
-  const before = { version: LEASE_VERSION, agentId: "agent-a",
-    instance: { pid: 100, startedAtMs: null, attached: [{ pid: 101, startedAtMs: T0 + 5, kind: "gateway" }] } };
-  fs.writeFileSync(agent.file, JSON.stringify(before));
-  const result = agent.claim({ pid: 200, intent: "replace" });
-  assert.deepEqual([result.decision, result.written], ["claim", false]);
-  assert.deepEqual(agent.read(), before, "the record of what could not be verified was overwritten");
-  assert.deepEqual(probe.killed, []);
+  fs.writeFileSync(agent.file, JSON.stringify({ version: LEASE_VERSION, agentId: "agent-a",
+    instance: { pid: 100, startedAtMs: null, attached: [{ pid: 101, startedAtMs: T0 + 5, kind: "gateway" }] } }));
+  assert.equal(agent.claim({ pid: 200, intent: "start" }).decision, "claim");
+  assert.deepEqual(probe.killed, [], "a gateway of an instance nobody can identify was stopped");
+  assert.equal(agent.read().instance.pid, 200);
 
   const flaky = host({ 300: T0 });
   const realStartTimes = flaky.startTimes;
@@ -388,7 +406,7 @@ test("start time parsers read what each platform prints", () => {
 
 test("startTimes asks each platform once for every pid, and reads nothing for no pids", () => {
   const calls = [];
-  const run = (cmd, args) => { calls.push([cmd, args.join(" ")]); return { stdout: "7 2026-09-15T11:00:04Z\n" }; };
+  const run = (cmd, args) => { calls.push([cmd, args.join(" ")]); return { stdout: "7 2026-09-15T11:00:04Z\n", status: 0 }; };
   assert.deepEqual(startTimes([], { platform: "win32", run }), new Map());
   assert.equal(startTimes([7, 8, 7, 0, -1], { platform: "win32", run }).get(7), Date.parse("2026-09-15T11:00:04Z"));
   assert.equal(calls.length, 1);
@@ -396,6 +414,13 @@ test("startTimes asks each platform once for every pid, and reads nothing for no
   const files = { "/proc/stat": "btime 1700000000", "/proc/5/stat": "5 (x) S 1 5 5 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 100" };
   const readFile = (file) => { if (!(file in files)) throw new Error("ENOENT"); return files[file]; };
   assert.deepEqual([...startTimes([5, 6], { platform: "linux", readFile })], [[5, 1700000001000]]);
+  // A probe that FAILED is not an answer that the processes are gone: strict says so, lenient stays a Map.
+  const timedOut = () => ({ stdout: "7 2026-09-15T11:00:04Z\n", status: null, error: Object.assign(new Error("t"), { code: "ETIMEDOUT" }) });
+  assert.equal(startTimes([7], { platform: "win32", run: timedOut, strict: true }), null);
+  assert.equal(startTimes([7], { platform: "win32", run: () => ({ stdout: "", status: 1 }), strict: true }), null, "a non-zero exit with no error");
+  assert.deepEqual(startTimes([7], { platform: "win32", run: timedOut }), new Map());
+  assert.deepEqual(startTimes([7], { platform: "darwin", run: () => ({ stdout: "", status: 1 }), strict: true }), new Map(), "ps exits 1 when no pid exists: an answer");
+  assert.equal(startTimes([7], { platform: "linux", readFile: () => { throw new Error("EACCES"); }, strict: true }), null);
 });
 
 test("isProtected and killTree never target nothing, init, this process or its parent", () => {
@@ -419,6 +444,8 @@ test("ancestors stop at a parent that started after its child: that pid was reus
   const rows = table([[50, 40, T0], [40, 1, T0 + 5_000], [70, 60, T0]]);
   assert.deepEqual([...ancestors(50, rows)], [50]);
   assert.deepEqual([...ancestors(70, rows)], [70, 60], "an unlisted parent is still named, and the walk ends there");
+  // A parent and child can start in the same millisecond (Linux reads 10 ms ticks): that is still parentage.
+  assert.deepEqual([...ancestors(81, table([[80, 1, T0], [81, 80, T0]]))], [81, 80, 1]);
 });
 
 test("descendants follow real children only: a child older than its parent names a pid that was reused", () => {
@@ -456,6 +483,11 @@ test("processTable on THIS host lists this process with its parent and the start
   assert.equal(processTable({ platform: "win32", run: () => ({ stdout: partial, status: null, error: Object.assign(new Error("t"), { code: "ETIMEDOUT" }) }) }), null,
     "a query that timed out printed part of the table, and part of a table was trusted");
   assert.equal(processTable({ platform: "win32", run: () => ({ stdout: partial, status: 0 }) }).size, 2, "control: the same rows from a clean exit are read");
+  assert.equal(processTable({ platform: "win32", run: () => ({ stdout: partial, status: 1 }) }), null, "a non-zero exit with no error is a failed query too");
+  assert.equal(processTable({ platform: "win32", run: () => ({ stdout: partial, status: 0, error: Object.assign(new Error("b"), { code: "ENOBUFS" }) }) }), null, "an error with a zero status is a failed query too");
+  const procs = { "/proc/stat": "btime 1700000000", "/proc/5/stat": "5 (a) S 1 5 5 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 100", "/proc/6/stat": "6 (b) Z 1 6 6 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 100" };
+  const linux = processTable({ platform: "linux", readDir: () => ["5", "6", "self"], readFile: (f) => { if (!(f in procs)) throw new Error("ENOENT"); return procs[f]; } });
+  assert.deepEqual([...linux.keys()], [5], "a zombie is not a running process");
 });
 
 test("parseProcessTable reads CIM and ps rows", () => {

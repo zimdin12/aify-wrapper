@@ -69,7 +69,10 @@ export function runLease(argv, { env = process.env, err = process.stderr, lease 
         say(`${args.agentId}: this start runs inside ${args.agentId}'s own live instance (${describe(result.live)}), so it would be a second instance of the same agent. Use another agent id.`);
         return REFUSED_EXIT_CODE;
       }
-      for (const entry of result.unverified) say(`${args.agentId}: left ${describe(entry)} alone; this host cannot confirm it is the one recorded.`);
+      if (result.decision === "refuse" && result.reason === "unreadable-processes") {
+        say(`${args.agentId}: ${describe(result.live)} is still running and this host could not read its process table to tell whether it is the recorded one, so this start could make a second instance. Try again.`);
+        return REFUSED_EXIT_CODE;
+      }
       if (result.decision === "refuse" && result.reason === "could-not-stop") {
         say(`${args.agentId}: could not stop ${describe(result.live)}, so this start would make a second instance. Stop it, then start again.`);
         return REFUSED_EXIT_CODE;
