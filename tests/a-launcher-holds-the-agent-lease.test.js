@@ -160,4 +160,9 @@ test("the claim comes before every older reap of the same agent, so a refused st
     assert.ok(claim > 0 && reapAt > 0, `${client}: control, both call sites are found`);
     assert.ok(claim < reapAt, `${client}: the reap runs before the claim`);
   }
+  // A --shared launch claims nothing (the host's own run claims), so it must reap nothing either.
+  const claude = fs.readFileSync(path.join(ROOT, "wrappers", "claude-aify.sh.in"), "utf8");
+  const reapGuard = claude.split("\n").find((line) => line.startsWith("if ") && line.includes('"$AIFY_SESSION_MODE" = "managed"') && line.includes("CLAUDE_RESUME_ID"));
+  assert.ok(reapGuard, "control: the managed reap's condition is found");
+  assert.match(reapGuard, /"\$CLAUDE_AIFY_SHARED" != true/, "a --shared launch runs the managed reap without claiming");
 });
