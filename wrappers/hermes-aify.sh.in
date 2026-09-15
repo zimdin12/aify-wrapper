@@ -16,15 +16,6 @@
 #|   @@ + SCRIPT_DIR@@   the repo checkout
 set -euo pipefail
 
-# A SHELL INSIDE A RUNNING AGENT SESSION NAMES NO AGENT (bin/aify-inherited-session.sh). First, before anything
-# reads an identity, a mode or a conversation from the environment: a bare launch typed into a pane that
-# inherited another agent's session once started as that agent and replaced its live instance.
-AIFY_INHERITED_SESSION_SH="@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-inherited-session.sh"
-if [ -r "$AIFY_INHERITED_SESSION_SH" ]; then
-  . "$AIFY_INHERITED_SESSION_SH"
-  aify_forget_inherited_session
-fi
-
 # ONE LIVE INSTANCE PER AGENT (bin/aify-lease.sh, lib/agent-lease.mjs). Sourced first so every exit path,
 # traps included, can call the release; an installed bridge older than the helper gets no-op stubs.
 AIFY_LEASE_SH="@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-lease.sh"
@@ -39,6 +30,17 @@ fi
 # `--aify-start-intent=start|replace` is the lease's, never the runtime's: a Herdr restore passes it.
 aify_lease_take_intent "$@"
 set -- ${AIFY_LEASE_ARGS[@]+"${AIFY_LEASE_ARGS[@]}"}
+
+# A SHELL INSIDE A RUNNING AGENT SESSION HANDS A START NONE OF THAT SESSION (bin/aify-inherited-session.sh).
+# Before anything reads an identity, a mode or a conversation from the environment, and after the line above
+# has read whether this command names its agent: a bare launch typed into a pane that inherited another
+# agent's session once started as that agent and replaced it, while a named launch a host composed keeps the
+# mode and role its host gave it.
+AIFY_INHERITED_SESSION_SH="@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-inherited-session.sh"
+if [ -r "$AIFY_INHERITED_SESSION_SH" ]; then
+  . "$AIFY_INHERITED_SESSION_SH"
+  aify_forget_inherited_session "${AIFY_LEASE_IDENTITY:-recovered}"
+fi
 
 # ── Herdr: what this invocation was, captured before anything consumes it ───
 #

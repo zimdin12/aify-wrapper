@@ -16,9 +16,10 @@
 //   - a process that would not stop;
 //   - a recorded process still running while the process table cannot be read;
 //   - another start of the same agent still holding the lock after a minute.
-// Every failure of this helper itself -- a bad argument, an unwritable directory -- prints a warning and
-// exits 0, because the launcher runs it on the path of an operator starting an agent: a broken lease costs
-// the guarantee, never the start. A refusal names what it met.
+// Every failure of this helper itself -- a bad argument, an unwritable directory -- prints a warning and lets
+// the launch through, because the launcher runs it on the path of an operator starting an agent: a broken lease
+// costs the guarantee, never the start. A failed CLAIM exits 70, so the launcher knows it holds no lease; other
+// commands exit 0. A refusal names what it met.
 //
 // --pid IS THE LAUNCHER'S OWN PID, passed in, never this process's parent. On Windows a Git Bash launcher
 // runs native node through a short-lived MSYS stub, so `process.ppid` is a different dead pid on every call
@@ -32,6 +33,9 @@ import { AgentLease, IDENTITY_FROM_FLAG, LeaseBusyError, REFUSED_EXIT_CODE, star
 import { startWatch, watchInstance } from "../lib/agent-lease-watch.mjs";
 import { isMainModule } from "../lib/main-module.mjs";
 import { isAlive } from "../lib/process-identity.mjs";
+
+/** A claim the helper could not carry out (EX_SOFTWARE): the launch continues, holding no lease. */
+export const CLAIM_FAILED_EXIT_CODE = 70;
 
 /** The commands this helper runs. The parser and the usage line both come from here. */
 const COMMANDS = Object.freeze(["claim", "attach", "release", "watch"]);
@@ -91,6 +95,10 @@ export function runLease(argv, { env = process.env, err = process.stderr, lease 
         say(`${args.agentId}: ${describe(result.live)} is still running and this host could not read its process table to tell whether it is the recorded one, so this start could make a second instance. Try again.`);
         return REFUSED_EXIT_CODE;
       }
+      if (result.decision === "refuse" && result.reason === "hosts-another-agent") {
+        say(`${args.agentId}: the live instance (${describe(result.live)}) hosts another agent -- something started from its session, such as a Herdr server or aify-env, runs an agent -- so replacing it would end that agent too. Stop what it hosts, or stop ${args.agentId} yourself, then start again.`);
+        return REFUSED_EXIT_CODE;
+      }
       if (result.decision === "refuse" && result.reason === "could-not-stop") {
         say(`${args.agentId}: could not stop ${describe(result.live)}, so this start would make a second instance. Stop it, then start again.`);
         return REFUSED_EXIT_CODE;
@@ -125,7 +133,9 @@ export function runLease(argv, { env = process.env, err = process.stderr, lease 
       return REFUSED_EXIT_CODE;
     }
     say(`WARN: ${error?.message || error}; continuing without the one-instance guarantee. ${args ? "" : USAGE}`.trim());
-    return 0;
+    // A claim that failed must not read as one that succeeded: the launcher then exports the lease and acts as
+    // its holder. Neither 0 nor 75, so the launch still goes through.
+    return argv[0] === "claim" ? CLAIM_FAILED_EXIT_CODE : 0;
   }
 }
 

@@ -185,14 +185,15 @@ that hands the session to the host, does not claim; the host's own run of the la
    and a guess never ends a live instance. On 2026-09-15 one came from a pane that had inherited another
    agent's session, and replaced that agent.
 
-**A shell inside a running agent session names no agent.** When `AIFY_AGENT_LEASE` or
-`CLAUDE_CODE_CHILD_SESSION` is set, the launcher first unsets everything that named that session: its
-agent id and role, its mode and start intent, its terminal, and the conversation it holds
-(`CLAUDE_SESSION_ID`, `CODEX_THREAD_ID`, `HERMES_SESSION_ID` and the rest; the list is
-`lib/inherited-session.mjs`). It prints one line naming what it dropped. A bare launch there starts
-anonymous; `--aify-agent` still starts a named agent. The two markers are the ones the service removes from
-every managed launch, so a worker a host started is never mistaken for one. `herdr-aify` also starts its
-Herdr server without any of these, so no pane inherits the session it was run from.
+**A shell inside a running agent session hands a start none of that session.** When `AIFY_AGENT_LEASE` or
+`CLAUDE_CODE_CHILD_SESSION` is set, the launcher first unsets the conversation that session holds
+(`CLAUDE_SESSION_ID`, `CODEX_THREAD_ID`, `HERMES_SESSION_ID` and the rest) and its start intent. If the
+command names no agent, it also unsets the session's agent id, role, mode, terminal and model, so a bare
+launch there starts anonymous. A command that names its agent keeps those: a host that composed the launch
+put them there, and an aify-env started inside a Claude Code session can pass a marker on to its workers.
+The lists are in `lib/inherited-session.mjs`, and the launcher prints one line naming what it dropped. An
+intent given as `--aify-start-intent=` is the command's own and is kept. `herdr-aify` starts its Herdr server
+without any of these, so no pane inherits the session it was run from.
 
 **When the agent is already running on this host:**
 
@@ -209,6 +210,18 @@ Leftovers of a dead instance are always stopped, whatever the intent. A pid is s
 provably the recorded process (by its start time, or because it was seen alive before that process
 started). The claimer's own ancestry is never stopped, and another agent's leased processes are never
 crossed into.
+
+**Nothing that hosts another agent is stopped.** A process whose tree holds another agent's leased process
+(a Herdr server or an aify-env started from this agent's shell, with agents inside it) is left running. A
+replace of a live instance that hosts one is refused with 75 and says so, because ending it would end that
+agent too. A dead instance's leftover that hosts one now belongs to that agent and stays. On Linux, processes
+are signalled one by one, never as a process group, so another agent that shares the group is not reached.
+A daemon started from the session that hosts no agent is still stopped with it.
+
+**Start times survive a clock step on Linux.** A process's start is computed from the boot time, which the
+kernel derives from the wall clock at each read. The first reader after boot keeps that boot time in
+`/dev/shm/aify-boot-<uid>-<boot id>`, and later readers use it, so a clock step does not turn a live instance
+into what looks like a reused pid.
 
 The launcher exports `AIFY_AGENT_LEASE` (its own pid) to the runtime so detached helpers can attach to
 the instance.
@@ -227,7 +240,8 @@ the instance.
 
 **Failure is open, except for the refusal.** A helper failure (a bad argument, an unwritable directory)
 prints a warning and lets the launch through without the guarantee; a missing helper, or no `node` on
-PATH, lets it through without a word. The launcher loads
+PATH, lets it through without a word. A failed claim exits 70, and the launcher then does not export
+`AIFY_AGENT_LEASE` or act as the holder: only a claim that succeeded holds the lease. The launcher loads
 the helper from the bridge's installed copy of this package,
 `@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-lease.sh`, so after bumping a service's pin on
 aify-wrapper, reinstall that service or its launchers run without a lease.

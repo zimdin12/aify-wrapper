@@ -15,7 +15,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { SESSION_CARRIERS, SESSION_MARKERS, withoutAgentSession } from "../lib/inherited-session.mjs";
+import { NAMES_THE_SESSION, NEVER_INHERITED_BY_A_START, SESSION_MARKERS, withoutAgentSession } from "../lib/inherited-session.mjs";
 import { HerdrPaneLedger } from "../lib/herdr-restore.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -30,28 +30,31 @@ function shellList(name) {
   return line.slice(name.length + 2, -1).split(" ");
 }
 
-test("the shell helper and lib/inherited-session.mjs name the same markers and carriers", () => {
+test("the shell helper and lib/inherited-session.mjs name the same markers and lists", () => {
   assert.deepEqual(shellList("AIFY_SESSION_MARKERS"), [...SESSION_MARKERS]);
-  assert.deepEqual(shellList("AIFY_SESSION_CARRIERS"), [...SESSION_CARRIERS]);
+  assert.deepEqual(shellList("AIFY_NEVER_INHERITED_BY_A_START"), [...NEVER_INHERITED_BY_A_START]);
+  assert.deepEqual(shellList("AIFY_NAMES_THE_SESSION"), [...NAMES_THE_SESSION]);
   // A marker the service does not strip from a managed launch would make that worker forget its identity.
   assert.ok(!SESSION_MARKERS.includes("CLAUDECODE"), "CLAUDECODE reaches managed workers, so it cannot mark a session");
-  assert.ok(!SESSION_CARRIERS.includes("AIFY_AGENT_LEASE"), "the lease is what refuses a launch inside its own live instance");
+  const both = [...NEVER_INHERITED_BY_A_START, ...NAMES_THE_SESSION];
+  assert.ok(!both.includes("AIFY_AGENT_LEASE"), "the lease is what refuses a launch inside its own live instance");
+  assert.equal(new Set(both).size, both.length, "a name is in both lists");
 });
 
 test("withoutAgentSession drops every marker and carrier, in any case, and nothing else", () => {
-  const session = Object.fromEntries([...SESSION_MARKERS, ...SESSION_CARRIERS, "CLAUDECODE"].map((name) => [name, "x"]));
+  const session = Object.fromEntries([...SESSION_MARKERS, ...NEVER_INHERITED_BY_A_START, ...NAMES_THE_SESSION, "CLAUDECODE"].map((name) => [name, "x"]));
   const kept = { PATH: "/usr/bin", HOME: "/h", AIFY_COMMS_URL: "http://127.0.0.1:8800", AIFY_API_KEY: "k", HARNESS_IDENTITY: "host-given" };
   assert.deepEqual(withoutAgentSession({ ...session, ...kept, aify_agent_id: "lower" }), kept);
   assert.deepEqual(withoutAgentSession(undefined), {});
 });
 
 /** Source the helper under `set -euo pipefail`, run it, and report what is left of the names asked about. */
-function forget(env) {
-  const names = ["AIFY_AGENT_ID", "CLAUDE_SESSION_ID", "AIFY_SESSION_MODE", "AIFY_AGENT_LEASE", "PATH_KEPT"];
+function forget(env, identity = "recovered") {
+  const names = ["AIFY_AGENT_ID", "CLAUDE_SESSION_ID", "AIFY_SESSION_MODE", "AIFY_START_INTENT", "AIFY_AGENT_LEASE", "PATH_KEPT"];
   const script = [
     "set -euo pipefail",
     `. '${HELPER}'`,
-    "aify_forget_inherited_session",
+    `aify_forget_inherited_session ${identity}`,
     ...names.map((name) => `printf '%s=%s\\n' ${name} "\${${name}-<unset>}"`),
   ].join("\n");
   const run = spawnSync("bash", ["-c", script], { encoding: "utf8", env: { PATH: process.env.PATH, PATH_KEPT: "yes", ...env } });
@@ -59,23 +62,33 @@ function forget(env) {
   return { left: Object.fromEntries(run.stdout.trim().split("\n").map((l) => l.split(/=(.*)/s).slice(0, 2))), said: run.stderr };
 }
 
-test("inside a session the helper unsets what named it and keeps the lease; outside one it changes nothing", { skip: WIN }, () => {
-  const identity = { AIFY_AGENT_ID: "comms-tech-lead", CLAUDE_SESSION_ID: "651b895f", AIFY_SESSION_MODE: "resident" };
+test("inside a session a command naming no agent loses the session; outside one nothing changes", { skip: WIN }, () => {
+  const session = { AIFY_AGENT_ID: "comms-tech-lead", CLAUDE_SESSION_ID: "651b895f", AIFY_SESSION_MODE: "resident", AIFY_START_INTENT: "replace" };
 
   for (const marker of [{ AIFY_AGENT_LEASE: "62512" }, { CLAUDE_CODE_CHILD_SESSION: "1" }]) {
-    const { left, said } = forget({ ...identity, ...marker });
-    assert.deepEqual([left.AIFY_AGENT_ID, left.CLAUDE_SESSION_ID, left.AIFY_SESSION_MODE], ["<unset>", "<unset>", "<unset>"], JSON.stringify(marker));
+    const { left, said } = forget({ ...session, ...marker });
+    assert.deepEqual([left.AIFY_AGENT_ID, left.CLAUDE_SESSION_ID, left.AIFY_SESSION_MODE, left.AIFY_START_INTENT], ["<unset>", "<unset>", "<unset>", "<unset>"], JSON.stringify(marker));
     assert.equal(left.PATH_KEPT, "yes");
     assert.equal(left.AIFY_AGENT_LEASE, marker.AIFY_AGENT_LEASE ?? "<unset>", "the lease is kept for the nested refusal");
-    assert.match(said, new RegExp(`${Object.keys(marker)[0]} is set.*ignored: AIFY_AGENT_ID AIFY_SESSION_MODE CLAUDE_SESSION_ID\.`), "it says what it ignored");
+    assert.match(said, new RegExp(`${Object.keys(marker)[0]} is set.*names no agent; ignored: AIFY_AGENT_ID AIFY_SESSION_MODE AIFY_START_INTENT CLAUDE_SESSION_ID\\.`), "it says what it ignored");
   }
 
-  // CONTROLS: a clean shell, and an empty lease (what a lease watch runs with), keep an identity a person gave.
+  // CONTROLS: a clean shell, and an empty lease (what a lease watch runs with), keep what a person gave.
   for (const clean of [{}, { AIFY_AGENT_LEASE: "" }]) {
-    const { left, said } = forget({ ...identity, ...clean });
-    assert.deepEqual([left.AIFY_AGENT_ID, left.CLAUDE_SESSION_ID], ["comms-tech-lead", "651b895f"], JSON.stringify(clean));
+    const { left, said } = forget({ ...session, ...clean });
+    assert.deepEqual([left.AIFY_AGENT_ID, left.CLAUDE_SESSION_ID, left.AIFY_START_INTENT], ["comms-tech-lead", "651b895f", "replace"], JSON.stringify(clean));
     assert.equal(said, "", "a clean shell is told nothing");
   }
+});
+
+test("a command that NAMES its agent keeps its host's mode and identity, and still inherits no conversation or intent", { skip: WIN }, () => {
+  // External review, 2026-09-15: a host carrying a marker composed a managed launch; dropping its mode made the
+  // worker read as a person, and its named start replaced the live instance it was meant to leave alone.
+  const hostComposed = { AIFY_AGENT_ID: "mc-senior-dev", AIFY_SESSION_MODE: "managed", AIFY_START_INTENT: "start", CLAUDE_SESSION_ID: "inherited", CLAUDE_CODE_CHILD_SESSION: "1" };
+  const { left, said } = forget(hostComposed, "flag");
+  assert.deepEqual([left.AIFY_AGENT_ID, left.AIFY_SESSION_MODE], ["mc-senior-dev", "managed"], "a named launch lost what its host gave it");
+  assert.deepEqual([left.CLAUDE_SESSION_ID, left.AIFY_START_INTENT], ["<unset>", "<unset>"], "a named launch inherited a conversation or an intent");
+  assert.match(said, /inherits none of its conversation or start intent; ignored: AIFY_START_INTENT CLAUDE_SESSION_ID\./);
 });
 
 test("a pane launched through the Windows shim is CLAIMED, and recorded by name", { skip: WIN }, () => {

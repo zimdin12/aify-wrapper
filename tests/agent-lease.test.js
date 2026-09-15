@@ -13,10 +13,10 @@ import { test } from "node:test";
 
 import { AgentLease, IDENTITY_FROM_FLAG, LEASE_VERSION, LeaseBusyError, REFUSED_EXIT_CODE, START_INTENTS, leaseDirectory, leaseFileName, planClaim, startIntent } from "../lib/agent-lease.mjs";
 import {
-  START_TIME_TOLERANCE_MS, ancestors, descendants, identify, isAlive, isProtected, killTree, parseLinuxStartedAt, parseLinuxState,
+  START_TIME_TOLERANCE_MS, ancestors, descendants, hostsOf, identify, isAlive, isProtected, killTree, linuxBootEpoch, parseLinuxStartedAt, parseLinuxState,
   orphanedChildren, parseLinuxGroup, parseProcessTable, parseStartedAtLines, processTable, sleepMs, startTimes,
 } from "../lib/process-identity.mjs";
-import { parseLeaseArgs, runLease, runWatch } from "../bin/aify-agent-lease.mjs";
+import { CLAIM_FAILED_EXIT_CODE, parseLeaseArgs, runLease, runWatch } from "../bin/aify-agent-lease.mjs";
 import { startWatch, watchInstance } from "../lib/agent-lease-watch.mjs";
 
 const T0 = Date.parse("2026-09-15T10:00:00Z");
@@ -201,9 +201,10 @@ test("AgentLease: an older build's record whose instance is NOT running leaves l
   assert.deepEqual(probe.killed, [101]);
 });
 
-test("AgentLease: a replace never enters another agent's leased processes, even ones started beneath it", () => {
-  // Agent A's shell started agent B's launcher (200). Replacing A ends A's tree, not B.
-  const probe = host({ 100: T0, 150: T0 + 1, 200: T0 + 2, 210: T0 + 3, 300: T0 + 60_000 });
+test("AgentLease: a replace never enters another agent's leased processes, and never ends an instance hosting one", () => {
+  // Agent A's session (100 -> 150) started agent B's launcher (200). Ending A's session can end B with it -- a
+  // Herdr server takes its panes, a terminal its children -- so the replace is REFUSED, and nothing is stopped.
+  const probe = host({ 100: T0, 150: T0 + 1, 200: T0 + 2, 210: T0 + 3, 300: T0 + 60_000 }, { parents: { 150: 100, 200: 150, 210: 200 } });
   const trees = [];
   probe.killTree = (pid, options) => { trees.push({ pid, boundaries: [...(options?.boundaries || [])] }); probe.live.delete(pid); };
   const a = lease(probe);
@@ -211,14 +212,70 @@ test("AgentLease: a replace never enters another agent's leased processes, even 
   const b = new AgentLease({ agentId: "agent-b", directory: a.directory, probe, stopWaitMs: 50, lockWaitMs: 200 });
   b.claim({ pid: 200, intent: "start" });
   b.attach({ instance: 200, pid: 210, kind: "gateway" });
+  const refused = a.claim({ pid: 300, intent: "replace" });
+  assert.deepEqual([refused.decision, refused.reason, refused.live?.pid], ["refuse", "hosts-another-agent", 100]);
+  assert.deepEqual(trees, [], "a refused replace stopped something");
+  assert.equal(a.read().instance.pid, 100, "a refused replace changed the record");
+
+  // CONTROL: B gone, the same replace goes through, and B's leftovers are boundaries of the tree kill.
+  probe.live.delete(200);
+  probe.live.delete(210);
+  b.attach({ instance: 200, pid: 210, kind: "gateway" });
+  const unrelated = new AgentLease({ agentId: "agent-c", directory: a.directory, probe, stopWaitMs: 50, lockWaitMs: 200 });
+  probe.live.set(400, T0 + 100);
+  unrelated.claim({ pid: 400, intent: "start" });
   assert.equal(a.claim({ pid: 300, intent: "replace" }).decision, "claim");
-  assert.equal(trees.length, 1);
-  assert.deepEqual(trees[0].boundaries.sort(), [200, 210], "agent-b's processes were not handed to the tree kill as boundaries");
-  // And the tree kill honours them (process-identity, on a real table shape).
-  const rows = table([[100, 1, T0], [150, 100, T0 + 1], [200, 150, T0 + 2], [210, 200, T0 + 3]]);
+  assert.deepEqual(trees.map((t) => [t.pid, t.boundaries.sort()]), [[100, [400]]], "a stale record of agent-b was still a boundary, or agent-c's was not");
+
+  // The tree kill honours both rules on a real table shape: B's subtree stands, and so does everything above B.
+  const rows = table([[100, 1, T0], [150, 100, T0 + 1], [160, 100, T0 + 1], [200, 150, T0 + 2], [210, 200, T0 + 3]]);
   const seen = [];
-  killTree(100, { platform: "win32", run: (cmd, args) => seen.push(args), protect: { self: 999, parent: 998 }, table: rows, boundaries: [200] });
-  assert.deepEqual(seen, [["/F", "/PID", "100", "/PID", "150"]]);
+  assert.equal(killTree(100, { platform: "win32", run: (cmd, args) => seen.push(args), protect: { self: 999, parent: 998 }, table: rows, boundaries: [200] }), false);
+  killTree(160, { platform: "win32", run: (cmd, args) => seen.push(args), protect: { self: 999, parent: 998 }, table: rows, boundaries: [200] });
+  assert.deepEqual(seen, [["/F", "/PID", "160"]], "a host was ended, or a process beside it was not");
+  const control = [];
+  killTree(100, { platform: "win32", run: (cmd, args) => control.push(args), protect: { self: 999, parent: 998 }, table: rows });
+  assert.deepEqual(control, [["/F", "/PID", "100", "/PID", "150", "/PID", "160", "/PID", "200", "/PID", "210"]], "control: with no other agent the whole tree is ended");
+});
+
+test("hostsOf names every process above another agent's, never the agent itself or a process beside it", () => {
+  const rows = table([[100, 1, T0], [150, 100, T0 + 1], [160, 100, T0 + 1], [200, 150, T0 + 2], [210, 200, T0 + 3]]);
+  const hosts = hostsOf([200], rows);
+  assert.ok(hosts.has(150) && hosts.has(100), "a process above the boundary was not a host");
+  assert.ok(!hosts.has(200) && !hosts.has(210) && !hosts.has(160), "the boundary, its child or its sibling counted as a host");
+  assert.equal(hostsOf([], rows).size, 0, "with no other agent nothing hosts one");
+  assert.equal(hostsOf([200], null).size, 0, "with no table nothing can be named a host");
+});
+
+test("killTree signals a POSIX group member by member, and never another agent in it (external review, 2026-09-15)", () => {
+  // 10 leads group 10. 40 is 10's runtime re-parented to init; 50 is ANOTHER agent's launcher that shares the
+  // group, 51 its child. The group signal reached 50 and 51 before boundaries were consulted.
+  const rows = new Map([
+    [10, { pid: 10, ppid: 1, pgid: 10, startedAtMs: T0 }],
+    [11, { pid: 11, ppid: 10, pgid: 10, startedAtMs: T0 + 1 }],
+    [40, { pid: 40, ppid: 1, pgid: 10, startedAtMs: T0 + 2 }],
+    [50, { pid: 50, ppid: 1, pgid: 10, startedAtMs: T0 + 3 }],
+    [51, { pid: 51, ppid: 50, pgid: 10, startedAtMs: T0 + 4 }],
+  ]);
+  const signals = [];
+  killTree(10, { platform: "linux", kill: (pid, sig) => signals.push([pid, sig]), protect: { self: 999, parent: 998 }, table: rows, boundaries: [50] });
+  assert.deepEqual(signals.filter(([, sig]) => sig === "SIGKILL").map(([pid]) => pid), [10, 11, 40]);
+  assert.ok(signals.every(([pid]) => pid > 0), "a group was signalled");
+});
+
+test("AgentLease: collecting a dead instance leaves what now hosts another agent, and stops the rest", () => {
+  // A (100) is gone. It left 110 (a daemon started from its session, now hosting agent B's launcher 140 via a
+  // pane 130) and 115 (an ordinary leftover). The watch stops 115 and leaves 110 and its panes running.
+  const probe = host({ 100: T0, 110: T0 + 1, 115: T0 + 1, 130: T0 + 2, 140: T0 + 3 }, { parents: { 110: 100, 115: 100, 130: 110, 140: 130 } });
+  const a = lease(probe);
+  a.claim({ pid: 100, intent: "start" });
+  const b = new AgentLease({ agentId: "agent-b", directory: a.directory, probe, stopWaitMs: 50, lockWaitMs: 200 });
+  b.claim({ pid: 140, intent: "start" });
+  probe.live.delete(100);
+  const result = a.collect({ instance: 100 });
+  assert.equal(result.collected, true, JSON.stringify(result));
+  assert.deepEqual(result.stopped.map((e) => e.pid), [115]);
+  assert.deepEqual(probe.killed, [115], "a daemon hosting another agent was killed");
 });
 
 test("AgentLease: release STOPS what the instance attached, and keeps the record when it cannot", () => {
@@ -615,7 +672,7 @@ test("isProtected and killTree never target nothing, init, this process or its p
   assert.deepEqual(seen, [["taskkill", "/F", "/PID", "4242"]], "an unreadable table ends the pid alone, never a /T walk");
   const signals = [];
   killTree(4242, { platform: "linux", kill: (pid, sig) => { signals.push([pid, sig]); }, protect: { self: 1, parent: 2 }, table: null });
-  assert.deepEqual(signals, [[-4242, "SIGTERM"], [4242, "SIGTERM"], [-4242, "SIGKILL"], [4242, "SIGKILL"]]);
+  assert.deepEqual(signals, [[4242, "SIGTERM"], [4242, "SIGKILL"]], "an unreadable table signals the pid alone, never its group");
 });
 
 /** A process table: [pid, ppid, start]. */
@@ -645,7 +702,7 @@ test("killTree ends the verified tree on both platforms and never the caller's o
   assert.deepEqual(seen, [["taskkill", "/F", "/PID", "10", "/PID", "11", "/PID", "30"]]);
   const signals = [];
   killTree(10, { platform: "linux", kill: (pid, sig) => signals.push([pid, sig]), protect: { self: 999, parent: 998 }, table: rows });
-  assert.deepEqual(signals.filter(([, sig]) => sig === "SIGKILL").map(([pid]) => pid), [-10, 10, 11, 30], "a child outside the group is signalled by pid");
+  assert.deepEqual(signals.filter(([, sig]) => sig === "SIGKILL").map(([pid]) => pid), [10, 11, 30], "every process is signalled by pid");
   // The caller (30) sits under 10: nothing above it is ended, and a named spare is left out of the tree.
   const guarded = [];
   assert.equal(killTree(10, { platform: "win32", run: (cmd, args) => guarded.push(args), protect: { self: 30, parent: 998 }, table: rows }), false);
@@ -674,6 +731,42 @@ test("processTable on THIS host lists this process with its parent and the start
   const row = processTable({ platform: "linux", readDir: () => ["7"], readFile: (f) => grouped[f] }).get(7);
   assert.deepEqual([row.ppid, row.pgid], [1, 42], "the group is read after the last parenthesis, like every other field");
   assert.equal(parseLinuxGroup("garbage"), null);
+});
+
+test("a Linux boot's start is kept for the boot, so a clock step does not move a process's start (external review, 2026-09-15)", () => {
+  const BOOT_ID = "0f3c8d2e-1b4a-4c5d-9e6f-7a8b9c0d1e2f";
+  const files = new Map([["/proc/sys/kernel/random/boot_id", `${BOOT_ID}\n`]]);
+  const owners = new Map();
+  const fsFake = {
+    readFile: (f) => { if (!files.has(f)) throw new Error("ENOENT"); return files.get(f); },
+    writeFile: (f, v, { flag }) => { if (flag === "wx" && files.has(f)) throw new Error("EEXIST"); files.set(f, v); owners.set(f, 1000); },
+    ownerOf: (f) => { if (!owners.has(f)) throw new Error("ENOENT"); return owners.get(f); },
+    uid: 1000,
+  };
+  const stat = "5 (a) S 1 5 5 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 100";
+  const before = linuxBootEpoch({ procStat: "btime 1700000000", ...fsFake });
+  assert.equal(before, 1700000000, "the first reader keeps the live btime");
+  // The clock steps forward 90 s: /proc/stat now says the boot was 90 s later.
+  const after = linuxBootEpoch({ procStat: "btime 1700000090", ...fsFake });
+  assert.equal(after, 1700000000, "a clock step moved the boot a later reader computes from");
+  assert.equal(parseLinuxStartedAt(stat, "btime 1700000090", after), parseLinuxStartedAt(stat, "btime 1700000000", before));
+  assert.notEqual(parseLinuxStartedAt(stat, "btime 1700000090"), parseLinuxStartedAt(stat, "btime 1700000000"), "control: the live btime does move");
+
+  // Not believed: a file another user owns. Not available: no boot id, no uid.
+  owners.set(`/dev/shm/aify-boot-1000-${BOOT_ID}`, 0);
+  assert.equal(linuxBootEpoch({ procStat: "btime 1700000090", ...fsFake }), 1700000090, "a file this user does not own was believed");
+  assert.equal(linuxBootEpoch({ procStat: "btime 1700000090", ...fsFake, readFile: () => { throw new Error("ENOENT"); } }), 1700000090);
+  assert.equal(linuxBootEpoch({ procStat: "btime 1700000090", ...fsFake, uid: undefined }), 1700000090);
+  assert.equal(linuxBootEpoch({ procStat: "no btime", ...fsFake, readFile: () => { throw new Error("ENOENT"); } }), null);
+});
+
+test("on THIS Linux host a stepped /proc/stat leaves every start time where it was", { skip: process.platform !== "linux" && "reads the real /proc and /dev/shm" }, () => {
+  const real = (f, enc) => fs.readFileSync(f, enc);
+  const stepped = (f, enc) => (f === "/proc/stat" ? String(real(f, enc)).replace(/^btime\s+(\d+)/m, (_, s) => `btime ${Number(s) + 90}`) : real(f, enc));
+  const plain = startTimes([process.pid], { readFile: real }).get(process.pid);
+  assert.ok(plain > 0, "control: this process's start was read");
+  assert.equal(startTimes([process.pid], { readFile: stepped }).get(process.pid), plain);
+  assert.equal(processTable({ readFile: stepped }).get(process.pid).startedAtMs, plain);
 });
 
 test("parseProcessTable reads CIM and ps rows", () => {
@@ -719,7 +812,15 @@ test("CLI: 75 means refused, and every failure of the helper itself exits 0 with
   assert.match(lines.at(-1), /stopped process pid 100/);
   assert.equal(runLease(["claim", "--agent=agent-a", "--pid=200"], { err, lease: make, watch: () => { throw new Error("spawn EAGAIN"); } }), 0, "a watch that failed to start failed the start");
   assert.match(lines.at(-1), /could not start the watch/);
-  for (const bad of [["claim", "--agent", "a/b", "--pid", "5"], ["claim", "--pid", "x"], ["nope"], ["attach", "--agent", "agent-a", "--pid", "5"], ["claim", "--agnet", "agent-a", "--pid", "5"]]) {
+  // A failed CLAIM exits neither 0 (which the launcher reads as holding the lease) nor 75 (refused); any other
+  // failed command exits 0.
+  for (const bad of [["claim", "--agent", "a/b", "--pid", "5"], ["claim", "--pid", "x"], ["claim", "--agnet", "agent-a", "--pid", "5"]]) {
+    assert.equal(runLease(bad, { err, lease: make, env: {} }), CLAIM_FAILED_EXIT_CODE, bad.join(" "));
+    assert.match(lines.at(-1), /WARN/);
+  }
+  assert.notEqual(CLAIM_FAILED_EXIT_CODE, 0);
+  assert.notEqual(CLAIM_FAILED_EXIT_CODE, REFUSED_EXIT_CODE);
+  for (const bad of [["nope"], ["attach", "--agent", "agent-a", "--pid", "5"]]) {
     assert.equal(runLease(bad, { err, lease: make, env: {} }), 0, bad.join(" "));
     assert.match(lines.at(-1), /WARN/);
   }

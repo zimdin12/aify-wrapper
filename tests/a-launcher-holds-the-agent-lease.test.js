@@ -29,6 +29,8 @@ const RUNTIME = [
   `  exec '${process.execPath}' -e 'require("net").createServer(s => s.end()).listen(Number(process.argv[1].split(":").pop()), "127.0.0.1")' "$url"`,
   "fi; done",
   'printf \'%s\\n\' "$*" >> "$STUB_RUNTIME_ARGV"',
+  // The lease it was handed, so a test can see whether the launcher believes it holds one.
+  'printf \'%s\\n\' "${AIFY_AGENT_LEASE:-}" >> "$STUB_RUNTIME_LEASE"',
   'case "${STUB_EXIT:-0}" in',
   '  hang) printf "%s" $$ > "$STUB_RUNTIME_PID"; exec sleep 60 ;;',
   '  *) exit "$STUB_EXIT" ;;',
@@ -72,8 +74,10 @@ function world(client) {
       AIFY_AGENT_LEASE_DIR: leases,
       STUB_RUNTIME_ARGV: path.join(dir, "runtime-argv"),
       STUB_RUNTIME_PID: path.join(dir, "runtime-pid"),
+      STUB_RUNTIME_LEASE: path.join(dir, "runtime-lease"),
       ...extra,
     }),
+    runtimeLeases: () => read(path.join(dir, "runtime-lease")).split("\n").slice(0, -1),
     hostAsked: () => read(path.join(dir, "aify-env-calls")),
     runtimeRan: () => read(path.join(dir, "runtime-argv")).split("\n").filter(Boolean),
   };
@@ -178,6 +182,76 @@ for (const client of ["claude", "codex", "hermes", "pi"]) {
     }
   });
 }
+
+const SCRIPT = process.platform === "win32" ? "" : spawnSync("sh", ["-c", "command -v script"], { encoding: "utf8" }).stdout.trim();
+
+for (const client of ["claude", "hermes"]) {
+  test(`${client}: a host-composed launch carrying another session's marker still only starts; so does a restore`, { skip: WIN || (!SCRIPT && "util-linux `script` is needed for a terminal") }, async () => {
+    // External review, 2026-09-15: aify-env started inside a Claude Code session hands its workers
+    // CLAUDE_CODE_CHILD_SESSION. The launcher dropped the host's `managed` and `start`; in the worker's terminal it
+    // then read as a person, and the named start REPLACED the live instance. Run in a real terminal, as a worker is.
+    const w = world(client);
+    const id = agentId();
+    const first = spawn("bash", [w.launcher, "--aify-agent", id], { env: w.env({ STUB_EXIT: "hang", AIFY_START_INTENT: "start" }), detached: true, stdio: "ignore" });
+    const exited = new Promise((resolve) => first.on("exit", resolve));
+    const deadline = Date.now() + 30_000;
+    while (!fs.existsSync(w.env().STUB_RUNTIME_PID) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+    try {
+      assert.ok(fs.existsSync(w.env().STUB_RUNTIME_PID), "the first runtime never started");
+      const inTerminal = (argv, env) => spawnSync(SCRIPT, ["-qec", argv.map((a) => `'${a}'`).join(" "), "/dev/null"], { encoding: "utf8", env, timeout: 60_000 });
+
+      const hostComposed = { STUB_EXIT: "0", AIFY_SESSION_MODE: "managed", AIFY_START_INTENT: "start", CLAUDE_CODE_CHILD_SESSION: "1" };
+      const worker = inTerminal(["bash", w.launcher, "--aify-agent", id], w.env(hostComposed));
+      assert.equal(worker.status, 75, `a host-composed managed start with a leaked marker was not refused:\n${worker.stdout}`);
+      assert.ok(alive(first.pid), "a host-composed managed start with a leaked marker stopped the live instance");
+      assert.equal(w.runtimeRan().length, 1, "a refused start ran a runtime");
+
+      // CONTROL: the same terminal launch with no marker and no host values is a person naming the agent, and replaces.
+      // Without it, a refusal above could be the terminal never reading as a person at all.
+      const person = inTerminal(["bash", w.launcher, "--aify-agent", id], w.env({ STUB_EXIT: "0" }));
+      assert.equal(person.status, 0, person.stdout);
+      // Awaited, not probed: this process has not reaped its child while spawnSync held the event loop.
+      const gone = await Promise.race([exited.then(() => true), new Promise((r) => setTimeout(() => r(false), 15_000))]);
+      assert.ok(gone, "control: a person naming the agent in a terminal did not replace it");
+    } finally {
+      try { process.kill(-first.pid, "SIGKILL"); } catch {}
+    }
+  });
+}
+
+test("a Herdr restore typed into a pane inside a session keeps its `start`", { skip: WIN }, async () => {
+  const w = world("claude");
+  const id = agentId();
+  const first = spawn("bash", [w.launcher, "--aify-agent", id], { env: w.env({ STUB_EXIT: "hang", AIFY_START_INTENT: "start" }), detached: true, stdio: "ignore" });
+  const deadline = Date.now() + 30_000;
+  while (!fs.existsSync(w.env().STUB_RUNTIME_PID) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+  try {
+    // A restore names its agent and marks its start, in a pane that inherited another session's marker. The marker
+    // drops an intent from the ENVIRONMENT; the one in the command line is the restore's own.
+    const restore = spawnSync("bash", [w.launcher, "--aify-start-intent=start", "--resident", "--aify-agent", id], { encoding: "utf8", env: w.env({ STUB_EXIT: "0", CLAUDE_CODE_CHILD_SESSION: "1" }), timeout: 60_000 });
+    assert.equal(restore.status, 75, `a restore in a pane inside a session replaced the live instance:\n${restore.stderr}`);
+    assert.ok(alive(first.pid));
+  } finally {
+    try { process.kill(-first.pid, "SIGKILL"); } catch {}
+  }
+});
+
+test("a launcher whose claim FAILED does not act as the lease holder", { skip: WIN }, () => {
+  // External review, 2026-09-15: any non-75 status still exported the lease, and hermes' kill-prior -- which
+  // reaps only for a holder -- then ran. A lease directory that is a FILE makes the claim fail.
+  const w = world("claude");
+  const id = agentId();
+  const notADirectory = path.join(w.dir, "not-a-directory");
+  fs.writeFileSync(notADirectory, "");
+  const failed = spawnSync("bash", [w.launcher, "--aify-agent", id], { encoding: "utf8", env: w.env({ STUB_EXIT: "0", AIFY_AGENT_LEASE_DIR: notADirectory }), timeout: 60_000 });
+  assert.equal(failed.status, 0, `a failed claim stopped the launch:\n${failed.stderr}`);
+  assert.match(failed.stderr, /WARN: .*continuing without the one-instance guarantee/, "control: the claim really failed");
+  const held = spawnSync("bash", [w.launcher, "--aify-agent", id], { encoding: "utf8", env: w.env({ STUB_EXIT: "0" }), timeout: 60_000 });
+  assert.equal(held.status, 0, held.stderr);
+  const [afterFailure, afterSuccess] = w.runtimeLeases();
+  assert.equal(afterFailure, "", "a launcher whose claim failed handed its runtime a lease");
+  assert.match(afterSuccess, /^\d+$/, "control: a launcher whose claim succeeded hands its runtime the lease");
+});
 
 test("NO AGENT ID and --shared claim nothing", { skip: WIN }, () => {
   const w = world("claude");

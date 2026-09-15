@@ -24,13 +24,17 @@
 # `--agent-id`, may replace a live instance of it (lib/agent-lease.mjs `startIntent`). An identity taken from
 # the environment or recovered from a conversation is a guess about who is meant: on 2026-09-15 one came
 # from a pane that had inherited another session's environment, and replaced that session's live agent.
+#
+# THE ARGUMENT IS KEPT APART FROM `AIFY_START_INTENT`, which a shell inside a running session can carry and
+# bin/aify-inherited-session.sh therefore drops: a restore typed into such a pane must keep its `start`.
 aify_lease_take_intent() {
   AIFY_LEASE_ARGS=()
   AIFY_LEASE_IDENTITY="recovered"
+  AIFY_LEASE_INTENT_ARG=""
   local _aify_arg
   for _aify_arg in "$@"; do
     case "$_aify_arg" in
-      --aify-start-intent=*) AIFY_START_INTENT="${_aify_arg#--aify-start-intent=}" ;;
+      --aify-start-intent=*) AIFY_LEASE_INTENT_ARG="${_aify_arg#--aify-start-intent=}" ;;
       --aify-agent|--agent-id|--aify-agent=*|--agent-id=*) AIFY_LEASE_IDENTITY="flag"; AIFY_LEASE_ARGS+=("$_aify_arg") ;;
       *) AIFY_LEASE_ARGS+=("$_aify_arg") ;;
     esac
@@ -48,8 +52,8 @@ aify_lease_pid() {
 aify_lease_claim() {
   # The intent was for THIS start, whichever way this function returns: a shell the agent opens later
   # must not hand it to a launch of its own.
-  local _aify_intent="${AIFY_START_INTENT:-}"
-  unset AIFY_START_INTENT
+  local _aify_intent="${AIFY_LEASE_INTENT_ARG:-${AIFY_START_INTENT:-}}"
+  unset AIFY_START_INTENT AIFY_LEASE_INTENT_ARG
   AIFY_LEASE_AGENT=""
   [ -n "${2:-}" ] || return 0
   command -v node >/dev/null 2>&1 || return 0
@@ -63,6 +67,11 @@ aify_lease_claim() {
   node "$AIFY_LEASE_HELPER" claim --agent "$2" --pid "$AIFY_LEASE_PID" --runtime "${3:-}" --mode "${4:-}" \
     --identity "${AIFY_LEASE_IDENTITY:-recovered}" ${_aify_intent:+--intent "$_aify_intent"} </dev/null || _aify_lease_status=$?
   [ "$_aify_lease_status" = 75 ] && return 75
+  # ONLY A CLAIM THAT SUCCEEDED HOLDS THE LEASE. Any other status is the helper failing, which lets the start
+  # through without the guarantee -- and without acting as the holder: a launcher that exported the lease
+  # after a failed claim went on to reap as though it owned the agent (hermes' kill-prior reaps only for a
+  # launcher holding the lease; external review, 2026-09-15).
+  [ "$_aify_lease_status" = 0 ] || return 0
   AIFY_LEASE_AGENT="$2"
   export AIFY_AGENT_LEASE="$AIFY_LEASE_PID"
   return 0
