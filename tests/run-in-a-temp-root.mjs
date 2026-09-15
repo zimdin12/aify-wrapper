@@ -22,6 +22,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { withoutAgentSession } from '../lib/inherited-session.mjs';
+
 const PREFIX = 'aify-wrapper-testrun-';
 const PRUNE_AFTER_MS = 60 * 60 * 1000;
 
@@ -53,7 +55,14 @@ const root = fs.mkdtempSync(path.join(parent, PREFIX));
 
 // All three, because which one is read depends on the platform: TMPDIR on POSIX, TEMP and TMP on
 // Windows. Setting one and not the others leaves the leak in place on the other platform, silently.
-const env = { ...process.env, TMPDIR: root, TEMP: root, TMP: root };
+//
+// AND NOT THE TERMINAL THE SUITE WAS STARTED FROM. Run from a Herdr pane inside an agent's session, every
+// launcher a test renders inherited that pane's Herdr wiring and that agent's session: the claim log held
+// 120 claim attempts from test runs against the operator's own pane (2026-09-12 to 2026-09-15), stopped only
+// by a refusal that the same change removes, and a launcher that sees another session's lease forgets the identity a test gave it.
+const inherited = withoutAgentSession(process.env);
+for (const name of Object.keys(inherited)) if (name.toUpperCase().startsWith('HERDR_')) delete inherited[name];
+const env = { ...inherited, TMPDIR: root, TEMP: root, TMP: root };
 
 const files = fs.readdirSync('tests').filter((f) => f.endsWith('.test.js')).map((f) => path.join('tests', f));
 

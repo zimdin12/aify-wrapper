@@ -138,6 +138,47 @@ for (const client of ["claude", "codex", "hermes", "pi"]) {
   });
 }
 
+for (const client of ["claude", "codex", "hermes", "pi"]) {
+  test(`${client}: an agent the command did not NAME never replaces its live instance, and a shell inside a session names none`, { skip: WIN }, async () => {
+    // 2026-09-15: a bare `claude-aify` in a pane that had inherited comms-tech-lead's session environment
+    // started as comms-tech-lead and replaced the live one.
+    const w = world(client);
+    const id = agentId();
+    const first = spawn("bash", [w.launcher, "--aify-agent", id], { env: w.env({ STUB_EXIT: "hang", AIFY_START_INTENT: "start" }), detached: true, stdio: "ignore" });
+    const exited = new Promise((resolve) => first.on("exit", resolve));
+    const deadline = Date.now() + 30_000;
+    while (!fs.existsSync(w.env().STUB_RUNTIME_PID) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+    try {
+      assert.ok(fs.existsSync(w.env().STUB_RUNTIME_PID), "the first runtime never started");
+
+      // Every start below is `--resident`, a person at a terminal as in the incident: without a TTY a launcher
+      // infers managed, which only starts, and a refusal would then prove nothing about how the agent was named.
+      // The incident's launch from a clean shell: no flag, the identity from the environment. It is refused.
+      const fromEnv = spawnSync("bash", [w.launcher, "--resident"], { encoding: "utf8", env: w.env({ STUB_EXIT: "0", AIFY_AGENT_ID: id }), timeout: 60_000 });
+      assert.equal(fromEnv.status, 75, `an identity from the environment was not refused:\n${fromEnv.stderr}`);
+      assert.match(fromEnv.stderr, new RegExp(`${id} is already running .*did not name the agent.*--aify-agent ${id}`));
+      assert.equal(w.runtimeRan().length, 1, "a refused start ran a runtime");
+      assert.ok(alive(first.pid), "an identity from the environment stopped the live instance");
+
+      // The same launch from a shell inside another running session: it names nobody, so it starts, anonymous.
+      const inside = spawnSync("bash", [w.launcher, "--resident"], { encoding: "utf8", env: w.env({ STUB_EXIT: "0", AIFY_AGENT_ID: id, AIFY_AGENT_LEASE: String(process.pid) }), timeout: 60_000 });
+      assert.equal(inside.status, 0, inside.stderr);
+      assert.match(inside.stderr, /belongs to a running agent session \(AIFY_AGENT_LEASE is set\), so it names no agent; ignored: AIFY_AGENT_ID/);
+      assert.equal(w.runtimeRan().length, 2, "the anonymous start did not run its runtime");
+      assert.ok(alive(first.pid), "a shell inside a session stopped the agent it inherited");
+      assert.equal(JSON.parse(fs.readFileSync(w.leaseFile(id), "utf8")).instance.pid, first.pid, "the anonymous start took the lease");
+
+      // CONTROL: the same person NAMING the agent replaces it.
+      const named = spawnSync("bash", [w.launcher, "--resident", "--aify-agent", id], { encoding: "utf8", env: w.env({ STUB_EXIT: "0" }), timeout: 60_000 });
+      assert.equal(named.status, 0, named.stderr);
+      const gone = await Promise.race([exited.then(() => true), new Promise((r) => setTimeout(() => r(false), 15_000))]);
+      assert.ok(gone, "a start that named its agent did not replace the live instance");
+    } finally {
+      try { process.kill(-first.pid, "SIGKILL"); } catch {}
+    }
+  });
+}
+
 test("NO AGENT ID and --shared claim nothing", { skip: WIN }, () => {
   const w = world("claude");
   const plain = spawnSync("bash", [w.launcher], { encoding: "utf8", env: w.env({ STUB_EXIT: "0" }), timeout: 60_000 });

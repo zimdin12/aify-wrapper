@@ -157,3 +157,16 @@ test("an argv that cannot be replayed safely is REFUSED and named, not typed", (
   assert.equal(result.refused.length, 1);
   assert.match(result.refused[0].why, /control character/);
 });
+
+test("a record that holds the launcher's PATH is replayed by name, which a PowerShell or cmd pane can run", () => {
+  // Records written before 2026-09-15 hold the path the launcher ran from; the path names a bash script with
+  // no extension, and only the name resolves to the `.cmd` shim in a Windows pane.
+  const file = ledgerFile();
+  new HerdrPaneLedger({ file })
+    .remember("rec1", { wrapper: "claude-aify", argv: ["C:/Users/Administrator/.local/bin/claude-aify", "--aify-agent", "a"], terminalId: OLD_TERMINAL })
+    .save();
+  const cli = fakeHerdr(file, { panes: [{ pane_id: "w1:p1", label: OLD_LABEL, terminal_id: NEW_TERMINAL }] });
+  const result = restore({ env: {}, ledger: new HerdrPaneLedger({ file }), cli, now: () => LISTED_AT });
+  assert.equal(result.restored.length, 1, JSON.stringify(result));
+  assert.deepEqual(cli.typed, ["claude-aify --aify-start-intent=start --aify-agent a"]);
+});

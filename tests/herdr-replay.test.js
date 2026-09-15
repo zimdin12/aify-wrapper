@@ -17,7 +17,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { quoteArgument, replayCommand, restoreArgv } from "../lib/herdr-replay.mjs";
+import { launcherName, quoteArgument, replayCommand, replayableArgv, restoreArgv } from "../lib/herdr-replay.mjs";
 
 test("the shape the original proof used still works, and is the control", () => {
   assert.deepEqual(replayCommand(["echo", "RESTORED_BY_THE_PLUGIN"]), {
@@ -86,4 +86,21 @@ test("a restore replays the recorded argv as an AUTOMATIC start, so a live insta
     "a replayed command carried two intents, or kept the recorded replace");
   assert.deepEqual(restoreArgv([]), []);
   assert.equal(replayCommand(restoreArgv(["claude-aify"])).ok, true, "the flag must survive the quoting any pane shell needs");
+});
+
+test("a pane replays its launcher by NAME, so a Windows shim's backslashed path can be claimed and restored", () => {
+  // THE MEASURED CASE: `claude-aify.cmd` runs the script as this path, and every such claim was refused.
+  const windows = String.raw`C:\Users\Administrator\.local\bin\claude-aify`;
+  assert.equal(replayCommand([windows, "--aify-agent", "a"]).ok, false, "control: the path itself is not replayable");
+  assert.equal(launcherName(windows), "claude-aify");
+  assert.deepEqual(replayableArgv({ wrapper: windows, argv: [windows, "--aify-agent", "a"] }), ["claude-aify", "--aify-agent", "a"]);
+  assert.equal(replayCommand(replayableArgv({ wrapper: "claude-aify", argv: [windows, "--aify-agent", "a"] })).text, "claude-aify --aify-agent a");
+  assert.deepEqual(replayableArgv({ wrapper: "claude-aify", argv: ["/home/x/.local/bin/claude-aify", "--resume"] }), ["claude-aify", "--resume"]);
+  // Only the wrapper itself is renamed: an argv led by anything else keeps what it was, and so does an argument.
+  assert.deepEqual(replayableArgv({ wrapper: "claude-aify", argv: ["/usr/bin/bash", windows] }), ["/usr/bin/bash", windows]);
+  assert.deepEqual(replayableArgv({ wrapper: "codex-aify", argv: [windows] }), [windows]);
+  assert.deepEqual(replayableArgv({ wrapper: "", argv: ["claude-aify"] }), ["claude-aify"]);
+  assert.deepEqual(replayableArgv({ wrapper: "claude-aify", argv: [] }), []);
+  // What makes a replay unsafe still refuses it: renaming the launcher is not a way around the quoting.
+  assert.equal(replayCommand(replayableArgv({ wrapper: "claude-aify", argv: [windows, "a $HOME b"] })).ok, false);
 });

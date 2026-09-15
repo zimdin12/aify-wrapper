@@ -30,7 +30,7 @@ import { codexHookArgs, codexHooksTrusted } from "../lib/codex-herdr-hooks.mjs";
 import { isMainModule } from "../lib/main-module.mjs";
 import { herdr, listPanes } from "../lib/herdr-cli.mjs";
 import { paneLabel, parsePaneLabel, readPaneContext, renamePaneArgv, reportAgentArgv } from "../lib/herdr-pane.mjs";
-import { replayCommand, restoreArgv } from "../lib/herdr-replay.mjs";
+import { launcherName, replayCommand, replayableArgv, restoreArgv } from "../lib/herdr-replay.mjs";
 import { HerdrPaneLedger, restorePlan } from "../lib/herdr-restore.mjs";
 
 /** An operator waiting to start an agent gets at most this long per Herdr call, twice. */
@@ -67,7 +67,10 @@ function readPane(paneId, { env, timeoutMs }) {
  * natively resumes a BARE agent on reboot, and our record sits unused. That is precisely the failure
  * this feature exists to prevent, so a half-claim is undone rather than left.
  */
-function claim({ wrapper, argv, env = process.env, ledger }) {
+function claim({ wrapper: launchedAs, argv: typed, env = process.env, ledger }) {
+  // BY NAME. A launcher passes `${0##*/}`, which on Windows is still the whole backslashed path.
+  const wrapper = launcherName(launchedAs);
+  const argv = replayableArgv({ wrapper, argv: typed });
   const context = readPaneContext(env);
   if (!context) return { claimed: false, why: "not running in a herdr pane" };
   if (argv.length === 0) return { claimed: false, why: "no wrapper argv to record" };
@@ -144,7 +147,7 @@ function restore({ env = process.env, ledger, cli = { herdr, listPanes }, now = 
   const restored = [];
   const refused = [];
   for (const entry of plan) {
-    const replay = replayCommand(restoreArgv(entry.argv));
+    const replay = replayCommand(restoreArgv(replayableArgv({ wrapper: entry.wrapper, argv: entry.argv })));
     if (!replay.ok) {
       refused.push({ paneId: entry.paneId, why: replay.why });
       continue;

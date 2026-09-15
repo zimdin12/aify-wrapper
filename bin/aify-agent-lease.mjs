@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The launchers' side of lib/agent-lease.mjs.
 //
-//   aify-agent-lease claim   --agent ID --pid PID [--runtime R] [--mode M] [--intent start|replace]
+//   aify-agent-lease claim   --agent ID --pid PID [--runtime R] [--mode M] [--intent start|replace] [--identity flag|recovered]
 //   aify-agent-lease attach  --agent ID --pid PID --kind K [--instance PID]
 //   aify-agent-lease release --agent ID --pid PID
 //   aify-agent-lease watch   --agent ID --instance PID --pid PID
@@ -28,7 +28,7 @@
 import { fileURLToPath } from "node:url";
 import process from "node:process";
 
-import { AgentLease, LeaseBusyError, REFUSED_EXIT_CODE, startIntent } from "../lib/agent-lease.mjs";
+import { AgentLease, IDENTITY_FROM_FLAG, LeaseBusyError, REFUSED_EXIT_CODE, startIntent } from "../lib/agent-lease.mjs";
 import { startWatch, watchInstance } from "../lib/agent-lease-watch.mjs";
 import { isMainModule } from "../lib/main-module.mjs";
 import { isAlive } from "../lib/process-identity.mjs";
@@ -37,7 +37,7 @@ import { isAlive } from "../lib/process-identity.mjs";
 const COMMANDS = Object.freeze(["claim", "attach", "release", "watch"]);
 
 /** Every flag this helper reads, with its placeholder. The usage line and the parser both come from here. */
-const FLAGS = Object.freeze({ agent: "ID", pid: "PID", runtime: "R", mode: "M", intent: "start|replace", kind: "K", instance: "PID" });
+const FLAGS = Object.freeze({ agent: "ID", pid: "PID", runtime: "R", mode: "M", intent: "start|replace", identity: `${IDENTITY_FROM_FLAG}|recovered`, kind: "K", instance: "PID" });
 const USAGE = `usage: aify-agent-lease ${COMMANDS.join("|")} ${Object.entries(FLAGS).map(([flag, value]) => `--${flag} ${value}`).join(" ")}`;
 
 export function parseLeaseArgs(argv, env = process.env) {
@@ -60,7 +60,8 @@ export function parseLeaseArgs(argv, env = process.env) {
     pid,
     runtime: String(options.runtime ?? ""),
     mode: String(options.mode ?? ""),
-    intent: startIntent({ explicit: options.intent, mode: options.mode }),
+    intent: startIntent({ explicit: options.intent, mode: options.mode, identity: options.identity }),
+    named: String(options.identity ?? "").trim().toLowerCase() === IDENTITY_FROM_FLAG,
     kind: String(options.kind ?? ""),
     instance: Number.isInteger(instance) && instance > 0 ? instance : null,
     inherited: Number.isInteger(inherited) && inherited > 0 ? inherited : null,
@@ -92,6 +93,10 @@ export function runLease(argv, { env = process.env, err = process.stderr, lease 
       }
       if (result.decision === "refuse" && result.reason === "could-not-stop") {
         say(`${args.agentId}: could not stop ${describe(result.live)}, so this start would make a second instance. Stop it, then start again.`);
+        return REFUSED_EXIT_CODE;
+      }
+      if (result.decision === "refuse" && !args.named) {
+        say(`${args.agentId} is already running (${describe(result.live)}). This start did not name the agent -- its id came from the environment or a conversation -- so it does not replace it: stop it, or start it with --aify-agent ${args.agentId}.`);
         return REFUSED_EXIT_CODE;
       }
       if (result.decision === "refuse") {

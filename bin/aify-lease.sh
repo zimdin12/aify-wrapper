@@ -19,12 +19,19 @@
 # automatic, so it passes `--aify-start-intent=start` and is refused by a live instance instead of
 # replacing it. One token, consumed here, so the runtime never sees it and the recorded argv never
 # carries it.
+#
+# IT ALSO NOTES WHETHER THIS COMMAND NAMES ITS AGENT. Only an agent named here, by `--aify-agent` or
+# `--agent-id`, may replace a live instance of it (lib/agent-lease.mjs `startIntent`). An identity taken from
+# the environment or recovered from a conversation is a guess about who is meant: on 2026-09-15 one came
+# from a pane that had inherited another session's environment, and replaced that session's live agent.
 aify_lease_take_intent() {
   AIFY_LEASE_ARGS=()
+  AIFY_LEASE_IDENTITY="recovered"
   local _aify_arg
   for _aify_arg in "$@"; do
     case "$_aify_arg" in
       --aify-start-intent=*) AIFY_START_INTENT="${_aify_arg#--aify-start-intent=}" ;;
+      --aify-agent|--agent-id|--aify-agent=*|--agent-id=*) AIFY_LEASE_IDENTITY="flag"; AIFY_LEASE_ARGS+=("$_aify_arg") ;;
       *) AIFY_LEASE_ARGS+=("$_aify_arg") ;;
     esac
   done
@@ -54,7 +61,7 @@ aify_lease_claim() {
   AIFY_LEASE_PID="$(aify_lease_pid "$$")"
   _aify_lease_status=0
   node "$AIFY_LEASE_HELPER" claim --agent "$2" --pid "$AIFY_LEASE_PID" --runtime "${3:-}" --mode "${4:-}" \
-    ${_aify_intent:+--intent "$_aify_intent"} </dev/null || _aify_lease_status=$?
+    --identity "${AIFY_LEASE_IDENTITY:-recovered}" ${_aify_intent:+--intent "$_aify_intent"} </dev/null || _aify_lease_status=$?
   [ "$_aify_lease_status" = 75 ] && return 75
   AIFY_LEASE_AGENT="$2"
   export AIFY_AGENT_LEASE="$AIFY_LEASE_PID"

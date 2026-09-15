@@ -179,7 +179,20 @@ that hands the session to the host, does not claim; the host's own run of the la
 1. `AIFY_START_INTENT`, or the launcher argument `--aify-start-intent=start|replace`, which is consumed
    and never reaches the runtime. An invalid value means `start`.
 2. A managed launch (`AIFY_SESSION_MODE=managed`) means `start`.
-3. Anything else, which is a person at a terminal, means `replace`.
+3. A person who **names the agent on the command line** (`--aify-agent` or `--agent-id`) means `replace`.
+4. Anything else means `start`: an identity taken from the environment (`AIFY_AGENT_ID`,
+   `HARNESS_IDENTITY`) or recovered from a conversation (`--resume <id>`) is a guess about who is meant,
+   and a guess never ends a live instance. On 2026-09-15 one came from a pane that had inherited another
+   agent's session, and replaced that agent.
+
+**A shell inside a running agent session names no agent.** When `AIFY_AGENT_LEASE` or
+`CLAUDE_CODE_CHILD_SESSION` is set, the launcher first unsets everything that named that session: its
+agent id and role, its mode and start intent, its terminal, and the conversation it holds
+(`CLAUDE_SESSION_ID`, `CODEX_THREAD_ID`, `HERMES_SESSION_ID` and the rest; the list is
+`lib/inherited-session.mjs`). It prints one line naming what it dropped. A bare launch there starts
+anonymous; `--aify-agent` still starts a named agent. The two markers are the ones the service removes from
+every managed launch, so a worker a host started is never mistaken for one. `herdr-aify` also starts its
+Herdr server without any of these, so no pane inherits the session it was run from.
 
 **When the agent is already running on this host:**
 

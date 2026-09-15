@@ -11,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { AgentLease, LEASE_VERSION, LeaseBusyError, REFUSED_EXIT_CODE, START_INTENTS, leaseDirectory, leaseFileName, planClaim, startIntent } from "../lib/agent-lease.mjs";
+import { AgentLease, IDENTITY_FROM_FLAG, LEASE_VERSION, LeaseBusyError, REFUSED_EXIT_CODE, START_INTENTS, leaseDirectory, leaseFileName, planClaim, startIntent } from "../lib/agent-lease.mjs";
 import {
   START_TIME_TOLERANCE_MS, ancestors, descendants, identify, isAlive, isProtected, killTree, parseLinuxStartedAt, parseLinuxState,
   orphanedChildren, parseLinuxGroup, parseProcessTable, parseStartedAtLines, processTable, sleepMs, startTimes,
@@ -94,15 +94,22 @@ test("planClaim: the same launcher claiming again keeps its attachments; a recyc
   assert.deepEqual([recycled.decision, recycled.keepAttached, recycled.stop.map((e) => e.pid)], ["claim", false, [2]]);
 });
 
-test("startIntent: explicit wins; otherwise managed starts and a person replaces", () => {
+test("startIntent: explicit wins; otherwise only a person who NAMED the agent replaces it", () => {
   assert.deepEqual(START_INTENTS, ["start", "replace"]);
+  const named = IDENTITY_FROM_FLAG;
   assert.equal(startIntent({ explicit: "REPLACE", mode: "managed" }), "replace");
-  assert.equal(startIntent({ explicit: "bogus", mode: "managed" }), "start");
+  assert.equal(startIntent({ explicit: "bogus", mode: "managed", identity: named }), "start");
   // An explicit word this library does not know must not end anything, whatever the mode.
-  for (const mode of ["resident", "", undefined]) assert.equal(startIntent({ explicit: "restart", mode }), "start", String(mode));
-  assert.equal(startIntent({ explicit: "  ", mode: "resident" }), "replace", "control: a blank explicit value is no value");
-  assert.equal(startIntent({ mode: "resident" }), "replace");
-  assert.equal(startIntent({}), "replace");
+  for (const mode of ["resident", "", undefined]) assert.equal(startIntent({ explicit: "restart", mode, identity: named }), "start", String(mode));
+  assert.equal(startIntent({ explicit: "  ", mode: "resident", identity: named }), "replace", "control: a blank explicit value is no value");
+  assert.equal(startIntent({ mode: "resident", identity: named }), "replace");
+  assert.equal(startIntent({ identity: " FLAG " }), "replace");
+  assert.equal(startIntent({ mode: "managed", identity: named }), "start", "a managed launch names its agent and still only starts");
+  // 2026-09-15: an identity the launch took from its environment replaced a live instance of that agent.
+  for (const identity of ["recovered", "", undefined, "environment"]) {
+    assert.equal(startIntent({ mode: "resident", identity }), "start", `an identity from ${JSON.stringify(identity)} replaced a live instance`);
+  }
+  assert.equal(startIntent({}), "start", "a launch that says nothing about its identity is a guess, and a guess only starts");
 });
 
 test("leaseFileName refuses what it cannot name, rather than rewriting it into somebody else's id", () => {
@@ -702,9 +709,12 @@ test("CLI: 75 means refused, and every failure of the helper itself exits 0 with
   const watch = (options) => watched.push(options);
   assert.equal(runLease(["claim", "--agent", "agent-a", "--pid", "100", "--mode", "managed"], { err, lease: make, watch }), 0);
   assert.deepEqual(watched.map((w) => [w.agentId, w.instance, path.basename(w.script)]), [["agent-a", 100, "aify-agent-lease.mjs"]], "a claim did not start its watch");
-  assert.equal(runLease(["claim", "--agent", "agent-a", "--pid", "200", "--mode", "managed"], { err, lease: make, watch }), REFUSED_EXIT_CODE);
+  assert.equal(runLease(["claim", "--agent", "agent-a", "--pid", "200", "--mode", "managed", "--identity", "flag"], { err, lease: make, watch }), REFUSED_EXIT_CODE);
   assert.equal(watched.length, 1, "a refused start started a watch");
-  assert.match(lines.at(-1), /agent-a is already running \(process pid 100/);
+  assert.match(lines.at(-1), /agent-a is already running \(process pid 100.*An automatic start does not replace it/);
+  // A resident start that did not name the agent is refused too, and told how to name it.
+  assert.equal(runLease(["claim", "--agent", "agent-a", "--pid", "200", "--mode", "resident"], { err, lease: make, watch }), REFUSED_EXIT_CODE);
+  assert.match(lines.at(-1), /agent-a is already running \(process pid 100.*did not name the agent.*start it with --aify-agent agent-a\./);
   assert.equal(runLease(["claim", "--agent=agent-a", "--pid=200", "--intent=replace"], { err, lease: make, watch }), 0);
   assert.match(lines.at(-1), /stopped process pid 100/);
   assert.equal(runLease(["claim", "--agent=agent-a", "--pid=200"], { err, lease: make, watch: () => { throw new Error("spawn EAGAIN"); } }), 0, "a watch that failed to start failed the start");
@@ -721,9 +731,11 @@ test("parseLeaseArgs: a misspelt flag is refused by name, not read as a missing 
   assert.throws(() => parseLeaseArgs(["claim", "--agent", "a", "--agnet", "b", "--pid", "5"], {}), /unknown flag --agnet/);
 });
 
-test("parseLeaseArgs: instance comes from AIFY_AGENT_LEASE, intent from the mode", () => {
+test("parseLeaseArgs: instance comes from AIFY_AGENT_LEASE, intent from the mode and how the agent was named", () => {
   const args = parseLeaseArgs(["attach", "--agent", "a", "--pid", "5", "--kind", "gateway"], { AIFY_AGENT_LEASE: "77" });
-  assert.deepEqual([args.instance, args.kind, args.intent], [77, "gateway", "replace"]);
+  assert.deepEqual([args.instance, args.kind, args.intent], [77, "gateway", "start"]);
   assert.equal(parseLeaseArgs(["claim", "--agent", "a", "--pid", "5", "--mode", "managed"], {}).intent, "start");
+  assert.equal(parseLeaseArgs(["claim", "--agent", "a", "--pid", "5", "--mode", "resident", "--identity", "flag"], {}).intent, "replace");
+  assert.equal(parseLeaseArgs(["claim", "--agent", "a", "--pid", "5", "--mode", "resident", "--identity", "recovered"], {}).intent, "start");
   assert.throws(() => parseLeaseArgs(["claim", "stray"], {}));
 });

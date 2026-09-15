@@ -291,6 +291,14 @@ There is **no plugin metadata on a pane**, and `launch_argv` is only replayed `i
 neither is a place to keep our record. The wrapper therefore labels its pane `aify:<wrapper>:<record>`
 and keeps the real record — the exact argv, cwd and workspace — in `~/.aify/herdr/panes.json`.
 
+**The launcher is recorded and replayed by NAME** (`replayableArgv` in `lib/herdr-replay.mjs`). Typed into
+a Windows pane, `claude-aify` runs through `claude-aify.cmd`, which starts the script as
+`C:\Users\...\.local\bin\claude-aify`. A backslash is outside what a replay can quote for PowerShell, cmd
+and bash at once, so every such claim was refused: 20 in the claim log from 2026-09-12 to 2026-09-15. Those
+panes then resumed a bare `claude` natively, and one was saved against another agent's conversation. The
+path could not have been replayed anyway: it names a bash script with no extension, which a PowerShell or
+cmd pane cannot run, while the name resolves to the `.cmd` shim.
+
 Herdr runs a plugin's `[[startup]]` hook **once after it restores the session**, and again when a new
 server takes over during a live handoff. That is precisely the moment an aify pane exists as an empty
 shell, so the hook is where the restore belongs: it lists the panes, matches labels against the
@@ -316,6 +324,14 @@ launch from paying for any of this.
 An earlier reading of this said a pane's shell gets **no** `HERDR_*` at all. That reading was taken
 inside WSL, which passes through only what `WSLENV` names: the variables were real and the instrument
 was not.
+
+**So is whatever session `herdr-aify` was run from, and that one cost a live agent.** On 2026-09-15 the
+resident Herdr server's environment still held `AIFY_AGENT_ID=comms-tech-lead` and that agent's
+`CLAUDE_SESSION_ID`: it had been started from inside that agent's Claude Code session. Every pane shell
+inherited both, and a bare `claude-aify` in one started as comms-tech-lead and replaced the live one. The
+server is now started without any agent session (`withoutAgentSession`, `lib/inherited-session.mjs`), and
+the launchers ignore an inherited one (README, "One live instance per agent"). A server started before
+that fix keeps what it inherited until it is restarted.
 
 `XDG_CONFIG_HOME` and `XDG_STATE_HOME` are inherited by pane children, which is exactly why the
 `herdr-aify` launcher below must clear them for the agents it starts — otherwise every agent under it

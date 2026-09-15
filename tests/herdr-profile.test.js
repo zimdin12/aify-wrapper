@@ -75,6 +75,27 @@ test("inherited Herdr wiring is cleared before the new wiring is set", () => {
   assert.notEqual(env.HERDR_SOCKET_PATH, inside.HERDR_SOCKET_PATH);
 });
 
+test("no agent session reaches a pane: a server started inside one does not hand it to every terminal", () => {
+  // 2026-09-15: a server started inside comms-tech-lead's Claude Code session gave every pane that agent's
+  // id and conversation, and a bare `claude-aify` in one replaced the live comms-tech-lead.
+  const inside = {
+    PATH: "/usr/bin",
+    AIFY_COMMS_URL: "http://127.0.0.1:8800",
+    AIFY_AGENT_ID: "comms-tech-lead",
+    AIFY_SESSION_MODE: "resident",
+    CLAUDE_SESSION_ID: "651b895f-a564-4d3a-8e0b-27f8429b1dd0",
+    CLAUDECODE: "1",
+    CLAUDE_CODE_CHILD_SESSION: "1",
+    AIFY_AGENT_LEASE: "62512",
+    aify_agent_id: "a-windows-spelling",
+  };
+  const env = herdrServerEnv(inside, paths());
+  for (const name of ["AIFY_AGENT_ID", "AIFY_SESSION_MODE", "CLAUDE_SESSION_ID", "CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION", "AIFY_AGENT_LEASE", "aify_agent_id"]) {
+    assert.equal(env[name], undefined, `${name} reached the server, and through it every pane`);
+  }
+  assert.deepEqual([env.PATH, env.AIFY_COMMS_URL], [inside.PATH, inside.AIFY_COMMS_URL], "control: what is not a session's is kept");
+});
+
 test("the server environment carries the UNDO the wrapper needs for agents inside it", () => {
   // THE DEFECT THIS REPLACES. There was a function here that built an agent's environment and it had
   // ZERO callers, while HERDR.md stated the mitigation as done. The thing that starts an agent is
