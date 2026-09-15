@@ -16,6 +16,17 @@
 #|   @@ + SCRIPT_DIR@@   the repo checkout
 set -euo pipefail
 
+# ONE LIVE INSTANCE PER AGENT (bin/aify-lease.sh, lib/agent-lease.mjs). Sourced first so every exit path,
+# traps included, can call the release; an installed bridge older than the helper gets no-op stubs.
+AIFY_LEASE_SH="@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-lease.sh"
+if [ -r "$AIFY_LEASE_SH" ]; then
+  . "$AIFY_LEASE_SH"
+else
+  aify_lease_claim() { return 0; }
+  aify_lease_attach() { :; }
+  aify_lease_release() { :; }
+fi
+
 # ── Herdr: what this invocation was, captured before anything consumes it ───
 #
 # A Herdr restore replays this array VERBATIM. It has to be what the operator actually typed rather
@@ -690,6 +701,9 @@ if [ ${#HERMES_ARGS[@]} -eq 0 ]; then aify_hermes_warm_bridge; fi
 # one string comparison; the shared path falls through to the branch that was always meant to
 # take it.
 if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_AIFY_SHARED" != true ]; then
+  # Claimed before the gateway host and the delivery loop exist. It stops what a dead instance of this
+  # agent left behind, including a gateway still holding hermes' session lease.
+  aify_lease_claim "@@BRIDGE_DIR@@" "$HERMES_AIFY_AGENT_ID" hermes "${AIFY_SESSION_MODE:-}" || exit $?
   aify_hermes_kill_prior "$HERMES_AIFY_AGENT_ID"
   export AIFY_AGENT_ID="$HERMES_AIFY_AGENT_ID"
   # Hermes launches its MCP server as a short-lived child of individual turns.
@@ -737,6 +751,7 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
   nohup node "$AIFY_HERMES_MANAGED_HOST_JS" run "$HERMES_AIFY_AGENT_ID" >/dev/null 2>&1 &
   HERMES_LOOP_PID="$!"
   disown 2>/dev/null || true
+  aify_lease_attach "$HERMES_LOOP_PID" delivery-loop
   # Re-run kill-prior EXCLUDING our just-spawned loop, so any racing same-agent
   # relaunch's loop is cleaned up while ours is protected (the pre-spawn call
   # above could not yet know this PID).
@@ -762,6 +777,7 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
   AIFY_RUNTIME_RUNNING=0
   _aify_hermes_on_exit() {
     kill "$HERMES_LOOP_PID" >/dev/null 2>&1 || true
+    aify_lease_release
     [ "$AIFY_RUNTIME_RUNNING" = 1 ] || return 0
     AIFY_RUNTIME_RUNNING=0
     _aify_exit_herdr=""

@@ -24,6 +24,17 @@
 #| mcp/stdio/tests/claude-wrapper-template.test.js.
 set -euo pipefail
 
+# ONE LIVE INSTANCE PER AGENT (bin/aify-lease.sh, lib/agent-lease.mjs). Sourced first so every exit path,
+# traps included, can call the release; an installed bridge older than the helper gets no-op stubs.
+AIFY_LEASE_SH="@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-lease.sh"
+if [ -r "$AIFY_LEASE_SH" ]; then
+  . "$AIFY_LEASE_SH"
+else
+  aify_lease_claim() { return 0; }
+  aify_lease_attach() { :; }
+  aify_lease_release() { :; }
+fi
+
 # ── Herdr: what this invocation was, captured before anything consumes it ───
 #
 # A Herdr restore replays this array VERBATIM. It has to be what the operator actually typed rather
@@ -704,7 +715,7 @@ _aify_runtime_exited() {
   if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then _aify_exit_herdr=herdr; fi
   sh "@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-runtime-exited.sh" "@@BRIDGE_DIR@@" "$_aify_exit_herdr" </dev/null >/dev/null 2>&1 || true
 }
-trap 'rm -f "$AIFY_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null; _aify_runtime_exited' EXIT
+trap 'rm -f "$AIFY_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null; _aify_runtime_exited; aify_lease_release' EXIT
 
 # Managed kill-prior (2026-05-31): exactly one managed claude per agent. Reap
 # any orphaned claude.exe still bound to this agent's stable --resume handle
@@ -736,6 +747,11 @@ fi
 #
 # BELOW EVERYTHING, so an ordinary run reaches the line after it having executed not one instruction
 # of this. The operator's constraint on the feature is that the default path is unchanged.
+# The lease is claimed by the run that starts claude: not by a `--shared` launch, which hands the start
+# to the host, whose own run of this launcher claims. 75 is a refused start.
+if [ "$CLAUDE_AIFY_SHARED" != true ]; then
+  aify_lease_claim "@@BRIDGE_DIR@@" "${CLAUDE_AIFY_AGENT_ID:-}" claude-code "${AIFY_SESSION_MODE:-}" || exit $?
+fi
 if [ "$CLAUDE_AIFY_SHARED" = true ]; then
   if ! command -v aify-env >/dev/null 2>&1; then
     # `${0##*/}` RATHER THAN THE NAME, so this block is copyable to the other three wrappers with no

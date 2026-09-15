@@ -12,6 +12,17 @@
 #|   @@ + ENDPOINT@@   coordinating service URL with the built-in fallback applied
 set -euo pipefail
 
+# ONE LIVE INSTANCE PER AGENT (bin/aify-lease.sh, lib/agent-lease.mjs). Sourced first so every exit path,
+# traps included, can call the release; an installed bridge older than the helper gets no-op stubs.
+AIFY_LEASE_SH="@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-lease.sh"
+if [ -r "$AIFY_LEASE_SH" ]; then
+  . "$AIFY_LEASE_SH"
+else
+  aify_lease_claim() { return 0; }
+  aify_lease_attach() { :; }
+  aify_lease_release() { :; }
+fi
+
 # ── Herdr: what this invocation was, captured before anything consumes it ───
 #
 # A Herdr restore replays this array VERBATIM. It has to be what the operator actually typed rather
@@ -449,6 +460,11 @@ fi
 # CODEX ASKS BEFORE RUNNING A HOOK IT HAS NOT SEEN, and lib/codex-herdr-hooks.mjs records exactly how.
 # A resident launch shows the review once and the operator decides. A managed RESUME would show it to
 # nobody and never start, so the helper withholds the hooks there until config.toml trusts them.
+# Claimed before the app-server starts, so a refused start leaves nothing running. A `--shared` launch
+# hands the session to the host, whose run of this launcher is the one that claims.
+if [ "$CODEX_AIFY_SHARED" != true ]; then
+  aify_lease_claim "@@BRIDGE_DIR@@" "${CODEX_AIFY_AGENT_ID:-}" codex "${AIFY_SESSION_MODE:-}" || exit $?
+fi
 CODEX_HERDR_HOOKS=()
 if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then
   export AIFY_HERDR_AGENT="${0##*/}"
@@ -473,6 +489,8 @@ else
 fi
 APP_SERVER_PID=$!
 RUNTIME_PID=""
+# setsid puts the app-server outside this launcher's process group, so a tree kill cannot reach it.
+aify_lease_attach "$APP_SERVER_PID" app-server
 
 # The runtime marker is written by the long-lived aify-comms MCP bridge
 # itself (mcp/stdio/server.js) on startup when it sees
@@ -503,6 +521,7 @@ cleanup() {
     wait "$APP_SERVER_PID" 2>/dev/null || true
   fi
   _aify_runtime_exited
+  aify_lease_release
 }
 trap cleanup EXIT INT TERM HUP
 
