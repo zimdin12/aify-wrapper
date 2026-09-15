@@ -71,9 +71,16 @@ mkdir -p "$(dirname "$target")"
 # CREATED PRIVATE, THEN OPENED, rather than written at the umask's mercy and tightened afterwards.
 # `chmod` runs after the bytes are on disk, so a launcher carrying a secret is world-readable for the
 # window in between -- short, and on a shared host long enough. `umask` applies at creation.
+#
+# AND STAGED, THEN RENAMED INTO PLACE, never rewritten. bash reads a script while it runs it, and a launcher
+# is still running for as long as its runtime is: when the runtime exits it reads on from its byte offset.
+# Measured on Windows 2026-09-15: a script rewritten in place under a running bash executed the middle of
+# the new file (`xxxx: command not found`), while a renamed one read on in its own text. The mode is set
+# on the staged file, so the launcher never sits at its final path with the wrong one.
+staged="$target.render.$$"
 (
   umask 077
-  printf '%s\n' "$text" > "$target"
+  printf '%s\n' "$text" > "$staged"
 )
 
 # A LAUNCHER THAT CARRIES A SECRET STAYS PRIVATE. `keyEnv` values are baked in at render time -- the
@@ -89,8 +96,8 @@ mkdir -p "$(dirname "$target")"
 # variable name is gone from the output: an ordinary launcher carries `printf '%s' "" | base64 -d`
 # and one with servers to splice in carries the blob in that position. The name-based check written
 # first would have matched neither, and would have reported every launcher as secret-free.
-if grep -qE '[A-Za-z0-9+/=]{8,}" \| base64 -d' "$target" 2>/dev/null; then
-  chmod 700 "$target"
+if grep -qE '[A-Za-z0-9+/=]{8,}" \| base64 -d' "$staged" 2>/dev/null; then
+  chmod 700 "$staged"
 else
   # 755, SAID RATHER THAN IMPLIED. This was `chmod +x`, which only ADDS the execute bit to whatever
   # the file was created with -- 0600 from the writer, so the result was 0711, not the 0755 the
@@ -100,5 +107,6 @@ else
   # an interpreter has to read a script to run it. So "executable by everyone" was true of the bits
   # and false of the behaviour, which is the shape a mode check catches only if it reads the whole
   # mode. The test beside this one checked `mode & 0o100` -- the OWNER's bit -- and passed on 0711.
-  chmod 755 "$target"
+  chmod 755 "$staged"
 fi
+mv -f "$staged" "$target"

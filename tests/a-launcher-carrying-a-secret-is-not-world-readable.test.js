@@ -107,7 +107,7 @@ test("and an ordinary launcher is still executable by everyone", () => {
       // 644, and node reads 666 for every file. So the bits are unavailable here and the SOURCE is
       // what can be checked. Named rather than skipped: a test that cannot fail must say why.
       assert.match(
-        fs.readFileSync(RENDER, "utf8"), /chmod 755 "\$target"/,
+        fs.readFileSync(RENDER, "utf8"), /chmod 755 "\$staged"\nfi\nmv -f "\$staged" "\$target"/,
         "render.sh no longer sets an ordinary launcher to 755. `chmod +x` is not equivalent: it adds "
         + "a bit to the 0600 create mode and yields 0711, which other users can execute but not read",
       );
