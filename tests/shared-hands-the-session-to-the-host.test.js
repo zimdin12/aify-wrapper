@@ -81,7 +81,9 @@ test("the shared branch sits BELOW everything, so a normal run never enters it",
   // Placement is the whole safety argument: an ordinary run executes not one instruction of this
   // feature. Asserted by position rather than by reading, because "below everything" is the property.
   const lines = code(renderClaude()).split("\n");
-  const branch = lines.findIndex((l) => l.includes("CLAUDE_AIFY_SHARED") && l.includes("if"));
+  // The branch that ENTERS the shared path. The lease claim's `!= true` guard also names the flag, and
+  // sits higher up on purpose, above the managed reap it must precede.
+  const branch = lines.findIndex((l) => /^if \[ "\$CLAUDE_AIFY_SHARED" = true \]; then/.test(l));
   const launch = lines.findIndex((l) => l.startsWith("claude --dangerously-load"));
   assert.ok(branch > 0, "no shared branch in the rendered launcher");
   assert.ok(branch < launch, "the branch is below the launch line, so --shared would never fire");

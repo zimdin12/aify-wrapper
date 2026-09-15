@@ -59,7 +59,9 @@ async function until(check, ms = 15_000) {
 }
 
 function lease(dir, ...args) {
-  const res = spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8", env: { ...process.env, AIFY_AGENT_LEASE_DIR: dir }, timeout: 60_000 });
+  // A lease this test runner inherited from its own launcher would make every claim here read as nested.
+  const { AIFY_AGENT_LEASE, AIFY_START_INTENT, ...inherited } = process.env;
+  const res = spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8", env: { ...inherited, AIFY_AGENT_LEASE_DIR: dir }, timeout: 60_000 });
   return { status: res.status, stderr: res.stderr };
 }
 

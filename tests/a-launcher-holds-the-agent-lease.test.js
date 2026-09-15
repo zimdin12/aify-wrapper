@@ -107,6 +107,14 @@ for (const client of ["claude", "codex", "hermes", "pi"]) {
       assert.equal(w.runtimeRan().length, 1, "a refused start ran a runtime");
       assert.ok(alive(first.pid), "a refused start stopped the first launcher");
 
+      // A launcher run INSIDE the live instance -- it inherits that instance's lease -- is refused even when
+      // explicit: replacing would end its own ancestor. Before this, a resident agent's shell did exactly that.
+      const nested = spawnSync("bash", [w.launcher, "--aify-agent", id], { encoding: "utf8", env: w.env({ STUB_EXIT: "0", AIFY_START_INTENT: "replace", AIFY_AGENT_LEASE: String(record.instance.pid) }), timeout: 60_000 });
+      assert.equal(nested.status, 75, `a nested start was not refused:\n${nested.stderr}`);
+      assert.match(nested.stderr, /runs inside .* own live instance/);
+      assert.equal(w.runtimeRan().length, 1, "a nested start ran a runtime");
+      assert.ok(alive(first.pid), "a nested start stopped the instance it runs inside");
+
       const third = spawnSync("bash", [w.launcher, "--aify-agent", id], { encoding: "utf8", env: w.env({ STUB_EXIT: "0", AIFY_START_INTENT: "replace" }), timeout: 60_000 });
       assert.equal(third.status, 0, third.stderr);
       assert.equal(w.runtimeRan().length, 2, "the explicit start did not run its runtime");
@@ -138,5 +146,18 @@ test("NO AGENT ID and --shared claim nothing", { skip: WIN }, () => {
     assert.equal(shared.status, 0, `${client}: ${shared.stderr}`);
     assert.match(s.hostAsked(), /^run --service /m, `control: ${client} handed the start to the host`);
     assert.equal(fs.existsSync(s.leaseFile(id)), false, `${client}: the handing-off launch claimed the lease`);
+  }
+});
+
+test("the claim comes before every older reap of the same agent, so a refused start has ended nothing", () => {
+  // claude's managed reap and hermes' kill-prior both stop this agent's previous processes. Run before the
+  // claim, an automatic start ended a live instance that the claim would then have refused.
+  const order = { claude: 'node "@@BRIDGE_DIR@@/reap-managed-claude.js"', hermes: '  aify_hermes_kill_prior "$HERMES_AIFY_AGENT_ID"' };
+  for (const [client, reap] of Object.entries(order)) {
+    const source = fs.readFileSync(path.join(ROOT, "wrappers", `${client}-aify.sh.in`), "utf8");
+    const claim = source.indexOf('  aify_lease_claim "@@BRIDGE_DIR@@"');
+    const reapAt = source.indexOf(reap);
+    assert.ok(claim > 0 && reapAt > 0, `${client}: control, both call sites are found`);
+    assert.ok(claim < reapAt, `${client}: the reap runs before the claim`);
   }
 });

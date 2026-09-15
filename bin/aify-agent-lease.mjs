@@ -5,10 +5,12 @@
 //   aify-agent-lease attach  --agent ID --pid PID --kind K [--instance PID]
 //   aify-agent-lease release --agent ID --pid PID
 //
-// EXIT 75 MEANS REFUSED and nothing else does. Every failure of this helper itself -- a bad argument, an
-// unwritable directory, a lock nobody releases -- prints a warning and exits 0, because the launcher runs
-// it on the path of an operator starting an agent: a broken lease costs the guarantee, never the start.
-// A refusal is the one outcome that stops a launch, and it names the live process it met.
+// EXIT 75 MEANS REFUSED and nothing else does: a live instance met by an automatic start, a process that
+// would not stop, or ANOTHER START OF THE SAME AGENT still holding the lock after a minute -- letting that
+// one through would be two starts racing past the guarantee. Every failure of this helper itself -- a bad
+// argument, an unwritable directory -- prints a warning and exits 0, because the launcher runs it on the
+// path of an operator starting an agent: a broken lease costs the guarantee, never the start. A refusal
+// names what it met. A start inside the agent's own live instance is refused the same way.
 //
 // --pid IS THE LAUNCHER'S OWN PID, passed in, never this process's parent. On Windows a Git Bash launcher
 // runs native node through a short-lived MSYS stub, so `process.ppid` is a different dead pid on every call
@@ -17,7 +19,7 @@
 
 import process from "node:process";
 
-import { AgentLease, REFUSED_EXIT_CODE, startIntent } from "../lib/agent-lease.mjs";
+import { AgentLease, LeaseBusyError, REFUSED_EXIT_CODE, startIntent } from "../lib/agent-lease.mjs";
 import { isMainModule } from "../lib/main-module.mjs";
 
 const USAGE = "usage: aify-agent-lease claim|attach|release --agent ID --pid PID [--runtime R] [--mode M] [--intent start|replace] [--kind K] [--instance PID]";
@@ -34,6 +36,7 @@ export function parseLeaseArgs(argv, env = process.env) {
   const pid = Number(options.pid);
   if (!Number.isInteger(pid) || pid <= 0) throw new Error(`--pid must be a process id, got ${JSON.stringify(options.pid)}`);
   const instance = Number(options.instance ?? env.AIFY_AGENT_LEASE);
+  const inherited = Number(env.AIFY_AGENT_LEASE);
   return {
     command,
     agentId: String(options.agent ?? ""),
@@ -43,6 +46,7 @@ export function parseLeaseArgs(argv, env = process.env) {
     intent: startIntent({ explicit: options.intent, mode: options.mode }),
     kind: String(options.kind ?? ""),
     instance: Number.isInteger(instance) && instance > 0 ? instance : null,
+    inherited: Number.isInteger(inherited) && inherited > 0 ? inherited : null,
   };
 }
 
@@ -61,6 +65,10 @@ export function runLease(argv, { env = process.env, err = process.stderr, lease 
     const agent = lease({ agentId: args.agentId });
     if (args.command === "claim") {
       const result = agent.claim(args);
+      if (result.decision === "nested") {
+        say(`${args.agentId}: this start runs inside ${args.agentId}'s own live instance (${describe(result.live)}), so it would be a second instance of the same agent. Use another agent id.`);
+        return REFUSED_EXIT_CODE;
+      }
       for (const entry of result.unverified) say(`${args.agentId}: left ${describe(entry)} alone; this host cannot confirm it is the one recorded.`);
       if (result.decision === "refuse" && result.reason === "could-not-stop") {
         say(`${args.agentId}: could not stop ${describe(result.live)}, so this start would make a second instance. Stop it, then start again.`);
@@ -81,6 +89,10 @@ export function runLease(argv, { env = process.env, err = process.stderr, lease 
     agent.release({ pid: args.pid });
     return 0;
   } catch (error) {
+    if (error instanceof LeaseBusyError && args?.command === "claim") {
+      say(`${args.agentId}: another start of this agent is still in progress, so this one would race it. ${error.message}`);
+      return REFUSED_EXIT_CODE;
+    }
     say(`WARN: ${error?.message || error}; continuing without the one-instance guarantee. ${args ? "" : USAGE}`.trim());
     return 0;
   }

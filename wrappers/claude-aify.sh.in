@@ -717,6 +717,14 @@ _aify_runtime_exited() {
 }
 trap 'rm -f "$AIFY_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null; _aify_runtime_exited; aify_lease_release' EXIT
 
+# The lease is claimed by the run that starts claude: not by a `--shared` launch, which hands the start
+# to the host, whose own run of this launcher claims. 75 is a refused start. BEFORE THE REAP BELOW: that
+# reap kills this agent's previous managed claude, so running it first let an automatic start end a live
+# instance the claim would then have refused.
+if [ "$CLAUDE_AIFY_SHARED" != true ]; then
+  aify_lease_claim "@@BRIDGE_DIR@@" "${CLAUDE_AIFY_AGENT_ID:-}" claude-code "${AIFY_SESSION_MODE:-}" || exit $?
+fi
+
 # Managed kill-prior (2026-05-31): exactly one managed claude per agent. Reap
 # any orphaned claude.exe still bound to this agent's stable --resume handle
 # before launching the new one. Managed claude churns terminals (each
@@ -747,11 +755,6 @@ fi
 #
 # BELOW EVERYTHING, so an ordinary run reaches the line after it having executed not one instruction
 # of this. The operator's constraint on the feature is that the default path is unchanged.
-# The lease is claimed by the run that starts claude: not by a `--shared` launch, which hands the start
-# to the host, whose own run of this launcher claims. 75 is a refused start.
-if [ "$CLAUDE_AIFY_SHARED" != true ]; then
-  aify_lease_claim "@@BRIDGE_DIR@@" "${CLAUDE_AIFY_AGENT_ID:-}" claude-code "${AIFY_SESSION_MODE:-}" || exit $?
-fi
 if [ "$CLAUDE_AIFY_SHARED" = true ]; then
   if ! command -v aify-env >/dev/null 2>&1; then
     # `${0##*/}` RATHER THAN THE NAME, so this block is copyable to the other three wrappers with no
