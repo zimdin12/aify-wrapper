@@ -25,7 +25,11 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
 const NOWHERE = "http://127.0.0.2:1";
 const WIN = process.platform === "win32" && "the stub codex is a shell script, which Windows cannot spawn by path";
-const NAMES = ["AIFY_AGENT_ID", "AIFY_AGENT_ROLE", "AIFY_COMMS_URL"];
+// The session names matter as much as the identity: codex starts the aify-comms MCP bridge from the
+// app-server too, and the bridge registers with the mode and the thread handle it inherits.
+const NAMES = ["AIFY_AGENT_ID", "AIFY_AGENT_ROLE", "AIFY_COMMS_URL", "AIFY_SESSION_MODE", "AIFY_SESSION_HANDLE", "CODEX_THREAD_ID"];
+// spawnSync hands the launcher a pipe for stdin, and a launcher with no TTY and no explicit mode is managed.
+const PIPED = { AIFY_SESSION_MODE: "managed", AIFY_SESSION_HANDLE: null, CODEX_THREAD_ID: null };
 
 function world({ endpoint = NOWHERE } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-codex-env-"));
@@ -79,7 +83,7 @@ test("a resident `--aify-agent` launch gives the app-server what it gives the TU
     assert.equal(r.server.length, 1, `app-server not started once: ${r.run.stderr}`);
     assert.equal(r.tui.length, 1, `TUI not started once: ${r.run.stderr}`);
     const role = args.includes("--aify-role") ? "reviewer" : "coder";
-    assert.deepEqual(r.tui[0].env, { AIFY_AGENT_ID: "probe-x", AIFY_AGENT_ROLE: role, AIFY_COMMS_URL: NOWHERE }, "control: the TUI");
+    assert.deepEqual(r.tui[0].env, { AIFY_AGENT_ID: "probe-x", AIFY_AGENT_ROLE: role, AIFY_COMMS_URL: NOWHERE, ...PIPED }, "control: the TUI");
     assert.deepEqual(r.server[0].env, r.tui[0].env, `app-server for ${args.join(" ")}`);
   }
 });
@@ -87,7 +91,7 @@ test("a resident `--aify-agent` launch gives the app-server what it gives the TU
 test("NO AGENT: the app-server gets no agent id, and the URL the TUI gets", { skip: WIN }, () => {
   const r = launch([]);
   assert.equal(r.run.status, 0, r.run.stderr);
-  assert.deepEqual(r.tui[0].env, { AIFY_AGENT_ID: null, AIFY_AGENT_ROLE: null, AIFY_COMMS_URL: NOWHERE });
+  assert.deepEqual(r.tui[0].env, { AIFY_AGENT_ID: null, AIFY_AGENT_ROLE: null, AIFY_COMMS_URL: NOWHERE, ...PIPED });
   assert.deepEqual(r.server[0].env, r.tui[0].env);
 });
 
@@ -110,6 +114,7 @@ test("an agent recovered from the service by thread handle reaches the app-serve
     const [tui] = w.seen().filter(row => row.role === "tui");
     assert.match(tui.argv.join(" "), / resume --include-non-interactive thread-1$/, stderr);
     assert.equal(tui.env.AIFY_AGENT_ID, "probe-r", `control: the lookup did not resolve:\n${stderr}`);
+    assert.equal(tui.env.AIFY_SESSION_HANDLE, "thread-1", "control: the resume handle was not exported");
     assert.deepEqual(app.env, tui.env);
   } finally {
     server.close();
@@ -122,6 +127,8 @@ test("MANAGED RESUME still resumes, and the app-server has the identity", { skip
   assert.match(r.server[0].argv.join(" "), /--disable apps .*app-server --listen ws:/);
   assert.match(r.tui[0].argv.join(" "), /--dangerously-bypass-hook-trust resume --include-non-interactive thread-1$/);
   assert.equal(r.server[0].env.AIFY_AGENT_ID, "probe-m");
+  assert.deepEqual(r.server[0].env, { AIFY_AGENT_ID: "probe-m", AIFY_AGENT_ROLE: "coder", AIFY_COMMS_URL: NOWHERE,
+    AIFY_SESSION_MODE: "managed", AIFY_SESSION_HANDLE: "thread-1", CODEX_THREAD_ID: "thread-1" });
   assert.deepEqual(r.server[0].env, r.tui[0].env);
 });
 

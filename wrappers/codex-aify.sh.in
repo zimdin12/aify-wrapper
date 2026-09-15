@@ -158,8 +158,8 @@ fi
 
 # --check answers "is this configured and can it find its runtime" WITHOUT starting anything. The
 # identity scan here is a deliberate SUBSET of the real parser below — the two flag spellings, and no
-# more — because the full parse runs after the app-server has started, which is the one thing --check
-# must not do. It reports what it resolved rather than implying it ran the whole parser.
+# more — because the full parse is followed by a service lookup and the app-server launch, neither of which
+# --check may do. It reports what it resolved rather than implying it ran the whole parser.
 for ARG in "$@"; do
   case "$ARG" in
     --check)
@@ -399,6 +399,45 @@ fi
 # on ${AIFY_COMMS_URL:-}.
 export AIFY_COMMS_URL="$HARNESS_ENDPOINT"
 
+# These reach the aify-comms MCP bridge as well as the hooks: codex starts MCP servers from the
+# APP-SERVER, not the TUI (observed 2026-09-15, `.aify-comms/mcp/stdio/server.js` a child of
+# `codex app-server`), so an export made after the launch below is one the bridge never sees.
+# Session-mode resolution: explicit flag/env > TTY auto-detect. See
+# claude-aify for the rationale; same contract applies here.
+# INFERRED, NOT CHOSEN -- and that distinction has to survive a `--shared` relaunch (R9-M10,
+# external review 2026-09-06). This resolves from THIS process's stdin, and the `--shared` block
+# below hands the session to aify-env, which forwards the whole environment to a host that runs the
+# launcher IN A PTY. So a non-TTY caller -- a script, a CI job, a non-interactive shell -- inferred
+# `managed` here and pinned it onto a relaunch where `[ -t 0 ]` would have said `resident`. The
+# service then treats a session with a real PTY as a backing process with no operator at it.
+#
+# An EXPLICIT choice (--resident, --managed, or AIFY_SESSION_MODE in the environment) must still
+# travel, which is why this marks the inference rather than dropping the value outright.
+AIFY_SESSION_MODE_INFERRED=0
+if [ -z "$CODEX_AIFY_SESSION_MODE" ]; then
+  if [ -t 0 ]; then
+    CODEX_AIFY_SESSION_MODE="resident"
+  else
+    CODEX_AIFY_SESSION_MODE="managed"
+  fi
+  AIFY_SESSION_MODE_INFERRED=1
+fi
+export AIFY_SESSION_MODE="$CODEX_AIFY_SESSION_MODE"
+
+# Fresh codex-aify launch must not infer a current thread from historical
+# ~/.codex/sessions files. That scan can only find an old rollout, not the
+# thread this just-started --remote TUI is attached to. Explicit --resume
+# remains authoritative and is exported below so the bridge and Codex agree.
+if [ -z "${CODEX_RESUME_HANDLE:-}" ]; then
+  : # Fresh codex-aify launch: leave CODEX_THREAD_ID/AIFY_SESSION_HANDLE unset.
+else
+  # Explicit --resume <id> from operator wins. Make the bridge see the
+  # same handle codex will resume so they don't disagree for the first
+  # 60s after launch.
+  export CODEX_THREAD_ID="$CODEX_RESUME_HANDLE"
+  export AIFY_SESSION_HANDLE="$CODEX_RESUME_HANDLE"
+fi
+
 # ── Herdr: the pane's status dot follows the agent ───
 #
 # A claimed pane shows the state its claim last reported, not what Herdr sees on screen, so the
@@ -484,42 +523,6 @@ if ! wait_for_port "$PORT"; then
   echo "codex-aify could not reach the local app-server at $APP_SERVER_URL." >&2
   echo "Check $LOG_FILE for details." >&2
   exit 1
-fi
-
-# Session-mode resolution: explicit flag/env > TTY auto-detect. See
-# claude-aify for the rationale; same contract applies here.
-# INFERRED, NOT CHOSEN -- and that distinction has to survive a `--shared` relaunch (R9-M10,
-# external review 2026-09-06). This resolves from THIS process's stdin, and the `--shared` block
-# below hands the session to aify-env, which forwards the whole environment to a host that runs the
-# launcher IN A PTY. So a non-TTY caller -- a script, a CI job, a non-interactive shell -- inferred
-# `managed` here and pinned it onto a relaunch where `[ -t 0 ]` would have said `resident`. The
-# service then treats a session with a real PTY as a backing process with no operator at it.
-#
-# An EXPLICIT choice (--resident, --managed, or AIFY_SESSION_MODE in the environment) must still
-# travel, which is why this marks the inference rather than dropping the value outright.
-AIFY_SESSION_MODE_INFERRED=0
-if [ -z "$CODEX_AIFY_SESSION_MODE" ]; then
-  if [ -t 0 ]; then
-    CODEX_AIFY_SESSION_MODE="resident"
-  else
-    CODEX_AIFY_SESSION_MODE="managed"
-  fi
-  AIFY_SESSION_MODE_INFERRED=1
-fi
-export AIFY_SESSION_MODE="$CODEX_AIFY_SESSION_MODE"
-
-# Fresh codex-aify launch must not infer a current thread from historical
-# ~/.codex/sessions files. That scan can only find an old rollout, not the
-# thread this just-started --remote TUI is attached to. Explicit --resume
-# remains authoritative and is exported below so the bridge and Codex agree.
-if [ -z "${CODEX_RESUME_HANDLE:-}" ]; then
-  : # Fresh codex-aify launch: leave CODEX_THREAD_ID/AIFY_SESSION_HANDLE unset.
-else
-  # Explicit --resume <id> from operator wins. Make the bridge see the
-  # same handle codex will resume so they don't disagree for the first
-  # 60s after launch.
-  export CODEX_THREAD_ID="$CODEX_RESUME_HANDLE"
-  export AIFY_SESSION_HANDLE="$CODEX_RESUME_HANDLE"
 fi
 
 # Plan 6 follow-up (2026-05-26): dashboard-spawned managed codex wrappers
