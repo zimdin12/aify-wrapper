@@ -79,7 +79,8 @@ test("a record written by a relaunched wrapper SURVIVES the pass that relaunched
 
   const result = restore({ env: {}, ledger: new HerdrPaneLedger({ file }), cli, now: () => LISTED_AT });
   assert.equal(result.restored.length, 1, "the pane was not relaunched at all");
-  assert.deepEqual(cli.typed, ["claude-aify --resume"], "the recorded argv was not replayed");
+  // The recorded argv, marked as an automatic start so a live instance of the agent refuses it.
+  assert.deepEqual(cli.typed, ["claude-aify --aify-start-intent=start --resume"], "the recorded argv was not replayed");
 
   const after = new HerdrPaneLedger({ file }).load();
   assert.ok(after.get("rec2"), "the relaunched wrapper's own record was deleted by the pass that started it");

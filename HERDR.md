@@ -294,7 +294,9 @@ and keeps the real record — the exact argv, cwd and workspace — in `~/.aify/
 Herdr runs a plugin's `[[startup]]` hook **once after it restores the session**, and again when a new
 server takes over during a live handoff. That is precisely the moment an aify pane exists as an empty
 shell, so the hook is where the restore belongs: it lists the panes, matches labels against the
-ledger, and relaunches the recorded command into every pane that came back empty.
+ledger, and relaunches the recorded command into every pane that came back empty. The relaunch carries
+start intent (`--aify-start-intent=start`), so if the same agent is already live elsewhere on the host
+the restore is refused with exit 75 rather than replacing that instance.
 
 It cannot race native planning, because native planning has already declined: the pane is an idle
 shell and there is nothing to beat.

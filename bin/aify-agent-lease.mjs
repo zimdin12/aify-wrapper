@@ -5,12 +5,15 @@
 //   aify-agent-lease attach  --agent ID --pid PID --kind K [--instance PID]
 //   aify-agent-lease release --agent ID --pid PID
 //
-// EXIT 75 MEANS REFUSED and nothing else does: a live instance met by an automatic start, a process that
-// would not stop, or ANOTHER START OF THE SAME AGENT still holding the lock after a minute -- letting that
-// one through would be two starts racing past the guarantee. Every failure of this helper itself -- a bad
-// argument, an unwritable directory -- prints a warning and exits 0, because the launcher runs it on the
-// path of an operator starting an agent: a broken lease costs the guarantee, never the start. A refusal
-// names what it met. A start inside the agent's own live instance is refused the same way.
+// EXIT 75 MEANS REFUSED and nothing else does. A start is refused when it meets:
+//   - a live instance, and its intent is `start`;
+//   - the agent's own live instance, around the launcher itself (nested), whatever its intent;
+//   - a process that would not stop;
+//   - a recorded process still running while the process table cannot be read;
+//   - another start of the same agent still holding the lock after a minute.
+// Every failure of this helper itself -- a bad argument, an unwritable directory -- prints a warning and
+// exits 0, because the launcher runs it on the path of an operator starting an agent: a broken lease costs
+// the guarantee, never the start. A refusal names what it met.
 //
 // --pid IS THE LAUNCHER'S OWN PID, passed in, never this process's parent. On Windows a Git Bash launcher
 // runs native node through a short-lived MSYS stub, so `process.ppid` is a different dead pid on every call
@@ -22,7 +25,9 @@ import process from "node:process";
 import { AgentLease, LeaseBusyError, REFUSED_EXIT_CODE, startIntent } from "../lib/agent-lease.mjs";
 import { isMainModule } from "../lib/main-module.mjs";
 
-const USAGE = "usage: aify-agent-lease claim|attach|release --agent ID --pid PID [--runtime R] [--mode M] [--intent start|replace] [--kind K] [--instance PID]";
+/** Every flag this helper reads, with its placeholder. The usage line and the parser both come from here. */
+const FLAGS = Object.freeze({ agent: "ID", pid: "PID", runtime: "R", mode: "M", intent: "start|replace", kind: "K", instance: "PID" });
+const USAGE = `usage: aify-agent-lease claim|attach|release ${Object.entries(FLAGS).map(([flag, value]) => `--${flag} ${value}`).join(" ")}`;
 
 export function parseLeaseArgs(argv, env = process.env) {
   const [command, ...rest] = argv;
@@ -30,6 +35,7 @@ export function parseLeaseArgs(argv, env = process.env) {
   for (let i = 0; i < rest.length; i += 1) {
     const match = /^--([a-z]+)(?:=(.*))?$/.exec(rest[i]);
     if (!match) throw new Error(`unexpected argument ${JSON.stringify(rest[i])}`);
+    if (!Object.hasOwn(FLAGS, match[1])) throw new Error(`unknown flag --${match[1]}`);
     options[match[1]] = match[2] ?? rest[++i];
   }
   if (!["claim", "attach", "release"].includes(command)) throw new Error(`unknown command ${JSON.stringify(command)}`);

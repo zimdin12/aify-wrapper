@@ -160,10 +160,57 @@ silently swallowed the input would be claiming a job it does not do.
 | Code | Meaning |
 |---|---|
 | `0` | the runtime exited normally, or `--check` passed |
+| `75` | start refused: the agent already has a live instance on this host (see below) |
 | `78` | configuration invalid: a required input is missing or empty |
 | `127` | the runtime CLI is not on PATH |
 
-Anything else is the runtime's own exit code, passed through unchanged.
+Any other code is the runtime's own, passed through unchanged. A runtime can also exit with one of the
+codes above for its own reasons, so a `75` or `78` is the launcher's only when it printed why.
+
+### One live instance per agent
+
+Before the runtime starts, a launcher claims a lease for its agent id at `~/.aify/agents/<id>.json`
+(directory overridable with `AIFY_AGENT_LEASE_DIR`). The code is `lib/agent-lease.mjs`, called through
+`bin/aify-agent-lease.mjs` and `bin/aify-lease.sh`. A launch with no agent id, or a `--shared` launch
+that hands the session to the host, does not claim; the host's own run of the launcher does.
+
+**Start intent.** `start` or `replace`, decided in this order:
+
+1. `AIFY_START_INTENT`, or the launcher argument `--aify-start-intent=start|replace`, which is consumed
+   and never reaches the runtime. An invalid value means `start`.
+2. A managed launch (`AIFY_SESSION_MODE=managed`) means `start`.
+3. Anything else, which is a person at a terminal, means `replace`.
+
+**When the agent is already running on this host:**
+
+- `start` is refused with exit 75 and a message naming the live process.
+- `replace` stops the live instance and every process it attached (the codex app-server, the hermes
+  delivery loop and gateway), then starts.
+- A launch inside the agent's own live instance (it inherited that instance's `AIFY_AGENT_LEASE`, or the
+  instance is its ancestor) is refused with 75 whatever its intent.
+- If a recorded process is still running but the host cannot read its process table, the start is
+  refused with 75. Retry.
+- If another start of the same agent has held the lock for over a minute, this one gets 75.
+
+Leftovers of a dead instance are always stopped, whatever the intent. A pid is stopped only when it is
+provably the recorded process (by its start time, or because it was seen alive before that process
+started). The claimer's own ancestry is never stopped, and another agent's leased processes are never
+crossed into.
+
+The launcher exports `AIFY_AGENT_LEASE` (its own pid) to the runtime so detached helpers can attach to
+the instance. A clean exit releases the record, unless an attached process is still alive; then the
+record stays so the next claim stops that process.
+
+**Failure is open, except for the refusal.** A helper failure (a bad argument, an unwritable directory)
+prints a warning and lets the launch through without the guarantee; a missing helper, or no `node` on
+PATH, lets it through without a word. The launcher loads
+the helper from the bridge's installed copy of this package,
+`@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-lease.sh`, so after bumping a service's pin on
+aify-wrapper, reinstall that service or its launchers run without a lease.
+
+**It heals itself.** A dead or reused recorded pid is handled by the next claim, and an abandoned lock is
+taken over when its holder is gone or after 2 minutes. Reset by hand only when a refusal names a process
+that really is gone: delete `~/.aify/agents/<id>.json` and `<id>.json.lock`.
 
 ## Templates
 
@@ -191,9 +238,10 @@ before", which never breaks.
 A launcher is generated **text**. Restarting it changes nothing; only reinstalling does. That is the
 opposite of the bridge it points at, which is a running process that keeps whatever it loaded at boot.
 
-`--check` reports the wrapper's own version so a host can tell what it has. aify-comms compares it
-against the checkout in `aify-comms doctor`'s `wrapper-current` check, which says REINSTALL where
-`bridge-current` says RESTART.
+`--check` reports the wrapper's own version so a host can tell what it has. Whether the installed
+launchers are current is answered by `aify-wrapper-check` (below), which reads them without running
+them and says REINSTALL, where aify-comms' `bridge-current` says RESTART. That check used to live in
+`aify-comms doctor` as `wrapper-current` and has left it.
 
 ## Where the runtime is loaded from
 
@@ -205,8 +253,11 @@ This is not a performance nicety.
 ## Tests
 
 ```bash
-node --test tests/*.test.js
+npm test
 ```
+
+`npm test` runs the suite through `tests/run-in-a-temp-root.mjs`, which gives it one temporary root and
+deletes it afterwards.
 
 They render each launcher and run it, rather than reading the templates. A wrapper's failure mode is
 silence, so a test that only reads text cannot see it.
@@ -278,5 +329,5 @@ launcher installed before fingerprints existed, which is the population most lik
 one an absent-means-fine reading would report as healthy. A host with no launchers at all is not
 "fine"; nothing was verified.
 
-The remedy is **reinstall**, never restart. A launcher has exec'd and gone by the time anything is
-running, so relaunching an agent changes nothing about it.
+The remedy is **reinstall**, never restart. Relaunching an agent runs the same launcher text again, so
+nothing about the launcher changes until the file does.

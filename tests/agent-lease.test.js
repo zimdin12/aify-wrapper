@@ -14,7 +14,7 @@ import { test } from "node:test";
 import { AgentLease, LEASE_VERSION, LeaseBusyError, REFUSED_EXIT_CODE, START_INTENTS, leaseDirectory, leaseFileName, planClaim, startIntent } from "../lib/agent-lease.mjs";
 import {
   START_TIME_TOLERANCE_MS, ancestors, descendants, identify, isAlive, isProtected, killTree, parseLinuxStartedAt, parseLinuxState,
-  parseProcessTable, parsePsStartedAt, parseWindowsStartedAt, processTable, sleepMs, startTimes,
+  parseProcessTable, parseStartedAtLines, processTable, sleepMs, startTimes,
 } from "../lib/process-identity.mjs";
 import { parseLeaseArgs, runLease } from "../bin/aify-agent-lease.mjs";
 
@@ -97,6 +97,9 @@ test("startIntent: explicit wins; otherwise managed starts and a person replaces
   assert.deepEqual(START_INTENTS, ["start", "replace"]);
   assert.equal(startIntent({ explicit: "REPLACE", mode: "managed" }), "replace");
   assert.equal(startIntent({ explicit: "bogus", mode: "managed" }), "start");
+  // An explicit word this library does not know must not end anything, whatever the mode.
+  for (const mode of ["resident", "", undefined]) assert.equal(startIntent({ explicit: "restart", mode }), "start", String(mode));
+  assert.equal(startIntent({ explicit: "  ", mode: "resident" }), "replace", "control: a blank explicit value is no value");
   assert.equal(startIntent({ mode: "resident" }), "replace");
   assert.equal(startIntent({}), "replace");
 });
@@ -114,10 +117,9 @@ test("AgentLease: claim writes the record with the launcher's OS start time; rel
   assert.equal(agent.claim({ pid: 100, runtime: "claude", mode: "resident", intent: "replace" }).decision, "claim");
   const record = agent.read();
   assert.equal(record.version, LEASE_VERSION);
-  assert.equal(record.instance.seenAliveAtMs, record.instance.claimedAtMs);
-  assert.deepEqual({ ...record.instance, claimedAtMs: 0, seenAliveAtMs: 0 },
-    { pid: 100, startedAtMs: T0, seenAliveAtMs: 0, runtime: "claude", mode: "resident", intent: "replace", claimedAtMs: 0, attached: [] });
-  assert.deepEqual(agent.release({ pid: 555 }), { released: false });
+  assert.deepEqual({ ...record.instance, seenAliveAtMs: 0 },
+    { pid: 100, startedAtMs: T0, seenAliveAtMs: 0, runtime: "claude", mode: "resident", intent: "replace", attached: [] });
+  assert.deepEqual(agent.release({ pid: 555 }), { released: false, reason: "not-the-holder" });
   assert.ok(fs.existsSync(agent.file));
   assert.deepEqual(agent.release({ pid: 100 }), { released: true });
   assert.equal(fs.existsSync(agent.file), false);
@@ -191,6 +193,56 @@ test("AgentLease: an older build's record whose instance is NOT running leaves l
   assert.deepEqual(probe.killed, [101]);
 });
 
+test("AgentLease: a replace never enters another agent's leased processes, even ones started beneath it", () => {
+  // Agent A's shell started agent B's launcher (200). Replacing A ends A's tree, not B.
+  const probe = host({ 100: T0, 150: T0 + 1, 200: T0 + 2, 210: T0 + 3, 300: T0 + 60_000 });
+  const trees = [];
+  probe.killTree = (pid, options) => { trees.push({ pid, boundaries: [...(options?.boundaries || [])] }); probe.live.delete(pid); };
+  const a = lease(probe);
+  a.claim({ pid: 100, intent: "start" });
+  const b = new AgentLease({ agentId: "agent-b", directory: a.directory, probe, stopWaitMs: 50, lockWaitMs: 200 });
+  b.claim({ pid: 200, intent: "start" });
+  b.attach({ instance: 200, pid: 210, kind: "gateway" });
+  assert.equal(a.claim({ pid: 300, intent: "replace" }).decision, "claim");
+  assert.equal(trees.length, 1);
+  assert.deepEqual(trees[0].boundaries.sort(), [200, 210], "agent-b's processes were not handed to the tree kill as boundaries");
+  // And the tree kill honours them (process-identity, on a real table shape).
+  const rows = table([[100, 1, T0], [150, 100, T0 + 1], [200, 150, T0 + 2], [210, 200, T0 + 3]]);
+  const seen = [];
+  killTree(100, { platform: "win32", run: (cmd, args) => seen.push(args), protect: { self: 999, parent: 998 }, table: rows, boundaries: [200] });
+  assert.deepEqual(seen, [["/F", "/PID", "100", "/PID", "150"]]);
+});
+
+test("AgentLease: release keeps the record while something the instance attached still runs", () => {
+  const probe = host({ 100: T0, 101: T0 + 5 });
+  const agent = lease(probe);
+  agent.claim({ pid: 100, intent: "start" });
+  agent.attach({ instance: 100, pid: 101, kind: "gateway" });
+  assert.deepEqual(agent.release({ pid: 100 }), { released: false, reason: "attached-still-running" });
+  assert.equal(agent.read().instance.pid, 100, "the record naming a still-running gateway was deleted");
+  // A probe that fails keeps it too.
+  const realStartTimes = probe.startTimes;
+  probe.startTimes = (pids, options) => (options?.strict ? null : realStartTimes(pids));
+  assert.equal(agent.release({ pid: 100 }).released, false);
+  probe.startTimes = realStartTimes;
+  // CONTROL: once the gateway is gone, release removes the record, and the next start is clean.
+  probe.live.delete(101);
+  assert.deepEqual(agent.release({ pid: 100 }), { released: true });
+  assert.deepEqual(agent.release({ pid: 555 }), { released: false, reason: "not-the-holder" });
+});
+
+test("AgentLease: seenAliveAtMs is stamped BEFORE the claim observes anything", () => {
+  const probe = host({ 100: T0 });
+  let clock = 5_000;
+  const agent = lease(probe, { now: () => clock });
+  const realTable = probe.processTable.bind(probe);
+  probe.processTable = () => { clock += 10_000; return realTable(); };
+  fs.mkdirSync(agent.directory, { recursive: true });
+  fs.writeFileSync(agent.file, JSON.stringify({ version: LEASE_VERSION, agentId: "agent-a", instance: { pid: 999, startedAtMs: T0 } }));
+  agent.claim({ pid: 100, intent: "start" });
+  assert.equal(agent.read().instance.seenAliveAtMs, 5_000, "stamped after the table read, which widens the reused-pid window");
+});
+
 test("AgentLease: attach is ignored for an instance that no longer holds the lease", () => {
   const probe = host({ 100: T0, 101: T0 + 5 });
   const agent = lease(probe);
@@ -202,21 +254,18 @@ test("AgentLease: attach is ignored for an instance that no longer holds the lea
   assert.deepEqual(agent.attach({ instance: 100, pid: 555, kind: "gateway" }), { attached: false, reason: "not-running" });
 });
 
-test("AgentLease: a held lock makes a start wait, then fail; an old, empty or old-format lock is taken over", () => {
-  // 123 is alive and started before the lock was written: the old helper's pid-only lock, still held.
+test("AgentLease: a held lock makes a start wait, then fail; an old or empty lock is taken over", () => {
+  // 123 is alive and started before it took the lock: a live holder.
   const probe = host({ 100: T0, 123: T0 - 1_000 });
   const agent = lease(probe);
   fs.mkdirSync(agent.directory, { recursive: true });
   const lock = `${agent.file}.lock`;
-  fs.writeFileSync(lock, "123");
+  fs.writeFileSync(lock, JSON.stringify({ pid: 123, atMs: Date.now() }));
   assert.throws(() => agent.claim({ pid: 100 }), LeaseBusyError);
   const old = new Date(Date.now() - 121_000);
   fs.utimesSync(lock, old, old);
   assert.equal(agent.claim({ pid: 100 }).decision, "claim");
   assert.equal(fs.existsSync(lock), false, "the lock is released after the claim");
-  // The same old format naming a dead holder is taken over at once.
-  fs.writeFileSync(lock, "124");
-  assert.equal(agent.claim({ pid: 100 }).decision, "claim");
   // A lock naming nobody (a crash between create and write) waits briefly, then goes.
   fs.writeFileSync(lock, "");
   assert.throws(() => agent.claim({ pid: 100 }), LeaseBusyError);
@@ -276,7 +325,7 @@ test("identify: an entry recorded with no start time is still decided by when it
   assert.equal(identify({ seenAliveAtMs: T0 }, { alive: true, startedAt: T0 - 60_000 }), "ours");
   assert.equal(identify({ seenAliveAtMs: T0 }, { alive: true, startedAt: T0 }), "ours");
   assert.equal(identify({ seenAliveAtMs: T0 }, { alive: true, startedAt: T0 + 1 }), "reused", "started after it was seen: another process");
-  assert.equal(identify({ seenAliveAtMs: T0 }, { alive: true, startedAt: null }), "unverified");
+  assert.equal(identify({ seenAliveAtMs: T0 }, { alive: true, startedAt: null }), "unknown");
   assert.equal(identify({ startedAtMs: T0, seenAliveAtMs: T0 + 90_000 }, { alive: true, startedAt: T0 + 60_000 }), "reused", "a recorded start time wins");
   assert.equal(START_TIME_TOLERANCE_MS, 2_000);
 });
@@ -385,8 +434,8 @@ test("CLI: a start that finds another start of the agent still holding the lock 
 test("identify: ours only when alive with the recorded start, within the tolerance", () => {
   const entry = { startedAtMs: T0 };
   assert.equal(identify(entry, { alive: false, startedAt: T0 }), "gone");
-  assert.equal(identify(entry, { alive: true, startedAt: null }), "unverified");
-  assert.equal(identify({}, { alive: true, startedAt: T0 }), "unverified");
+  assert.equal(identify(entry, { alive: true, startedAt: null }), "unknown");
+  assert.equal(identify({}, { alive: true, startedAt: T0 }), "unknown");
   assert.equal(identify(entry, { alive: true, startedAt: T0 + START_TIME_TOLERANCE_MS }), "ours");
   assert.equal(identify(entry, { alive: true, startedAt: T0 + START_TIME_TOLERANCE_MS + 1 }), "reused");
 });
@@ -397,10 +446,10 @@ test("start time parsers read what each platform prints", () => {
   assert.equal(parseLinuxStartedAt(stat, "cpu 1 2 3\nbtime 1700000000\n"), (1700000000 + 2500) * 1000);
   assert.equal(parseLinuxStartedAt("no paren", "btime 1"), null);
   assert.equal(parseLinuxStartedAt(stat, "no boot line"), null);
-  const win = parseWindowsStartedAt("63780 2026-09-15T11:00:04.4084780Z\r\n102488 2026-09-15T11:00:04.4192190Z\r\ngarbage\r\n");
+  const win = parseStartedAtLines("63780 2026-09-15T11:00:04.4084780Z\r\n102488 2026-09-15T11:00:04.4192190Z\r\ngarbage\r\n");
   assert.deepEqual([...win.keys()], [63780, 102488]);
   assert.equal(win.get(63780), Date.parse("2026-09-15T11:00:04.408Z"));
-  const ps = parsePsStartedAt("  501 Tue Sep 15 10:00:00 2026\n");
+  const ps = parseStartedAtLines("  501 Tue Sep 15 10:00:00 2026\n");
   assert.equal(ps.get(501), new Date(2026, 8, 15, 10, 0, 0).getTime());
 });
 
@@ -524,12 +573,16 @@ test("CLI: 75 means refused, and every failure of the helper itself exits 0 with
   assert.match(lines.at(-1), /agent-a is already running \(process pid 100/);
   assert.equal(runLease(["claim", "--agent=agent-a", "--pid=200", "--intent=replace"], { err, lease: make }), 0);
   assert.match(lines.at(-1), /stopped process pid 100/);
-  for (const bad of [["claim", "--agent", "a/b", "--pid", "5"], ["claim", "--pid", "x"], ["nope"], ["attach", "--agent", "agent-a", "--pid", "5"]]) {
+  for (const bad of [["claim", "--agent", "a/b", "--pid", "5"], ["claim", "--pid", "x"], ["nope"], ["attach", "--agent", "agent-a", "--pid", "5"], ["claim", "--agnet", "agent-a", "--pid", "5"]]) {
     assert.equal(runLease(bad, { err, lease: make, env: {} }), 0, bad.join(" "));
     assert.match(lines.at(-1), /WARN/);
   }
   assert.equal(runLease(["release", "--agent", "agent-a", "--pid", "200"], { err, lease: make }), 0);
   assert.equal(fs.existsSync(path.join(directory, "agent-a.json")), false);
+});
+
+test("parseLeaseArgs: a misspelt flag is refused by name, not read as a missing value", () => {
+  assert.throws(() => parseLeaseArgs(["claim", "--agent", "a", "--agnet", "b", "--pid", "5"], {}), /unknown flag --agnet/);
 });
 
 test("parseLeaseArgs: instance comes from AIFY_AGENT_LEASE, intent from the mode", () => {

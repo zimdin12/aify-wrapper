@@ -17,7 +17,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { quoteArgument, replayCommand } from "../lib/herdr-replay.mjs";
+import { quoteArgument, replayCommand, restoreArgv } from "../lib/herdr-replay.mjs";
 
 test("the shape the original proof used still works, and is the control", () => {
   assert.deepEqual(replayCommand(["echo", "RESTORED_BY_THE_PLUGIN"]), {
@@ -77,4 +77,13 @@ test("an empty argv and an empty argument are both refused", () => {
   // All or nothing: one bad argument refuses the whole line, because a command with an argument
   // dropped is worse than a command not replayed.
   assert.equal(replayCommand(["claude-aify", "ok", "bad $x"]).ok, false);
+});
+
+test("a restore replays the recorded argv as an AUTOMATIC start, so a live instance refuses it", () => {
+  // A pane is a terminal: without this the launcher reads a restore as a person and replaces the agent.
+  assert.deepEqual(restoreArgv(["claude-aify", "--aify-agent", "a"]), ["claude-aify", "--aify-start-intent=start", "--aify-agent", "a"]);
+  assert.deepEqual(restoreArgv(["claude-aify", "--aify-start-intent=replace", "--resume"]), ["claude-aify", "--aify-start-intent=start", "--resume"],
+    "a replayed command carried two intents, or kept the recorded replace");
+  assert.deepEqual(restoreArgv([]), []);
+  assert.equal(replayCommand(restoreArgv(["claude-aify"])).ok, true, "the flag must survive the quoting any pane shell needs");
 });

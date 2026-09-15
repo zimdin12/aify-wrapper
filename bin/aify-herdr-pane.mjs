@@ -30,7 +30,7 @@ import { codexHookArgs, codexHooksTrusted } from "../lib/codex-herdr-hooks.mjs";
 import { isMainModule } from "../lib/main-module.mjs";
 import { herdr, listPanes } from "../lib/herdr-cli.mjs";
 import { paneLabel, parsePaneLabel, readPaneContext, renamePaneArgv, reportAgentArgv } from "../lib/herdr-pane.mjs";
-import { replayCommand } from "../lib/herdr-replay.mjs";
+import { replayCommand, restoreArgv } from "../lib/herdr-replay.mjs";
 import { HerdrPaneLedger, restorePlan } from "../lib/herdr-restore.mjs";
 
 /** An operator waiting to start an agent gets at most this long per Herdr call, twice. */
@@ -144,7 +144,7 @@ function restore({ env = process.env, ledger, cli = { herdr, listPanes }, now = 
   const restored = [];
   const refused = [];
   for (const entry of plan) {
-    const replay = replayCommand(entry.argv);
+    const replay = replayCommand(restoreArgv(entry.argv));
     if (!replay.ok) {
       refused.push({ paneId: entry.paneId, why: replay.why });
       continue;

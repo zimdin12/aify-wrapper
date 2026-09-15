@@ -1,5 +1,7 @@
 # Sourced by the launchers: the shell half of lib/agent-lease.mjs, written once instead of four times.
 #
+#   aify_lease_take_intent "$@"                                 consumes --aify-start-intent=start|replace;
+#                                                               the launcher then runs `set -- "${AIFY_LEASE_ARGS[@]}"`
 #   aify_lease_claim <bridge-dir> <agent-id> <runtime> <mode>   returns 75 when refused, 0 otherwise
 #   aify_lease_attach <pid> <kind>                              a process this instance started detached
 #   aify_lease_release                                          on the launcher's way out
@@ -12,6 +14,22 @@
 # parent there is a short-lived stub rather than this shell, so the Windows pid comes from
 # /proc/$$/winpid. `$$` is this shell's pid in a subshell too, so the lookup is safe inside `$(...)`.
 
+# THE INTENT AS AN ARGUMENT, because a Herdr restore TYPES its command into a pane whose shell may be
+# PowerShell, cmd or bash, and no environment prefix means the same thing in all three. A restore is
+# automatic, so it passes `--aify-start-intent=start` and is refused by a live instance instead of
+# replacing it. One token, consumed here, so the runtime never sees it and the recorded argv never
+# carries it.
+aify_lease_take_intent() {
+  AIFY_LEASE_ARGS=()
+  local _aify_arg
+  for _aify_arg in "$@"; do
+    case "$_aify_arg" in
+      --aify-start-intent=*) AIFY_START_INTENT="${_aify_arg#--aify-start-intent=}" ;;
+      *) AIFY_LEASE_ARGS+=("$_aify_arg") ;;
+    esac
+  done
+}
+
 aify_lease_pid() {
   if [ -r "/proc/$1/winpid" ]; then
     cat "/proc/$1/winpid"
@@ -21,6 +39,10 @@ aify_lease_pid() {
 }
 
 aify_lease_claim() {
+  # The intent was for THIS start, whichever way this function returns: a shell the agent opens later
+  # must not hand it to a launch of its own.
+  local _aify_intent="${AIFY_START_INTENT:-}"
+  unset AIFY_START_INTENT
   AIFY_LEASE_AGENT=""
   [ -n "${2:-}" ] || return 0
   command -v node >/dev/null 2>&1 || return 0
@@ -32,9 +54,7 @@ aify_lease_claim() {
   AIFY_LEASE_PID="$(aify_lease_pid "$$")"
   _aify_lease_status=0
   node "$AIFY_LEASE_HELPER" claim --agent "$2" --pid "$AIFY_LEASE_PID" --runtime "${3:-}" --mode "${4:-}" \
-    ${AIFY_START_INTENT:+--intent "$AIFY_START_INTENT"} </dev/null || _aify_lease_status=$?
-  # The intent was for THIS start. A shell the agent opens later must not hand it to a launch of its own.
-  unset AIFY_START_INTENT
+    ${_aify_intent:+--intent "$_aify_intent"} </dev/null || _aify_lease_status=$?
   [ "$_aify_lease_status" = 75 ] && return 75
   AIFY_LEASE_AGENT="$2"
   export AIFY_AGENT_LEASE="$AIFY_LEASE_PID"

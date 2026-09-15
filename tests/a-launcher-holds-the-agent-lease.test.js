@@ -115,9 +115,15 @@ for (const client of ["claude", "codex", "hermes", "pi"]) {
       assert.equal(w.runtimeRan().length, 1, "a nested start ran a runtime");
       assert.ok(alive(first.pid), "a nested start stopped the instance it runs inside");
 
-      const third = spawnSync("bash", [w.launcher, "--aify-agent", id], { encoding: "utf8", env: w.env({ STUB_EXIT: "0", AIFY_START_INTENT: "replace" }), timeout: 60_000 });
+      // The intent as a LAUNCHER ARGUMENT (what a Herdr restore passes): honoured, and never handed on.
+      const byFlag = spawnSync("bash", [w.launcher, "--aify-start-intent=start", "--aify-agent", id], { encoding: "utf8", env: w.env({ STUB_EXIT: "0" }), timeout: 60_000 });
+      assert.equal(byFlag.status, 75, `a start marked by the argument was not refused:\n${byFlag.stderr}`);
+      assert.equal(w.runtimeRan().length, 1, "a refused start ran a runtime");
+
+      const third = spawnSync("bash", [w.launcher, "--aify-start-intent=replace", "--aify-agent", id], { encoding: "utf8", env: w.env({ STUB_EXIT: "0" }), timeout: 60_000 });
       assert.equal(third.status, 0, third.stderr);
       assert.equal(w.runtimeRan().length, 2, "the explicit start did not run its runtime");
+      assert.ok(!w.runtimeRan().some((line) => line.includes("--aify-start-intent")), `the runtime was handed the lease's argument: ${w.runtimeRan()}`);
       const gone = await Promise.race([exited.then(() => true), new Promise((r) => setTimeout(() => r(false), 15_000))]);
       assert.ok(gone, "the first launcher survived an explicit start");
       if (client === "pi") {

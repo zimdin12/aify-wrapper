@@ -22,10 +22,14 @@ AIFY_LEASE_SH="@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-lease.sh"
 if [ -r "$AIFY_LEASE_SH" ]; then
   . "$AIFY_LEASE_SH"
 else
+  aify_lease_take_intent() { AIFY_LEASE_ARGS=("$@"); }
   aify_lease_claim() { return 0; }
   aify_lease_attach() { :; }
   aify_lease_release() { :; }
 fi
+# `--aify-start-intent=start|replace` is the lease's, never the runtime's: a Herdr restore passes it.
+aify_lease_take_intent "$@"
+set -- ${AIFY_LEASE_ARGS[@]+"${AIFY_LEASE_ARGS[@]}"}
 
 # ── Herdr: what this invocation was, captured before anything consumes it ───
 #
