@@ -346,6 +346,22 @@ export function modeFor(argv = []) {
   return { ok: false, error: `unknown argument ${JSON.stringify(words.join(" "))}; expected "env" or nothing` };
 }
 
+/**
+ * The flag a herdr-SHAPED command means, or null.
+ *
+ * WHY. An operator holding `herdr` in their hands reaches for `herdr-aify server stop`, and an
+ * operator who has just read `herdr server stop` reaches for `stop`. Both were refused with a usage
+ * line while the server they meant kept running (measured 2026-09-16: `herdr server stop` cannot see
+ * this profile's socket at all, so the refusal was the only answer they got from either command).
+ * The verbs are herdr's own spelling, which is the whole point of accepting them.
+ */
+export function flagForSubcommand(argv = []) {
+  const words = argv.filter(arg => !String(arg).startsWith("-")).map(arg => String(arg));
+  const said = words[0] === "server" ? words.slice(1) : words;
+  if (said.length !== 1) return null;
+  return { stop: "--stop", status: "--status", prune: "--prune" }[said[0]] ?? null;
+}
+
 export function shouldAttach({ argv = [], io = process } = {}) {
   if (argv.includes("--no-attach")) return false;
   return Boolean(io.stdout?.isTTY && io.stdin?.isTTY);
@@ -566,16 +582,20 @@ async function run({
 
 const USAGE = [
   "usage: herdr-aify [env] [--no-attach]",
-  "       herdr-aify --status | --stop | --prune",
+  "       herdr-aify --status | --stop | --prune   (or: status, stop, prune -- `server stop` too)",
   "",
   "  herdr-aify        this host's herdr, for RESIDENT sessions. claude-aify panes claim themselves",
   "                    here and come back after a restart. Leaving it DETACHES; agents keep running.",
   "  herdr-aify env    a fresh instance with a dedicated aify-env, for MANAGED work. Dies with the",
   "                    command, and never adopts a previous instance's workers.",
-  "  --stop            end whichever of the two this host is running.",
+  "  --stop            end whichever of the two this host is running. `herdr server stop` cannot:",
+  "                    this profile keeps its own socket, which is what isolates it from your herdr.",
 ].join(String.fromCharCode(10)) + String.fromCharCode(10);
 
 async function main(argv) {
+  // `stop`, `server stop`, `status`, `prune`: the spelling herdr itself uses, answered rather than refused.
+  const asFlag = flagForSubcommand(argv);
+  if (asFlag) argv = [...argv, asFlag];
   if (argv.includes("--status")) {
     process.stdout.write(`${JSON.stringify(invocationsOnDisk(), null, 1)}\n`);
     return 0;

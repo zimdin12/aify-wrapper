@@ -24,8 +24,28 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 
-import { modeFor } from "../bin/herdr-aify.mjs";
+import { flagForSubcommand, modeFor } from "../bin/herdr-aify.mjs";
 import { HerdrAifyInstance } from "../lib/herdr-supervisor.mjs";
+
+test("the verbs herdr itself uses are ANSWERED, not refused", () => {
+  // MEASURED 2026-09-16, on this host: the operator ran `herdr server stop` against a running aify
+  // herdr and got "server is not running or cannot be reached at ...\\herdr\\herdr.sock" -- that is the
+  // DEFAULT socket, and this profile keeps its own, which is the isolation working as designed. They
+  // then reached for `herdr-aify server stop`, which was refused with a usage line while the server
+  // they meant kept running. Both spellings now mean the flag.
+  assert.equal(flagForSubcommand(["stop"]), "--stop");
+  assert.equal(flagForSubcommand(["server", "stop"]), "--stop");
+  assert.equal(flagForSubcommand(["status"]), "--status");
+  assert.equal(flagForSubcommand(["prune"]), "--prune");
+  assert.equal(flagForSubcommand(["server", "prune", "--no-attach"]), "--prune", "a flag beside the verb is still that verb");
+  // CONTROLS: the modes this command already has keep their meaning, and a word it does not know is
+  // still refused rather than guessed at -- which is the defect this file exists for.
+  assert.equal(flagForSubcommand([]), null, "a bare launch is the resident herdr, not a subcommand");
+  assert.equal(flagForSubcommand(["env"]), null, "`env` is a mode");
+  assert.equal(flagForSubcommand(["server"]), null, "`server` alone asks for nothing this can do");
+  assert.equal(flagForSubcommand(["server", "start"]), null, "a verb this does not implement is not silently mapped");
+  assert.equal(flagForSubcommand(["stop", "env"]), null, "two words are not a subcommand");
+});
 
 test("THE WORD THAT WAS IGNORED: `env` asks for a daemon, nothing asks for none", () => {
   assert.deepEqual(modeFor([]), { ok: true, withEnv: false });
