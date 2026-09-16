@@ -97,7 +97,10 @@ test("THE CALL SITE: a run with a terminal ATTACHES, and ends when the session i
   // isolation says nothing about whether `run` ever calls it -- and it did not, for the feature's
   // entire life, while every phase reported ok and the suite was green.
   const { run } = await import("../bin/herdr-aify.mjs");
-  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "aify-herdr-callsite-"));
+  // A SHORT PREFIX, because this run binds real Unix sockets under the root. `npm test` already nests the
+  // temp dir one level deep, and "aify-herdr-callsite-" took the owner socket to 119 bytes on Linux,
+  // past the 107 a socket path can hold -- the run then died before it started, which read as "never attached".
+  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ah-"));
   const invocation = randomUUID();
   const events = [];
   let endSession = null;
@@ -139,7 +142,8 @@ test("NEGATIVE CONTROL: with no terminal the same run stays headless", { timeout
   // Without this, a run that attached unconditionally would pass the test above -- and would spray a
   // TUI into whatever pipe a scripted caller was reading.
   const { run } = await import("../bin/herdr-aify.mjs");
-  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "aify-herdr-headless-"));
+  // Short for the same reason as the call-site test above: real Unix sockets are bound under this root.
+  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ah-"));
   const invocation = randomUUID();
   const events = [];
   let stopServer = null;

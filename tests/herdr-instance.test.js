@@ -27,14 +27,15 @@ import {
   buildInstanceContext,
   dedicatedDaemonEnv,
   instancePaths,
+  unixSocketPathMax,
   writeInstanceContext,
 } from "../lib/herdr-instance.mjs";
 
 const ENV_REPO = process.env.AIFY_ENV_REPO || path.join(os.homedir(), "projects", "aify-env");
 
-/** A fresh profile root per test, under the run's own temp root. */
+/** A fresh profile root per test, under the run's own temp root, with a prefix short enough for a Unix socket. */
 function profile() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "aify-herdr-profile-"));
+  return fs.mkdtempSync(path.join(os.tmpdir(), "hp-"));
 }
 
 function minted({ platform = process.platform } = {}) {
@@ -66,6 +67,23 @@ test("windows endpoints are named pipes, and the names carry the invocation", ()
   const paths = instancePaths({ profileRoot: path.join(path.parse(process.cwd()).root, "p"), invocation, platform: "win32" });
   assert.equal(paths.ownerEndpoint, `\\\\.\\pipe\\aify-herdr-owner-${invocation}`);
   assert.equal(paths.herdrApiEndpoint, `\\\\.\\pipe\\aify-herdr-api-${invocation}`);
+});
+
+test("a profile root too deep for a Unix socket is refused by name, not left to fail as EADDRINUSE", () => {
+  // Measured on Linux: a 119-byte owner endpoint bound a truncated path and `listen` answered
+  // EADDRINUSE, naming a cause that did not exist. The limit is the platform's, so both are driven.
+  const base = path.parse(process.cwd()).root;
+  const invocation = randomUUID();
+  for (const platform of ["linux", "darwin"]) {
+    const deep = path.join(base, "d".repeat(unixSocketPathMax(platform)));
+    assert.throws(() => instancePaths({ profileRoot: deep, invocation, platform }), /too deep for a socket/);
+    // CONTROL: a root that fits is accepted, so the refusal is about length and nothing else.
+    const fits = instancePaths({ profileRoot: path.join(base, "p"), invocation, platform });
+    assert.ok(Buffer.byteLength(fits.ownerEndpoint) <= unixSocketPathMax(platform));
+  }
+  // Windows endpoints are named pipes, which this limit does not govern.
+  const deep = path.join(base, "d".repeat(200));
+  assert.doesNotThrow(() => instancePaths({ profileRoot: deep, invocation, platform: "win32" }));
 });
 
 test("an invocation that is not a v4 uuid, and a relative root, are refused", () => {

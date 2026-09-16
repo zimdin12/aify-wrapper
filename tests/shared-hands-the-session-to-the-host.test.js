@@ -27,6 +27,8 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import { CLIENTS_ALL_RENDERS, sealedPath, withPath } from "./sealed-path.mjs";
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
 const posix = (p) => p.split(String.fromCharCode(92)).join("/");
@@ -42,12 +44,15 @@ let RENDERED = null;
 function renderAll() {
   if (RENDERED) return RENDERED;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-shared-"));
+  // SEALED PATH. `--all` renders a launcher per runtime it FINDS, so with the real PATH this file read
+  // whatever the host had installed -- a host with only codex failed every claude assertion here.
+  const sealed = sealedPath(CLIENTS_ALL_RENDERS);
   const result = spawnSync("bash", [
     INSTALL, "--all", "--endpoint", "http://127.0.0.2:1", "--render-only", posix(dir),
-  ], { encoding: "utf8", timeout: 180_000 });
+  ], { encoding: "utf8", timeout: 180_000, env: withPath(process.env, sealed.PATH) });
   assert.equal(result.status, 0, result.stderr);
-  // ONLY WHAT WAS ACTUALLY WRITTEN. `--all` does not render every template: pi installs are
-  // deliberately disabled, so `pi-aify.sh.in` exists and produces no launcher. Reading the template
+  // ONLY WHAT WAS ACTUALLY WRITTEN. `--all` does not render every template: no `pi` runtime is on the
+  // sealed PATH, so `pi-aify.sh.in` exists and produces no launcher. Reading the template
   // list and assuming a file made every assertion below fail with ENOENT on a repo behaving
   // correctly -- and the test that NAMES the gap is below, so a template that stops rendering for a
   // NEW reason is visible rather than quietly skipped.

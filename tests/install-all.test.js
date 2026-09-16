@@ -8,15 +8,18 @@
 // PATH is sealed to a directory this test builds. Without that, the suite would measure whichever
 // coding-agent CLIs the developer happens to have, and pass or fail for reasons unrelated to the code.
 // The seal carries exactly three things: stub runtimes we placed, a `node` shim (the detector runs
-// under node), and the directory holding bash (install.sh shells out to render.sh).
+// under node), and bash with its tools (install.sh shells out to render.sh). It is built by
+// `sealed-path.mjs`, which says why bash's own directory cannot simply be put on PATH.
 
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+
+import { HARNESS_CLIENTS, RUNTIME_COMMANDS, sealedPath } from "./sealed-path.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -24,44 +27,30 @@ const INSTALL = path.join(ROOT, "install.sh");
 /** Set, and reachable by nothing: a wrapper under test must never find a real service. */
 const NOWHERE = "http://127.0.0.2:1";
 
-const WIN = process.platform === "win32";
-const PATH_SEP = WIN ? ";" : ":";
-
-/** Where bash lives, in the form this platform's PATH wants. Needed because install.sh runs render.sh. */
-function bashDir() {
-  const posix = execFileSync("bash", ["-c", "dirname \"$(command -v bash)\""], { encoding: "utf8" }).trim();
-  if (!WIN) return posix;
-  return execFileSync("bash", ["-c", `cygpath -w "${posix}"`], { encoding: "utf8" }).trim();
-}
-
 /**
  * A sealed workspace: a PATH containing only a node shim, bash, and whichever stub runtimes are asked
  * for. Returns the directories and the PATH string to run with.
  */
 function sealed(runtimes) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-all-"));
-  const stubs = path.join(dir, "stubs");
+  const { dir, stubs, PATH } = sealedPath(runtimes);
   const out = path.join(dir, "out");
-  fs.mkdirSync(stubs, { recursive: true });
   fs.mkdirSync(out, { recursive: true });
-
-  // A shim rather than node's own directory, because that directory also holds real runtimes on this
-  // machine — including one of the four. Borrowing it would silently un-seal the test.
-  const nodeReal = process.execPath;
-  fs.writeFileSync(path.join(stubs, "node"), `#!/bin/sh\nexec "${nodeReal.replace(/\\/g, "/")}" "$@"\n`);
-  fs.chmodSync(path.join(stubs, "node"), 0o755);
-
-  for (const runtime of runtimes) {
-    fs.writeFileSync(path.join(stubs, runtime), "#!/bin/sh\nexit 0\n");
-    fs.chmodSync(path.join(stubs, runtime), 0o755);
-  }
-
-  const stubsForPath = WIN
-    ? execFileSync("bash", ["-c", `cygpath -w "${stubs.replace(/\\/g, "/")}"`], { encoding: "utf8" }).trim()
-    : stubs;
-
-  return { dir, stubs, out, PATH: [stubsForPath, bashDir()].join(PATH_SEP) };
+  return { dir, stubs, out, PATH };
 }
+
+test("SEAL CONTROL: the runtime names the seal keeps out are derived, including an alias", () => {
+  // The seal is only as good as the names it excludes, and those are read out of the templates. An
+  // extractor that stopped matching would exclude only the client names -- and pi's CLI is `omp`, so
+  // a host with omp in its tool directory would leak it while every assertion here stayed green.
+  for (const client of HARNESS_CLIENTS) assert.ok(RUNTIME_COMMANDS.includes(client), `${client} is not excluded`);
+  assert.ok(RUNTIME_COMMANDS.includes("omp"), `pi's runtime was not read from its template: ${RUNTIME_COMMANDS}`);
+  const { dir, PATH: p } = sealed([]);
+  const found = spawnSync("bash", ["-c", `for c in ${RUNTIME_COMMANDS.join(" ")}; do command -v "$c"; done; exit 0`], {
+    encoding: "utf8", env: { PATH: p },
+  });
+  assert.equal(found.stdout.trim(), "", `the sealed PATH still resolves a runtime:\n${found.stdout}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
 
 function runInstall({ PATH: sealedPath, args }) {
   return spawnSync("bash", [INSTALL, ...args], {

@@ -23,10 +23,18 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { sealedPath, withPath } from "./sealed-path.mjs";
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
 const ENDPOINT = "http://10.20.30.40:8800";
 const posix = (p) => p.split(String.fromCharCode(92)).join("/");
+
+/**
+ * A stub `claude` and nothing else. `--check` refuses with 127 when the runtime is not on PATH, which
+ * on a host without claude failed all four reports here before they printed a line about MCP.
+ */
+const SEALED = sealedPath(["claude"]);
 
 function render(extraArgs = []) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-dropped-"));
@@ -42,7 +50,7 @@ function check(launcher, env = {}) {
   const r = spawnSync("bash", [launcher, "--check"], {
     encoding: "utf8",
     timeout: 120_000,
-    env: { ...process.env, AIFY_CLAUDE_STRICT_MCP: "", HARNESS_MCP_COMMAND: "", ...env },
+    env: withPath({ ...process.env, AIFY_CLAUDE_STRICT_MCP: "", HARNESS_MCP_COMMAND: "", ...env }, SEALED.PATH),
   });
   assert.equal(r.status, 0, `--check exited ${r.status}: ${r.stdout}${r.stderr}`);
   return r.stdout;

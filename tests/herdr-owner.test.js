@@ -12,6 +12,9 @@
 // invocation, put a service in the registry, leave advertisement on. A test that only ever shows the
 // happy path cannot tell an admission gate from an open door.
 
+// SHORT TEMP PREFIXES THROUGHOUT: these roots hold real Unix sockets, and a socket path can be at most
+// 107 bytes on Linux. Under `npm test`'s nested temp root the longer prefixes reached 116, which bound a
+// truncated path and passed by luck -- and `instancePaths` now refuses a root that deep by name.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import net from "node:net";
@@ -44,7 +47,7 @@ const skipWithoutEnv = envBootstrap ? false : `no aify-env checkout at ${ENV_REP
 
 /** A minted, written invocation plus a live owner for it. The caller closes what it opens. */
 async function invocation({ open = true } = {}) {
-  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "aify-herdr-owner-"));
+  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ho-"));
   const context = buildInstanceContext({ profileRoot, invocation: randomUUID(), profileRef: "integrated" });
   const contextFile = writeInstanceContext(context);
   const owner = new HerdrOwner(context);
@@ -240,7 +243,7 @@ test("a probe proves liveness by the echoed nonce, not by something listening", 
 // from WSL as `listen EACCES: permission denied .../invocations/<uuid>/owner.sock`, with every test
 // here green because every test used the fixture's order.
 test("an owner listens BEFORE the context is written, as the launcher starts it", { skip: process.platform === "win32" && "unix sockets" }, async () => {
-  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "aify-herdr-owner-"));
+  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ho-"));
   const context = buildInstanceContext({ profileRoot, invocation: randomUUID(), profileRef: "integrated" });
   assert.equal(fs.existsSync(context.root), false, "precondition: nothing has created the invocation yet");
   const owner = new HerdrOwner(context);
@@ -267,7 +270,7 @@ test("a named-pipe endpoint creates no directory", async () => {
 });
 
 test("a profile with no pointer, and one with an unreadable pointer, are free", async () => {
-  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "aify-herdr-free-"));
+  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "hf-"));
   assert.deepEqual(await profileOwnerState(profileRoot), { owned: false, reason: "no-pointer" });
   fs.writeFileSync(profileOwnerFile(profileRoot), "{ not json");
   assert.deepEqual(await profileOwnerState(profileRoot), { owned: false, reason: "no-pointer" });
@@ -292,7 +295,7 @@ test("a live owner makes the profile owned; killing it makes the pointer stale, 
 });
 
 test("a launcher that lost the race cannot release the winner's profile", async () => {
-  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "aify-herdr-race-"));
+  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "hr-"));
   const winner = randomUUID();
   writeProfileOwner(profileRoot, { invocation: winner, ownerEndpoint: "\\\\.\\pipe\\x", pid: 1 });
   assert.equal(clearProfileOwner(profileRoot, randomUUID()), false, "a loser removed the winner's pointer");

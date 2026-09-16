@@ -31,6 +31,8 @@ import test from "node:test";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import { CLIENTS_ALL_RENDERS, sealedPath, withPath } from "./sealed-path.mjs";
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
 const LF = String.fromCharCode(10);
@@ -51,9 +53,13 @@ function world() {
   const bin = path.join(dir, "bin");
   fs.mkdirSync(bin, { recursive: true });
 
+  // RENDERED UNDER A SEALED PATH. `--all` writes a launcher only for a runtime it finds, so the real
+  // PATH made this file's population whatever the host had installed: one launcher on a host with
+  // only codex, and "nothing to test" for a reason that has nothing to do with `--shared`.
+  const sealed = sealedPath(CLIENTS_ALL_RENDERS);
   const result = spawnSync("bash", [
     INSTALL, "--all", "--endpoint", "http://127.0.0.2:1", "--render-only", posix(dir),
-  ], { encoding: "utf8", timeout: 180_000 });
+  ], { encoding: "utf8", timeout: 180_000, env: withPath(process.env, sealed.PATH) });
   assert.equal(result.status, 0, result.stderr);
 
   const rendered = LAUNCHERS.filter((name) => fs.existsSync(path.join(dir, name)));

@@ -34,6 +34,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
+import { RUNTIME_COMMANDS, sealedPath, withPath } from "./sealed-path.mjs";
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, "..");
 const RENDER = path.join(ROOT, "render.sh");
@@ -58,10 +60,13 @@ function renderPi() {
 
 test("--check exits 0 and reports, with an agent id and an endpoint set", () => {
   const { dir, out } = renderPi();
+  // EVERY RUNTIME STUBBED, pi's `omp` included. `--check` exits 127 when the runtime is missing, so on
+  // a host without omp this failed on the runtime lookup and never reached the report it is about.
+  const sealed = sealedPath(RUNTIME_COMMANDS);
   try {
     const result = spawnSync("bash", [out, "--check", "--aify-agent=sc-architect"], {
       encoding: "utf8",
-      env: { ...process.env, AIFY_COMMS_URL: NOWHERE, AIFY_AGENT_ID: "sc-architect" },
+      env: withPath({ ...process.env, AIFY_COMMS_URL: NOWHERE, AIFY_AGENT_ID: "sc-architect" }, sealed.PATH),
     });
     assert.equal(
       result.status, 0,
