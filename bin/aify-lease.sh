@@ -76,7 +76,8 @@ aify_lease_claim() {
   AIFY_LEASE_PID="$(aify_lease_pid "$$")"
   _aify_lease_status=0
   node "$AIFY_LEASE_HELPER" claim --agent "$2" --pid "$AIFY_LEASE_PID" --runtime "${3:-}" --mode "${4:-}" \
-    --identity "${AIFY_LEASE_IDENTITY:-recovered}" ${_aify_intent:+--intent "$_aify_intent"} </dev/null || _aify_lease_status=$?
+    --identity "${AIFY_LEASE_IDENTITY:-recovered}" ${_aify_intent:+--intent "$_aify_intent"} \
+    ${AIFY_LEASE_INSIDE_SESSION:+--inside 1} </dev/null || _aify_lease_status=$?
   [ "$_aify_lease_status" = 75 ] && return 75
   # ONLY A CLAIM THAT SUCCEEDED HOLDS THE LEASE. Any other status is the helper failing, which lets the start
   # through without the guarantee -- and without acting as the holder: a launcher that exported the lease
