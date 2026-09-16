@@ -7,7 +7,12 @@
 # its whole life. The launcher runs this from the agent's own hooks so the claim's state follows
 # the agent.
 #
-# WHICH PANE. A pane the launcher claimed is HERDR_PANE_ID. A managed worker runs under aify-env,
+# WHICH PANE. A pane the launcher claimed is AIFY_HERDR_PANE_ID -- the launcher's own copy of
+# HERDR_PANE_ID, kept because the launcher REMOVES HERDR_PANE_ID from a claimed agent's environment.
+# That variable is the one Herdr's own agent integration needs in order to report the pane under
+# Herdr's source, which would undo the claim and hand the pane back to Herdr's native resume; aify's
+# reports go on using the private copy. HERDR_PANE_ID stays as the fallback, so a launcher written
+# before that change still reports through an updated bridge. A managed worker runs under aify-env,
 # not in the pane that shows it, so aify-env names that pane in the file AIFY_HERDR_PANE_FILE points
 # at, once the pane exists. Until then there is nothing to report to.
 #
@@ -27,7 +32,7 @@ pane=""
 if [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then
   [ -r "$AIFY_HERDR_PANE_FILE" ] && pane="$(head -n 1 "$AIFY_HERDR_PANE_FILE" 2>/dev/null || true)"
 else
-  pane="${HERDR_PANE_ID:-}"
+  pane="${AIFY_HERDR_PANE_ID:-${HERDR_PANE_ID:-}}"
 fi
 case "$pane" in
   w[0-9]*:p[0-9]*) ;;

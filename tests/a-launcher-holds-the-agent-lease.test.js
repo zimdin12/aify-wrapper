@@ -206,6 +206,15 @@ for (const client of ["claude", "hermes"]) {
       assert.ok(alive(first.pid), "a host-composed managed start with a leaked marker stopped the live instance");
       assert.equal(w.runtimeRan().length, 1, "a refused start ran a runtime");
 
+      // AND WITH THE HOST'S OWN AGENT ID LEAKED BESIDE THE MARKER (external review, 2026-09-16). An aify-env
+      // older than the service's unset list hands a worker every name at once, so the environment names the
+      // HOST's agent while the command names the worker: the mode is dropped as another session's, and the
+      // named start read as a person and replaced the live instance.
+      const leaked = inTerminal(["bash", w.launcher, "--aify-agent", id], w.env({ ...hostComposed, AIFY_AGENT_ID: "some-other-agent", AIFY_COMMS_AGENT_ID: "some-other-agent" }));
+      assert.equal(leaked.status, 75, `a host-composed start carrying another agent's id was not refused:\n${leaked.stdout}`);
+      assert.ok(alive(first.pid), "a host-composed start carrying another agent's id stopped the live instance");
+      assert.equal(w.runtimeRan().length, 1, "a refused start ran a runtime");
+
       // CONTROL: the same terminal launch with no marker and no host values is a person naming the agent, and replaces.
       // Without it, a refusal above could be the terminal never reading as a person at all.
       const person = inTerminal(["bash", w.launcher, "--aify-agent", id], w.env({ STUB_EXIT: "0" }));

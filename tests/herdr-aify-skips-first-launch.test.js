@@ -45,6 +45,8 @@ test("the config goes where Herdr looks, inside the invocation's own config root
 test("THE WHOLE POINT: starting an instance leaves onboarding already answered", async () => {
   const profile = paths();
   const instance = new HerdrAifyInstance({
+    // Injected so this test does not depend on whether the machine running it has aify-env installed.
+    lookup: () => ({ ok: true, found: "aify-env", tried: [], why: null }),
     profileRoot: path.dirname(path.dirname(profile.root)),
     invocation: path.basename(profile.root),
     platform: "win32",
@@ -72,6 +74,8 @@ test("an existing config is never overwritten, and an unwritable one never fails
   fs.writeFileSync(config.file, "onboarding = false\n[theme]\nname = \"mine\"\n");
 
   const instance = new HerdrAifyInstance({
+    // Injected so this test does not depend on whether the machine running it has aify-env installed.
+    lookup: () => ({ ok: true, found: "aify-env", tried: [], why: null }),
     profileRoot: path.dirname(path.dirname(profile.root)),
     invocation: path.basename(profile.root),
     platform: "win32",

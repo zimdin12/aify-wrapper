@@ -178,9 +178,12 @@ that hands the session to the host, does not claim; the host's own run of the la
 
 1. `AIFY_START_INTENT`, or the launcher argument `--aify-start-intent=start|replace`, which is consumed
    and never reaches the runtime. An invalid value means `start`.
-2. A managed launch (`AIFY_SESSION_MODE=managed`) means `start`.
-3. A person who **names the agent on the command line** (`--aify-agent` or `--agent-id`) means `replace`.
-4. Anything else means `start`: an identity taken from the environment (`AIFY_AGENT_ID`,
+2. A launch made from **inside a running agent session** (a session marker is set) means `start`. Only the
+   word on its own command line replaces anything there: the environment's mode belongs to that session and
+   is dropped, so nothing else left can tell a host's managed launch from a person at a terminal.
+3. A managed launch (`AIFY_SESSION_MODE=managed`) means `start`.
+4. A person who **names the agent on the command line** (`--aify-agent` or `--agent-id`) means `replace`.
+5. Anything else means `start`: an identity taken from the environment (`AIFY_AGENT_ID`,
    `HARNESS_IDENTITY`) or recovered from a conversation (`--resume <id>`) is a guess about who is meant,
    and a guess never ends a live instance. On 2026-09-15 one came from a pane that had inherited another
    agent's session, and replaced that agent.

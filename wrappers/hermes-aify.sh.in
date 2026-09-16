@@ -123,6 +123,22 @@ if [ "${HERDR_ENV:-}" = "1" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then
   # its state. `|| AIFY_HERDR_CLAIM=""` keeps a failed claim from aborting under `set -e`.
   if [ "${HERDR_ENV:-}" = "1" ]; then
     AIFY_HERDR_CLAIM="$(node "$AIFY_HERDR_HELPER" claim --wrapper "${0##*/}" -- "${AIFY_HERDR_ARGV[@]}" 2>>"$AIFY_HERDR_LOG")" || AIFY_HERDR_CLAIM=""
+    # HERDR'S OWN AGENT INTEGRATION MUST NOT SPEAK FOR A PANE THIS CLAIM OWNS. Herdr installs a
+    # SessionStart hook into the agent's own configuration -- `HERDR_INTEGRATION_ID=hermes` -- and that
+    # hook runs INSIDE the agent this launcher starts. It sends `pane.report_agent_session` under Herdr's
+    # own source with the agent's session id, which OVERWRITES the `herdr:aify` report the claim just
+    # made. Herdr then persists a resumable session for the pane after all and, at the next start,
+    # natively types a BARE agent command into it: no wrapper, no lease, no bridge, and the aify restore
+    # refuses the pane because Herdr reported an agent on it. Measured 2026-09-16 against Herdr 0.9.0.
+    #
+    # THE HOOK GATES ON HERDR_PANE_ID, so taking that one variable out of the agent's environment is what
+    # stops it, and it stops nothing else. aify's own state hooks read the pane from AIFY_HERDR_PANE_ID
+    # instead, and a pane this launcher did NOT claim keeps its variable, its integration and Herdr's
+    # native resume exactly as before -- which is the half of the contract that must not regress.
+    if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] && [ -n "${HERDR_PANE_ID:-}" ]; then
+      export AIFY_HERDR_PANE_ID="$HERDR_PANE_ID"
+      unset HERDR_PANE_ID
+    fi
   fi
 fi
 

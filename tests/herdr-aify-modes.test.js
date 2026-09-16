@@ -48,6 +48,8 @@ function recorded() {
   const calls = [];
   const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "aify-herdr-mode-"));
   const instance = new HerdrAifyInstance({
+    // Injected so this test does not depend on whether the machine running it has aify-env installed.
+    lookup: () => ({ ok: true, found: "aify-env", tried: [], why: null }),
     profileRoot,
     invocation: randomUUID(),
     platform: "win32",
@@ -98,6 +100,8 @@ test("ENV MODE still does everything it did, and links the plugin too", async ()
 test("a plugin that will not link is reported, and does not fail the launch", async () => {
   const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "aify-herdr-mode-"));
   const instance = new HerdrAifyInstance({
+    // Injected so this test does not depend on whether the machine running it has aify-env installed.
+    lookup: () => ({ ok: true, found: "aify-env", tried: [], why: null }),
     profileRoot,
     invocation: randomUUID(),
     platform: "win32",

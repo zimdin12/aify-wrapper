@@ -112,6 +112,21 @@ test("startIntent: explicit wins; otherwise only a person who NAMED the agent re
   assert.equal(startIntent({}), "start", "a launch that says nothing about its identity is a guess, and a guess only starts");
 });
 
+test("startIntent: inside a running session, only an intent the COMMAND carries replaces", () => {
+  const named = IDENTITY_FROM_FLAG;
+  // External review, 2026-09-16: an aify-env older than the unset list hands a worker the marker AND the
+  // host's own AIFY_AGENT_ID. The launcher then drops the mode, because the environment names a different
+  // agent, and a named managed start read as a person and replaced the live instance it was starting.
+  assert.equal(startIntent({ mode: "", identity: named, insideSession: true }), "start");
+  assert.equal(startIntent({ mode: "resident", identity: named, insideSession: true }), "start");
+  // The command's own word still decides: a restore says `start`, and a person can still ask for a replace.
+  assert.equal(startIntent({ explicit: "replace", identity: named, insideSession: true }), "replace");
+  assert.equal(startIntent({ explicit: "start", identity: named, insideSession: true }), "start");
+  // CONTROL: the same launches outside a session are unchanged.
+  assert.equal(startIntent({ mode: "", identity: named }), "replace");
+  assert.equal(startIntent({ mode: "resident", identity: named }), "replace");
+});
+
 test("leaseFileName refuses what it cannot name, rather than rewriting it into somebody else's id", () => {
   assert.equal(leaseFileName("mc-senior-dev"), "mc-senior-dev.json");
   for (const bad of ["", "a/b", "..", ".hidden", "a b"]) assert.throws(() => leaseFileName(bad));

@@ -108,9 +108,16 @@ function fakeIo(receiptAfter = 0) {
   };
 }
 
-function instanceIn(processes, { profileRoot } = {}) {
+/**
+ * The env-binary lookup, injected so these tests do not depend on whether the machine running them
+ * happens to have `aify-env` installed. `found` says yes; pass `{ ok: false }` to stand for a host
+ * that does not have it.
+ */
+const found = () => ({ ok: true, found: "aify-env", tried: [], why: null });
+
+function instanceIn(processes, { profileRoot, lookup = found } = {}) {
   const root = profileRoot || fs.mkdtempSync(path.join(os.tmpdir(), "aify-herdr-sup-"));
-  return new HerdrAifyInstance({ profileRoot: root, invocation: randomUUID(), platform: "win32", processes, clock: clock() });
+  return new HerdrAifyInstance({ profileRoot: root, invocation: randomUUID(), platform: "win32", processes, clock: clock(), lookup });
 }
 
 test("a clean start mints, serves, waits, makes a space, starts the env, then waits for its receipt", async () => {
@@ -175,6 +182,41 @@ test("each phase that can fail names itself, and nothing later is attempted", as
   }
   // POSITIVE CONTROL: with nothing broken the same harness succeeds.
   assert.equal((await instanceIn(fakeProcesses()).start({ io: fakeIo() })).ok, true);
+});
+
+test("AN AIFY-ENV THAT IS NOT ON PATH IS SAID AT ONCE, and nothing is typed into the pane", async () => {
+  // MEASURED ON A REAL HOST 2026-09-16. A global install had linked `aify-env` into a directory a
+  // restart took away, so the name did not resolve. `pane run` typed it in and answered ok, and the
+  // only symptom was the readiness receipt never arriving — thirty seconds later, under a message
+  // that had to offer three possible reasons because nothing had distinguished them.
+  const processes = fakeProcesses();
+  const started = await instanceIn(processes, {
+    lookup: () => ({ ok: false, found: null, tried: ["/nowhere/aify-env"], why: "aify-env is not on the PATH the dedicated Herdr was started with" }),
+  }).start({ io: fakeIo() });
+
+  assert.equal(started.ok, false);
+  assert.equal(started.phase, "env", "a binary that is not installed was not reported as an env failure");
+  assert.match(started.error, /not on the PATH/);
+  // THE POINT OF DOING IT FIRST: the pane was never told to run something that does not exist.
+  const typed = processes.calls.filter(call => call.op === "run" && call.argv?.slice(0, 2).join(" ") === "pane run");
+  assert.deepEqual(typed, [], "the pane was told to run a command this host cannot resolve");
+});
+
+test("THE LOOKUP IS ASKED ABOUT THE PANE'S PATH, not this process's", async () => {
+  // The pane inherits the SERVER's environment, so checking the launcher's own PATH would answer a
+  // question nobody asked — and on the host that exposed this, the two differ.
+  const asked = [];
+  const processes = fakeProcesses();
+  await instanceIn(processes, {
+    lookup: (name, options) => {
+      asked.push({ name, path: options?.env?.PATH });
+      return { ok: true, found: name, tried: [], why: null };
+    },
+  }).start({ io: fakeIo(), env: { PATH: "/a-path-only-the-server-has" } });
+
+  assert.equal(asked.length, 1, "the env binary was not looked up exactly once");
+  assert.equal(asked[0].name, "aify-env");
+  assert.equal(asked[0].path, "/a-path-only-the-server-has");
 });
 
 test("an aify-env that never publishes a receipt is a DAEMON failure, not a success", async () => {

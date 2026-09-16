@@ -36,6 +36,28 @@ import { HerdrPaneLedger, restorePlan } from "../lib/herdr-restore.mjs";
 /** An operator waiting to start an agent gets at most this long per Herdr call, twice. */
 const CLAIM_TIMEOUT_MS = 4000;
 
+/**
+ * How long the restore pass will wait for Herdr to finish restoring before it decides what it sees
+ * is the truth.
+ *
+ * MEASURED, NOT GUESSED (2026-09-16, Herdr 0.9.0, Linux). Herdr's documented order is that a
+ * plugin's `[[startup]]` hook runs "after Herdr restores the session and its API socket is ready" --
+ * which is BEFORE the panes get their PTYs. In the run that exposed this the hook wrote the ledger
+ * at 02:34:31.477Z and Herdr spawned the pane terminals at 02:34:31.498Z, 21ms later. A pane with no
+ * `terminal_id` fails the relaunch guard closed, correctly and permanently, so the pass restored
+ * nothing and exited before the panes it exists for had appeared.
+ */
+const SETTLE_TIMEOUT_MS = 10000;
+const SETTLE_POLL_MS = 250;
+
+/**
+ * Block this thread for `ms`. The pass is synchronous all the way up to the CLI, and making it
+ * async to hold a timer would change every caller and every test for a wait measured in milliseconds.
+ */
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
 /** A short record id: unique per pane, and legal inside a colon-delimited label. */
 function mintRecordId() {
   return randomUUID().replace(/-/g, "").slice(0, 12);
@@ -123,6 +145,27 @@ function claim({ wrapper: launchedAs, argv: typed, env = process.env, ledger }) 
 }
 
 /**
+ * True when this listing is one the pass can act on.
+ *
+ * TWO WAYS TO BE TOO EARLY, and both were live possibilities in the run that exposed this. A listing
+ * with NO PANES AT ALL is Herdr before it has restored any, and a labelled pane we hold a record for
+ * with NO `terminal_id` is a pane Herdr has restored but not yet given a PTY. Anything else -- a
+ * stale record whose pane is gone, a pane somebody else owns -- is a settled answer and is NOT
+ * waited on, because a record that will never come back would otherwise delay every boot for ever.
+ */
+export function listingHasSettled(panes, records) {
+  // NOTHING TO RESTORE IS AN ANSWER. Waiting out the timeout to discover the ledger is empty spends
+  // ten seconds to reach the conclusion it started with.
+  if (!Array.isArray(panes) || panes.length === 0) return records.size === 0;
+  for (const pane of panes) {
+    const parsed = parsePaneLabel(pane?.label);
+    if (!parsed || !records.get(parsed.record)) continue;
+    if (!String(pane?.terminal_id ?? "")) return false;
+  }
+  return true;
+}
+
+/**
  * Put the wrappers back into the panes Herdr restored as empty shells.
  *
  * A FAILED LISTING PRUNES NOTHING, and neither does an empty one -- both are handled by the ledger's
@@ -132,15 +175,30 @@ function claim({ wrapper: launchedAs, argv: typed, env = process.env, ledger }) 
  * writes its OWN record; pruning against the snapshot taken before the relaunches deleted exactly
  * those records, so the feature worked once per pane and then silently stopped forever.
  */
-function restore({ env = process.env, ledger, cli = { herdr, listPanes }, now = Date.now }) {
+function restore({ env = process.env, ledger, cli = { herdr, listPanes }, now = Date.now, sleep = sleepSync }) {
   // STAMPED BEFORE THE LISTING IS TAKEN, so every record written after it is one this listing cannot
   // have seen the label of. See `pruneTo`.
-  const listedAt = now();
-  const listing = cli.listPanes({ env });
+  let listedAt = now();
+  let listing = cli.listPanes({ env });
   if (!listing.ok) return { restored: [], refused: [], why: `could not read the pane list: ${listing.error}` };
 
   ledger.load();
   if (ledger.unreadable) return { restored: [], refused: [], why: "the ledger is unreadable; nothing was changed" };
+
+  // WAITED FOR, BECAUSE THE HOOK RUNS BEFORE THE PANES EXIST. See SETTLE_TIMEOUT_MS. The guard this
+  // protects is not relaxed: a pane with no PTY is still never typed into. This only stops the pass
+  // from taking "no PTY yet" for "no PTY", which is the difference between a restore and nothing at
+  // all. A TIMEOUT IS NOT A FAILURE -- it falls through to the listing in hand, which is exactly what
+  // this pass did before, so the worst case is the behaviour it replaces.
+  for (let waited = 0; waited < SETTLE_TIMEOUT_MS; waited += SETTLE_POLL_MS) {
+    if (listingHasSettled(listing.panes, ledger.all())) break;
+    sleep(SETTLE_POLL_MS);
+    const at = now();
+    const again = cli.listPanes({ env });
+    if (!again.ok) break;
+    listedAt = at;
+    listing = again;
+  }
 
   const byPane = new Map(listing.panes.map(pane => [String(pane?.pane_id), pane]));
   const plan = restorePlan({ panes: listing.panes, records: ledger.all() });
