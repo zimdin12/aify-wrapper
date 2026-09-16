@@ -20,53 +20,66 @@ function dirWith(names) {
   return dir;
 }
 
+// A REAL DIRECTORY IS THIS HOST'S SHAPE, so a test that puts one on a PATH names this host's platform
+// and separator. Told `linux` on Windows, `C:\Users\...` was split at the drive letter and every one of
+// these refused a file that was there (measured 2026-09-16, four failures). The win32-only case below
+// needs no real directory and keeps its fixed platform.
+const HERE = process.platform;
+const joinPath = (...dirs) => dirs.join(path.delimiter);
+
 test("it finds a name on PATH, and refuses one that is not there", () => {
   const dir = dirWith(["aify-env"]);
-  const env = { PATH: `${path.join(dir, "nothing-here")}:${dir}` };
+  const env = { PATH: joinPath(path.join(dir, "nothing-here"), dir) };
 
-  const found = resolveOnPath("aify-env", { env, platform: "linux" });
+  const found = resolveOnPath("aify-env", { env, platform: HERE });
   assert.equal(found.ok, true, found.why);
   assert.equal(found.found, path.join(dir, "aify-env"));
 
   // NEGATIVE CONTROL IN THE SAME RUN: the same PATH, a name that is not on it. A lookup that cannot
   // say no cannot say yes either.
-  const missing = resolveOnPath("aify-not-installed", { env, platform: "linux" });
+  const missing = resolveOnPath("aify-not-installed", { env, platform: HERE });
   assert.equal(missing.ok, false);
   assert.match(missing.why, /not on the PATH/);
   assert.ok(missing.tried.length > 0, "a refusal that names nowhere it looked is not a diagnosis");
 });
 
-test("A LINK POINTING AT SOMETHING GONE IS NOT INSTALLED — the case this was written for", () => {
+test("A LINK POINTING AT SOMETHING GONE IS NOT INSTALLED — the case this was written for", { skip: process.platform === "win32" && "a symlink here needs a privilege this run may not have" }, () => {
   // MEASURED 2026-09-16: a global npm install had linked `aify-env` into a directory a restart took
   // away, so the shim in the PATH directory was a symlink to nothing. A shell will not run it, and
   // neither `ls` nor a name-only check notices.
   const dir = dirWith([]);
   const gone = path.join(dir, "was-here");
   fs.symlinkSync(gone, path.join(dir, "aify-env"));
-  const refused = resolveOnPath("aify-env", { env: { PATH: dir }, platform: "linux" });
+  const refused = resolveOnPath("aify-env", { env: { PATH: dir }, platform: HERE });
   assert.equal(refused.ok, false, "a dangling link was taken for an installed binary");
 
   // POSITIVE CONTROL: the same directory, the same name, once the target exists.
   fs.writeFileSync(gone, "", { mode: 0o755 });
-  assert.equal(resolveOnPath("aify-env", { env: { PATH: dir }, platform: "linux" }).ok, true);
+  assert.equal(resolveOnPath("aify-env", { env: { PATH: dir }, platform: HERE }).ok, true);
 });
 
 test("on Windows an npm shim counts, because that is what npm installs", () => {
-  const dir = dirWith(["aify-env.cmd"]);
+  // A FAKE DIRECTORY, so this keeps its fixed platform wherever it runs: the Windows layout is the
+  // subject, and a real path from another host would only be that host's shape again.
+  const dir = "C:\\tools\\bin";
+  const shim = path.join(dir, "aify-env.cmd");
+  const io = { existsSync: (candidate) => candidate === shim };
   const env = { PATH: dir, PATHEXT: ".COM;.EXE;.BAT;.CMD" };
-  const found = resolveOnPath("aify-env", { env, platform: "win32" });
+  const found = resolveOnPath("aify-env", { env, platform: "win32", io });
   assert.equal(found.ok, true, "the .cmd shim npm writes was not recognised, which refuses a working host");
-  assert.equal(found.found, path.join(dir, "aify-env.cmd"));
+  assert.equal(found.found, shim);
+  // NEGATIVE CONTROL: the same lookup with nothing on that PATH refuses.
+  assert.equal(resolveOnPath("aify-env", { env, platform: "win32", io: { existsSync: () => false } }).ok, false);
 });
 
 test("a name with a separator is a path, and is checked as one", () => {
   const dir = dirWith(["aify-env"]);
-  assert.equal(resolveOnPath(path.join(dir, "aify-env"), { env: { PATH: "" }, platform: "linux" }).ok, true);
-  assert.equal(resolveOnPath(path.join(dir, "nope"), { env: { PATH: dir }, platform: "linux" }).ok, false);
+  assert.equal(resolveOnPath(path.join(dir, "aify-env"), { env: { PATH: "" }, platform: HERE }).ok, true);
+  assert.equal(resolveOnPath(path.join(dir, "nope"), { env: { PATH: dir }, platform: HERE }).ok, false);
 });
 
 test("an empty PATH says so, rather than reporting a search it never made", () => {
-  const refused = resolveOnPath("aify-env", { env: {}, platform: "linux" });
+  const refused = resolveOnPath("aify-env", { env: {}, platform: HERE });
   assert.equal(refused.ok, false);
   assert.match(refused.why, /PATH is empty/);
 });
