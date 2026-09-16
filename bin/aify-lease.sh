@@ -31,11 +31,22 @@ aify_lease_take_intent() {
   AIFY_LEASE_ARGS=()
   AIFY_LEASE_IDENTITY="recovered"
   AIFY_LEASE_INTENT_ARG=""
-  local _aify_arg
+  # The agent the COMMAND names, which decides whether a session's own values are this start's (see
+  # bin/aify-inherited-session.sh). Empty when the command names none.
+  AIFY_LEASE_NAMED_AGENT=""
+  local _aify_arg _aify_agent_next=""
   for _aify_arg in "$@"; do
+    if [ -n "$_aify_agent_next" ]; then
+      _aify_agent_next=""
+      case "$_aify_arg" in
+        -*) ;;
+        *) AIFY_LEASE_NAMED_AGENT="$_aify_arg" ;;
+      esac
+    fi
     case "$_aify_arg" in
       --aify-start-intent=*) AIFY_LEASE_INTENT_ARG="${_aify_arg#--aify-start-intent=}" ;;
-      --aify-agent|--agent-id|--aify-agent=*|--agent-id=*) AIFY_LEASE_IDENTITY="flag"; AIFY_LEASE_ARGS+=("$_aify_arg") ;;
+      --aify-agent|--agent-id) AIFY_LEASE_IDENTITY="flag"; _aify_agent_next=1; AIFY_LEASE_ARGS+=("$_aify_arg") ;;
+      --aify-agent=*|--agent-id=*) AIFY_LEASE_IDENTITY="flag"; AIFY_LEASE_NAMED_AGENT="${_aify_arg#*=}"; AIFY_LEASE_ARGS+=("$_aify_arg") ;;
       *) AIFY_LEASE_ARGS+=("$_aify_arg") ;;
     esac
   done

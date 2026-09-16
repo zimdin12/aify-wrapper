@@ -13,7 +13,7 @@ import { test } from "node:test";
 
 import { AgentLease, IDENTITY_FROM_FLAG, LEASE_VERSION, LeaseBusyError, REFUSED_EXIT_CODE, START_INTENTS, leaseDirectory, leaseFileName, planClaim, startIntent } from "../lib/agent-lease.mjs";
 import {
-  START_TIME_TOLERANCE_MS, ancestors, descendants, hostsOf, identify, isAlive, isProtected, killTree, linuxBootEpoch, parseLinuxStartedAt, parseLinuxState,
+  START_TIME_TOLERANCE_MS, anchorOffsetMs, ancestors, descendants, hostsOf, identify, isAlive, isProtected, killTree, linuxBootEpoch, parseLinuxStartedAt, parseLinuxState,
   orphanedChildren, parseLinuxGroup, parseProcessTable, parseStartedAtLines, processTable, sleepMs, startTimes,
 } from "../lib/process-identity.mjs";
 import { CLAIM_FAILED_EXIT_CODE, parseLeaseArgs, runLease, runWatch } from "../bin/aify-agent-lease.mjs";
@@ -464,6 +464,26 @@ test("AgentLease: a held lock makes a start wait, then fail; an old or empty loc
   assert.equal(agent.claim({ pid: 100 }).decision, "claim");
 });
 
+test("AgentLease: a live lock holder is not taken over because the boot anchor and the wall clock disagree", () => {
+  // EXTERNAL REVIEW, 2026-09-16. Start times come from the boot anchor so they stop moving; the lock
+  // records the wall-clock moment it was taken. The two clocks drift apart -- measured on this machine's
+  // WSL, the anchor was 121 s behind live btime -- so an anchored start time compared with a wall-clock
+  // moment is wrong by that offset. Ahead, and a holder that has just taken the lock reads as a pid
+  // recycled after it: the next start takes over a LIVE holder's lock, which is the two-starts-at-once
+  // case the lock exists to prevent.
+  const offsetMs = 18_000;
+  const probe = host({ 100: T0, 123: Date.now() + offsetMs });
+  probe.anchorOffsetMs = () => offsetMs;
+  const agent = lease(probe);
+  fs.mkdirSync(agent.directory, { recursive: true });
+  const lock = `${agent.file}.lock`;
+  fs.writeFileSync(lock, JSON.stringify({ pid: 123, atMs: Date.now() }));
+  assert.throws(() => agent.claim({ pid: 100 }), LeaseBusyError, "a live holder's lock was taken over");
+  // CONTROL: a pid that really did start after the lock was taken -- beyond the offset -- is still reused.
+  probe.live.set(123, Date.now() + offsetMs + 60_000);
+  assert.equal(agent.claim({ pid: 100 }).decision, "claim", "a recycled pid still holds the lock");
+});
+
 test("AgentLease: a holder that dies WHILE a start waits is noticed, not cached as alive", () => {
   const probe = host({ 100: T0, 4000: T0 - 1_000 });
   const agent = lease(probe, { lockWaitMs: 8_000 });
@@ -758,6 +778,46 @@ test("a Linux boot's start is kept for the boot, so a clock step does not move a
   assert.equal(linuxBootEpoch({ procStat: "btime 1700000090", ...fsFake, readFile: () => { throw new Error("ENOENT"); } }), 1700000090);
   assert.equal(linuxBootEpoch({ procStat: "btime 1700000090", ...fsFake, uid: undefined }), 1700000090);
   assert.equal(linuxBootEpoch({ procStat: "no btime", ...fsFake, readFile: () => { throw new Error("ENOENT"); } }), null);
+});
+
+test("anchorOffsetMs says how far anchored start times sit from the wall clock (external review, 2026-09-16)", () => {
+  // The anchor keeps the boot the host first reported; `btime` then drifts. That difference is what a
+  // wall-clock comparison has to subtract, and getting its SIGN wrong is the bug it exists to stop.
+  const stepped = (live, anchored) => anchorOffsetMs({ platform: "linux", readFile: () => `btime ${live}\n`, bootEpoch: () => anchored });
+  assert.equal(stepped(1700000000, 1700000018), 18_000, "an anchor AHEAD of btime makes a start time read later than it was");
+  assert.equal(stepped(1700000124, 1700000003), -121_000, "measured shape: this machine's WSL, anchor 121 s behind");
+  assert.equal(stepped(1700000000, 1700000000), 0, "control: no drift, no offset");
+  // Nothing to answer with is 0, never a guess: a wrong offset is worse than none.
+  assert.equal(anchorOffsetMs({ platform: "win32", readFile: () => { throw new Error("no /proc here"); } }), 0);
+  assert.equal(anchorOffsetMs({ platform: "linux", readFile: () => "no btime", bootEpoch: () => null }), 0);
+  assert.equal(anchorOffsetMs({ platform: "linux", readFile: () => { throw new Error("ENOENT"); } }), 0);
+});
+
+test("identify puts an anchored start time on the entry's own clock before judging it", () => {
+  const offsetMs = 18_000;
+  const started = 1_700_000_000_000;
+  // A record written by another program, in wall-clock terms: the same process, read through the anchor.
+  assert.equal(identify({ startedAtMs: started }, { alive: true, startedAt: started + offsetMs, offsetMs }), "ours");
+  assert.equal(identify({ startedAtMs: started }, { alive: true, startedAt: started + offsetMs }), "reused", "control: without the offset the same process is a stranger");
+  // The seen-alive branch, which is what the lock uses.
+  assert.equal(identify({ seenAliveAtMs: started }, { alive: true, startedAt: started + offsetMs - 1, offsetMs }), "ours");
+  assert.equal(identify({ seenAliveAtMs: started }, { alive: true, startedAt: started + offsetMs + 1, offsetMs }), "reused", "control: a pid that really started later is still reused");
+});
+
+test("AgentLease: a record is written on ONE clock, so a start time it could not read is still judged right", () => {
+  // The claim could not read pid 100's start time, so the record keeps only the moment it was seen alive.
+  // That moment must sit on the same clock as the start times it is compared against.
+  const offsetMs = 18_000;
+  const probe = host({ 100: null });
+  probe.anchorOffsetMs = () => offsetMs;
+  const agent = lease(probe);
+  const before = Date.now();
+  agent.claim({ pid: 100 });
+  const seen = agent.read().instance.seenAliveAtMs;
+  assert.ok(seen >= before + offsetMs, `the seen moment was left on the wall clock (${seen - before} ms past it, expected at least ${offsetMs})`);
+  // And it judges the live process as ours: its anchored start is before the anchored moment it was seen.
+  probe.live.set(100, before + offsetMs - 1_000);
+  assert.equal(agent.holderState(100), "ours", "a live instance read as something else");
 });
 
 test("on THIS Linux host a stepped /proc/stat leaves every start time where it was", { skip: process.platform !== "linux" && "reads the real /proc and /dev/shm" }, () => {

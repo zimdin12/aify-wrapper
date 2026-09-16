@@ -187,10 +187,12 @@ that hands the session to the host, does not claim; the host's own run of the la
 
 **A shell inside a running agent session hands a start none of that session.** When `AIFY_AGENT_LEASE` or
 `CLAUDE_CODE_CHILD_SESSION` is set, the launcher first unsets the conversation that session holds
-(`CLAUDE_SESSION_ID`, `CODEX_THREAD_ID`, `HERMES_SESSION_ID` and the rest) and its start intent. If the
-command names no agent, it also unsets the session's agent id, role, mode, terminal and model, so a bare
-launch there starts anonymous. A command that names its agent keeps those: a host that composed the launch
-put them there, and an aify-env started inside a Claude Code session can pass a marker on to its workers.
+(`CLAUDE_SESSION_ID`, `CODEX_THREAD_ID`, `HERMES_SESSION_ID` and the rest) and its start intent. It also
+unsets the session's agent id, role, cwd, mode, terminal and model, keeping them only for a command that names
+the agent this environment belongs to -- or names one where the environment names nobody, which is a host that
+composed the launch (an aify-env started inside a Claude Code session passes a marker on to its workers). So a
+bare launch starts anonymous, and one agent's shell starting a DIFFERENT agent hands it none of this session's
+values, which would otherwise have that agent reporting itself in the first one's terminal.
 The lists are in `lib/inherited-session.mjs`, and the launcher prints one line naming what it dropped. An
 intent given as `--aify-start-intent=` is the command's own and is kept. `herdr-aify` starts its Herdr server
 without any of these, so no pane inherits the session it was run from.
@@ -221,7 +223,10 @@ A daemon started from the session that hosts no agent is still stopped with it.
 **Start times survive a clock step on Linux.** A process's start is computed from the boot time, which the
 kernel derives from the wall clock at each read. The first reader after boot keeps that boot time in
 `/dev/shm/aify-boot-<uid>-<boot id>`, and later readers use it, so a clock step does not turn a live instance
-into what looks like a reused pid.
+into what looks like a reused pid. Those start times are then on the anchor's clock rather than the wall
+clock, and the two drift apart (121 s on this machine's WSL, a day after the anchor was written), so anything
+compared against a wall-clock moment -- a lock holder's, hermes' own record of when it started -- subtracts
+that offset first (`anchorOffsetMs`). Everything the lease writes down is on one clock.
 
 The launcher exports `AIFY_AGENT_LEASE` (its own pid) to the runtime so detached helpers can attach to
 the instance.

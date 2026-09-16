@@ -47,7 +47,7 @@ set -- ${AIFY_LEASE_ARGS[@]+"${AIFY_LEASE_ARGS[@]}"}
 AIFY_INHERITED_SESSION_SH="@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-inherited-session.sh"
 if [ -r "$AIFY_INHERITED_SESSION_SH" ]; then
   . "$AIFY_INHERITED_SESSION_SH"
-  aify_forget_inherited_session "${AIFY_LEASE_IDENTITY:-recovered}"
+  aify_forget_inherited_session "${AIFY_LEASE_NAMED_AGENT:-}"
 fi
 
 # ── Herdr: what this invocation was, captured before anything consumes it ───

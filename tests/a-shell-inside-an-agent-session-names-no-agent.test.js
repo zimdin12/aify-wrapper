@@ -49,12 +49,12 @@ test("withoutAgentSession drops every marker and carrier, in any case, and nothi
 });
 
 /** Source the helper under `set -euo pipefail`, run it, and report what is left of the names asked about. */
-function forget(env, identity = "recovered") {
-  const names = ["AIFY_AGENT_ID", "CLAUDE_SESSION_ID", "AIFY_SESSION_MODE", "AIFY_START_INTENT", "AIFY_AGENT_LEASE", "PATH_KEPT"];
+function forget(env, named = "") {
+  const names = [...new Set([...NAMES_THE_SESSION, "CLAUDE_SESSION_ID", "AIFY_START_INTENT", "AIFY_AGENT_LEASE", "PATH_KEPT"])];
   const script = [
     "set -euo pipefail",
     `. '${HELPER}'`,
-    `aify_forget_inherited_session ${identity}`,
+    `aify_forget_inherited_session '${named}'`,
     ...names.map((name) => `printf '%s=%s\\n' ${name} "\${${name}-<unset>}"`),
   ].join("\n");
   const run = spawnSync("bash", ["-c", script], { encoding: "utf8", env: { PATH: process.env.PATH, PATH_KEPT: "yes", ...env } });
@@ -85,10 +85,37 @@ test("a command that NAMES its agent keeps its host's mode and identity, and sti
   // External review, 2026-09-15: a host carrying a marker composed a managed launch; dropping its mode made the
   // worker read as a person, and its named start replaced the live instance it was meant to leave alone.
   const hostComposed = { AIFY_AGENT_ID: "mc-senior-dev", AIFY_SESSION_MODE: "managed", AIFY_START_INTENT: "start", CLAUDE_SESSION_ID: "inherited", CLAUDE_CODE_CHILD_SESSION: "1" };
-  const { left, said } = forget(hostComposed, "flag");
+  const { left, said } = forget(hostComposed, "mc-senior-dev");
   assert.deepEqual([left.AIFY_AGENT_ID, left.AIFY_SESSION_MODE], ["mc-senior-dev", "managed"], "a named launch lost what its host gave it");
   assert.deepEqual([left.CLAUDE_SESSION_ID, left.AIFY_START_INTENT], ["<unset>", "<unset>"], "a named launch inherited a conversation or an intent");
   assert.match(said, /inherits none of its conversation or start intent; ignored: AIFY_START_INTENT CLAUDE_SESSION_ID\./);
+});
+
+test("one agent's shell starting ANOTHER agent hands it none of this session's values", { skip: WIN }, () => {
+  // External review, 2026-09-16: keeping the host's values for every NAMED launch meant agent X's shell running
+  // `claude-aify --aify-agent agent-y` gave agent-y X's role, cwd, mode, model and terminal id. The id resolved
+  // to agent-y, which would then report itself running in X's terminal. The values are the SESSION's, so they
+  // travel only to a launch that names the agent whose session this is.
+  const xsShell = { AIFY_AGENT_ID: "comms-tech-lead", AIFY_AGENT_ROLE: "tech-lead", AIFY_TERMINAL_ID: "term-77", AIFY_SESSION_MODE: "managed",
+    AIFY_MANAGED_MODEL: "opus", AIFY_AGENT_CWD: "C:/Docker/aify-comms", CLAUDE_SESSION_ID: "651b895f", AIFY_AGENT_LEASE: "62512" };
+  const { left, said } = forget(xsShell, "general-manager");
+  assert.deepEqual([left.AIFY_AGENT_ID, left.AIFY_AGENT_ROLE, left.AIFY_TERMINAL_ID, left.AIFY_SESSION_MODE, left.AIFY_MANAGED_MODEL, left.AIFY_AGENT_CWD],
+    ["<unset>", "<unset>", "<unset>", "<unset>", "<unset>", "<unset>"], "a different agent inherited this session's values");
+  assert.equal(left.AIFY_AGENT_LEASE, "62512", "the lease is kept for the nested refusal");
+  assert.match(said, /this shell belongs to comms-tech-lead .* and this start names general-manager, so it inherits nothing of that session/);
+  // CONTROL: the same shell naming its OWN agent keeps them, which is the host-composed launch above.
+  assert.equal(forget(xsShell, "comms-tech-lead").left.AIFY_TERMINAL_ID, "term-77");
+  // A session whose id is only in AIFY_COMMS_AGENT_ID is matched the same way.
+  const commsId = { AIFY_COMMS_AGENT_ID: "mc-senior-dev", AIFY_TERMINAL_ID: "term-9", AIFY_AGENT_LEASE: "5" };
+  assert.equal(forget(commsId, "mc-senior-dev").left.AIFY_TERMINAL_ID, "term-9");
+  assert.equal(forget(commsId, "other").left.AIFY_TERMINAL_ID, "<unset>");
+  // An environment that names NO agent belongs to nobody else: it is a host that composed this launch, and its
+  // mode is kept. Dropping it made a managed worker read as a person at a terminal, so its start replaced the
+  // live instance -- caught by the launcher tests, not by this one, when the rule above was first written.
+  const composed = { AIFY_SESSION_MODE: "managed", AIFY_MANAGED_MODEL: "opus", CLAUDE_CODE_CHILD_SESSION: "1", CLAUDE_SESSION_ID: "inherited" };
+  const hostLaunch = forget(composed, "some-worker");
+  assert.deepEqual([hostLaunch.left.AIFY_SESSION_MODE, hostLaunch.left.AIFY_MANAGED_MODEL], ["managed", "opus"], "a host-composed launch lost the mode it was given");
+  assert.equal(hostLaunch.left.CLAUDE_SESSION_ID, "<unset>", "it still inherited a conversation");
 });
 
 test("a pane launched through the Windows shim is CLAIMED, and recorded by name", { skip: WIN }, () => {
