@@ -25,6 +25,11 @@ aify_forget_inherited_session() {
     fi
   done
   [ -n "$_aify_marker" ] || return 0
+  # REMEMBERED FOR THE CLAIM, which cannot ask the environment again: claude-aify unsets
+  # CLAUDE_CODE_CHILD_SESSION before it claims, so Claude Code keeps saving transcripts, and the marker is
+  # gone by then. A start made from inside a session replaces nothing it was not told to (bin/aify-lease.sh,
+  # lib/agent-lease.mjs `startIntent`). Not exported: it is this launcher's own note, not the runtime's.
+  AIFY_LEASE_INSIDE_SESSION=1
   _aify_session_agent="${AIFY_AGENT_ID:-${AIFY_COMMS_AGENT_ID:-}}"
   # The host's values travel only to a launch of the agent this environment belongs to. An environment naming
   # a DIFFERENT agent is another agent's session, and none of it is this start's. One naming NO agent is a host

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The launchers' side of lib/agent-lease.mjs.
 //
-//   aify-agent-lease claim   --agent ID --pid PID [--runtime R] [--mode M] [--intent start|replace] [--identity flag|recovered]
+//   aify-agent-lease claim   --agent ID --pid PID [--runtime R] [--mode M] [--intent start|replace] [--identity flag|recovered] [--inside 1]
 //   aify-agent-lease attach  --agent ID --pid PID --kind K [--instance PID]
 //   aify-agent-lease release --agent ID --pid PID
 //   aify-agent-lease watch   --agent ID --instance PID --pid PID
@@ -31,6 +31,7 @@ import process from "node:process";
 
 import { AgentLease, IDENTITY_FROM_FLAG, LeaseBusyError, REFUSED_EXIT_CODE, startIntent } from "../lib/agent-lease.mjs";
 import { startWatch, watchInstance } from "../lib/agent-lease-watch.mjs";
+import { SESSION_MARKERS } from "../lib/inherited-session.mjs";
 import { isMainModule } from "../lib/main-module.mjs";
 import { isAlive } from "../lib/process-identity.mjs";
 
@@ -41,7 +42,7 @@ export const CLAIM_FAILED_EXIT_CODE = 70;
 const COMMANDS = Object.freeze(["claim", "attach", "release", "watch"]);
 
 /** Every flag this helper reads, with its placeholder. The usage line and the parser both come from here. */
-const FLAGS = Object.freeze({ agent: "ID", pid: "PID", runtime: "R", mode: "M", intent: "start|replace", identity: `${IDENTITY_FROM_FLAG}|recovered`, kind: "K", instance: "PID" });
+const FLAGS = Object.freeze({ agent: "ID", pid: "PID", runtime: "R", mode: "M", intent: "start|replace", identity: `${IDENTITY_FROM_FLAG}|recovered`, kind: "K", instance: "PID", inside: "1" });
 const USAGE = `usage: aify-agent-lease ${COMMANDS.join("|")} ${Object.entries(FLAGS).map(([flag, value]) => `--${flag} ${value}`).join(" ")}`;
 
 export function parseLeaseArgs(argv, env = process.env) {
@@ -58,13 +59,20 @@ export function parseLeaseArgs(argv, env = process.env) {
   if (!Number.isInteger(pid) || pid <= 0) throw new Error(`--pid must be a process id, got ${JSON.stringify(options.pid)}`);
   const instance = Number(options.instance ?? env.AIFY_AGENT_LEASE);
   const inherited = Number(env.AIFY_AGENT_LEASE);
+  const insideSession = String(options.inside ?? "").trim() === "1"
+    || SESSION_MARKERS.some((name) => String(env[name] ?? "").trim());
   return {
     command,
     agentId: String(options.agent ?? ""),
     pid,
     runtime: String(options.runtime ?? ""),
     mode: String(options.mode ?? ""),
-    intent: startIntent({ explicit: options.intent, mode: options.mode, identity: options.identity }),
+    // BOTH WAYS THE LAUNCHER CAN SAY IT. `--inside` is what `aify_forget_inherited_session` remembered, and
+    // it is the only answer for claude-aify, which unsets CLAUDE_CODE_CHILD_SESSION before it claims so that
+    // Claude Code keeps saving transcripts. The markers are read too, for a launcher whose installed shell
+    // half predates that note and for any other caller of this helper.
+    intent: startIntent({ explicit: options.intent, mode: options.mode, identity: options.identity, insideSession }),
+    insideSession,
     named: String(options.identity ?? "").trim().toLowerCase() === IDENTITY_FROM_FLAG,
     kind: String(options.kind ?? ""),
     instance: Number.isInteger(instance) && instance > 0 ? instance : null,
@@ -105,6 +113,10 @@ export function runLease(argv, { env = process.env, err = process.stderr, lease 
       }
       if (result.decision === "refuse" && !args.named) {
         say(`${args.agentId} is already running (${describe(result.live)}). This start did not name the agent -- its id came from the environment or a conversation -- so it does not replace it: stop it, or start it with --aify-agent ${args.agentId}.`);
+        return REFUSED_EXIT_CODE;
+      }
+      if (result.decision === "refuse" && args.insideSession) {
+        say(`${args.agentId} is already running (${describe(result.live)}). This start was made from inside a running agent session, where nothing replaces a live instance unless the command says so: stop it, or start it with --aify-start-intent=replace.`);
         return REFUSED_EXIT_CODE;
       }
       if (result.decision === "refuse") {
