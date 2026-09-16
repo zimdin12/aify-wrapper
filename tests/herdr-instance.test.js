@@ -62,7 +62,8 @@ test("the layout is derived from the invocation, not configured", () => {
 
 test("windows endpoints are named pipes, and the names carry the invocation", () => {
   const invocation = randomUUID();
-  const paths = instancePaths({ profileRoot: "C:/p", invocation, platform: "win32" });
+  // The ROOT must be absolute on the platform running the suite; the ENDPOINTS are Windows' whatever runs it.
+  const paths = instancePaths({ profileRoot: path.join(path.parse(process.cwd()).root, "p"), invocation, platform: "win32" });
   assert.equal(paths.ownerEndpoint, `\\\\.\\pipe\\aify-herdr-owner-${invocation}`);
   assert.equal(paths.herdrApiEndpoint, `\\\\.\\pipe\\aify-herdr-api-${invocation}`);
 });

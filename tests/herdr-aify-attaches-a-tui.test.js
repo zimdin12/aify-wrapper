@@ -27,6 +27,11 @@ import { shouldAttach } from "../bin/herdr-aify.mjs";
 import { HerdrAifyInstance } from "../lib/herdr-supervisor.mjs";
 import { buildInstanceContext } from "../lib/herdr-instance.mjs";
 
+// SEALED FROM THE HOST'S HERDR. With an empty env, `run` searched this machine for a real herdr binary and
+// returned 1 before the behaviour under test wherever none was installed -- every Linux host without Herdr.
+// `HERDR_BIN_PATH` is taken as given, and nothing in these runs spawns it.
+const SEALED_ENV = Object.freeze({ HERDR_BIN_PATH: "herdr-this-test-never-runs" });
+
 function instanceWith(processes) {
   return new HerdrAifyInstance({
     // Injected so this test does not depend on whether the machine running it has aify-env installed.
@@ -99,7 +104,7 @@ test("THE CALL SITE: a run with a terminal ATTACHES, and ends when the session i
   const fake = {
     // A REAL context, because the owner this run starts refuses a hand-written one -- and a fake
     // that cannot be refused would not be exercising the run this test is about.
-    context: buildInstanceContext({ profileRoot, invocation, profileRef: "integrated", platform: "win32" }),
+    context: buildInstanceContext({ profileRoot, invocation, profileRef: "integrated", platform: process.platform }),
     profile: { socketPath: path.join(profileRoot, "s.sock") },
     start: async () => {
       events.push("start");
@@ -120,7 +125,7 @@ test("THE CALL SITE: a run with a terminal ATTACHES, and ends when the session i
 
   // `withEnv: true` because this drives the DEDICATED instance flow. Without it the run takes the
   // resident path, which starts a real Herdr -- the suite left three running before this was sealed.
-  const finished = run({ profileRoot, env: {}, attaching: true, withEnv: true, makeInstance: () => fake });
+  const finished = run({ profileRoot, env: SEALED_ENV, attaching: true, withEnv: true, makeInstance: () => fake });
   finished.catch(() => {});
   for (let i = 0; i < 200 && !endSession; i += 1) await new Promise(r => setTimeout(r, 10));
   assert.deepEqual(events, ["start", "attach"], "the run never attached a TUI");
@@ -141,7 +146,7 @@ test("NEGATIVE CONTROL: with no terminal the same run stays headless", { timeout
   const fake = {
     // A REAL context, because the owner this run starts refuses a hand-written one -- and a fake
     // that cannot be refused would not be exercising the run this test is about.
-    context: buildInstanceContext({ profileRoot, invocation, profileRef: "integrated", platform: "win32" }),
+    context: buildInstanceContext({ profileRoot, invocation, profileRef: "integrated", platform: process.platform }),
     profile: { socketPath: path.join(profileRoot, "s.sock") },
     start: async () => ({ ok: true, paneId: "w1:p1" }),
     attachTui: () => {
@@ -152,7 +157,7 @@ test("NEGATIVE CONTROL: with no terminal the same run stays headless", { timeout
     stop: async () => ({ everServed: true, serverStopped: true, killed: false, confirmedGone: true }),
   };
 
-  const finished = run({ profileRoot, env: {}, attaching: false, withEnv: true, makeInstance: () => fake });
+  const finished = run({ profileRoot, env: SEALED_ENV, attaching: false, withEnv: true, makeInstance: () => fake });
   finished.catch(() => {});
   for (let i = 0; i < 200 && !stopServer; i += 1) await new Promise(r => setTimeout(r, 10));
   assert.deepEqual(events, [], "a headless run started a TUI into a pipe");

@@ -17,7 +17,9 @@ import { test } from "node:test";
 import { HOST_XDG_MARKERS, ISOLATED_MARKER, dedicatedEnvArgv, herdrServerEnv, profilePaths } from "../lib/herdr-profile.mjs";
 
 const INVOCATION = "8c7cf6c8-2b3f-4a9e-9d6e-1f2a3b4c5d6e";
-const ROOT = path.join("C:", "Users", "Someone", ".aify", "herdr");
+// ABSOLUTE ON THE PLATFORM RUNNING THE SUITE. `C:\Users\...` is absolute only on Windows, so on Linux every
+// test here was refused at the root check before it reached the property it names.
+const ROOT = path.join(path.parse(process.cwd()).root, "Users", "Someone", ".aify", "herdr");
 
 const paths = (platform = "win32") => profilePaths({ profileRoot: ROOT, invocation: INVOCATION, platform });
 
@@ -122,8 +124,9 @@ test("a dedicated instance gets its OWN pane ledger", () => {
 
 test("the daemon argv matches what aify-env's own reader accepts", () => {
   // Its reader refuses the flag unless args[0] starts with '-', and refuses a relative path.
-  const argv = dedicatedEnvArgv("C:\\ctx\\instance.json");
-  assert.deepEqual(argv, ["--instance-context", "C:\\ctx\\instance.json"]);
+  const context = path.join(ROOT, "ctx", "instance.json");
+  const argv = dedicatedEnvArgv(context);
+  assert.deepEqual(argv, ["--instance-context", context]);
   assert.ok(argv[0].startsWith("-"), "aify-env refuses --instance-context unless it leads the argv");
   assert.throws(() => dedicatedEnvArgv("relative/instance.json"), /absolute/);
 });

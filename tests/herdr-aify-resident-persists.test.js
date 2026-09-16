@@ -126,7 +126,9 @@ test("THE CALL SITE: a plain run goes to the resident and mints NO invocation", 
   const seen = [];
   const code = await run({
     profileRoot,
-    env: {},
+    // Sealed from the host's herdr: an empty env made this run search the machine and return 1 on any
+    // host without Herdr installed, before it reached the routing this test is about.
+    env: { HERDR_BIN_PATH: "herdr-this-test-never-runs" },
     attaching: false,
     withEnv: false,
     resident: async args => { seen.push(args); return 0; },
