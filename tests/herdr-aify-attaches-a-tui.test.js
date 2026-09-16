@@ -29,6 +29,8 @@ import { buildInstanceContext } from "../lib/herdr-instance.mjs";
 
 function instanceWith(processes) {
   return new HerdrAifyInstance({
+    // Injected so this test does not depend on whether the machine running it has aify-env installed.
+    lookup: () => ({ ok: true, found: "aify-env", tried: [], why: null }),
     profileRoot: fs.mkdtempSync(path.join(os.tmpdir(), "aify-herdr-attach-")),
     invocation: randomUUID(),
     platform: "win32",

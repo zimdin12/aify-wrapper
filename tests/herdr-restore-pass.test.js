@@ -19,7 +19,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { restore } from "../bin/aify-herdr-pane.mjs";
+import { listingHasSettled, restore } from "../bin/aify-herdr-pane.mjs";
 import { paneLabel } from "../lib/herdr-pane.mjs";
 import { HerdrPaneLedger } from "../lib/herdr-restore.mjs";
 
@@ -120,6 +120,8 @@ test("an unreadable pane listing changes nothing at all", () => {
   assert.equal(new HerdrPaneLedger({ file }).load().all().size, 1, "a failed listing deleted a record");
 });
 
+//: `sleep` is injected because the pass now WAITS on an empty listing — Herdr before it has restored
+//: any panes looks exactly like this. The answer is unchanged; only the cost of reaching it is.
 test("an EMPTY pane listing relaunches nothing and deletes nothing", () => {
   // A startup hook that fires before Herdr restored the panes produces exactly this.
   const file = ledgerFile();
@@ -127,7 +129,7 @@ test("an EMPTY pane listing relaunches nothing and deletes nothing", () => {
     .remember("rec1", { wrapper: "claude-aify", argv: ["claude-aify"], terminalId: OLD_TERMINAL })
     .save();
   const cli = fakeHerdr(file, { panes: [] });
-  const result = restore({ env: {}, ledger: new HerdrPaneLedger({ file }), cli });
+  const result = restore({ sleep: () => {}, env: {}, ledger: new HerdrPaneLedger({ file }), cli });
   assert.deepEqual(result.restored, []);
   assert.equal(result.prunedRefused, 1, "the pass did not report that it kept records it could not judge");
   assert.equal(new HerdrPaneLedger({ file }).load().all().size, 1, "an empty listing deleted the ledger");
@@ -169,4 +171,103 @@ test("a record that holds the launcher's PATH is replayed by name, which a Power
   const result = restore({ env: {}, ledger: new HerdrPaneLedger({ file }), cli, now: () => LISTED_AT });
   assert.equal(result.restored.length, 1, JSON.stringify(result));
   assert.deepEqual(cli.typed, ["claude-aify --aify-start-intent=start --aify-agent a"]);
+});
+
+// ── The pass runs BEFORE the panes exist ────────────────────────────────────────────────────────
+//
+// MEASURED ON A REAL HOST 2026-09-16 (Herdr 0.9.0, Linux). Herdr's documented order is that a
+// plugin's `[[startup]]` hook runs after the session is restored and the API socket is ready — which
+// is before the panes are given their PTYs. In the run that exposed this the hook wrote the ledger at
+// 02:34:31.477Z and Herdr spawned the pane terminals at 02:34:31.498Z, 21ms later. A pane with no
+// `terminal_id` fails the relaunch guard closed, which is correct and must stay correct: the pass
+// simply asked too early and took its own earliness for an answer.
+
+/** A Herdr that answers with a different listing each time it is asked, ending on the last one. */
+function listingsInTurn(listings) {
+  let taken = 0;
+  const typed = [];
+  return {
+    typed,
+    listPanes: () => ({ ok: true, panes: structuredClone(listings[Math.min(taken++, listings.length - 1)]), error: null }),
+    herdr: (argv) => {
+      if (argv[0] === "pane" && argv[1] === "run") typed.push(argv[3]);
+      return { ok: true, json: null, error: null };
+    },
+  };
+}
+
+function ledgerWithOneRecord() {
+  const file = ledgerFile();
+  new HerdrPaneLedger({ file })
+    .remember("rec1", {
+      wrapper: "claude-aify",
+      argv: ["claude-aify", "--resume"],
+      terminalId: OLD_TERMINAL,
+      recordedAt: new Date(LISTED_AT - 60_000).toISOString(),
+    })
+    .save();
+  return file;
+}
+
+test("THE PASS WAITS for Herdr to hand the panes their PTYs, instead of reading its own earliness as an answer", () => {
+  const file = ledgerWithOneRecord();
+  const slept = [];
+  // Exactly what the startup hook sees at a real start: nothing yet, then the pane without a PTY,
+  // then the pane as it finally is.
+  const cli = listingsInTurn([
+    [],
+    [{ pane_id: "w1:p1", label: OLD_LABEL, terminal_id: null }],
+    [{ pane_id: "w1:p1", label: OLD_LABEL, terminal_id: NEW_TERMINAL }],
+  ]);
+
+  const result = restore({
+    env: {}, ledger: new HerdrPaneLedger({ file }), cli,
+    now: () => LISTED_AT, sleep: (ms) => slept.push(ms),
+  });
+
+  assert.equal(result.restored.length, 1, "the pane Herdr had not finished restoring was never relaunched into");
+  assert.deepEqual(cli.typed, ["claude-aify --aify-start-intent=start --resume"]);
+  assert.equal(slept.length, 2, `expected two waits, one per listing that was not an answer yet: ${JSON.stringify(slept)}`);
+});
+
+test("THE GUARD IS NOT RELAXED: a pane that never gets a PTY is never typed into, however long the wait", () => {
+  const file = ledgerWithOneRecord();
+  const slept = [];
+  const cli = listingsInTurn([[{ pane_id: "w1:p1", label: OLD_LABEL, terminal_id: null }]]);
+
+  const result = restore({
+    env: {}, ledger: new HerdrPaneLedger({ file }), cli,
+    now: () => LISTED_AT, sleep: (ms) => slept.push(ms),
+  });
+
+  assert.deepEqual(cli.typed, [], "a pane whose PTY could not be read was typed into anyway");
+  assert.equal(result.restored.length, 0);
+  assert.ok(slept.length > 1, "the pass did not wait at all before giving up");
+});
+
+test("A SETTLED LISTING IS NOT WAITED ON, so an ordinary restore pays nothing for this", () => {
+  const file = ledgerWithOneRecord();
+  const slept = [];
+  const cli = listingsInTurn([[{ pane_id: "w1:p1", label: OLD_LABEL, terminal_id: NEW_TERMINAL }]]);
+
+  restore({ env: {}, ledger: new HerdrPaneLedger({ file }), cli, now: () => LISTED_AT, sleep: (ms) => slept.push(ms) });
+  assert.deepEqual(slept, [], "a listing that was already an answer was still waited on");
+  assert.equal(cli.typed.length, 1);
+});
+
+test("listingHasSettled: what is worth waiting for, and what is simply the answer", () => {
+  const records = new Map([["rec1", { wrapper: "claude-aify", argv: ["x"], terminalId: OLD_TERMINAL }]]);
+  const withPty = { pane_id: "w1:p1", label: OLD_LABEL, terminal_id: NEW_TERMINAL };
+
+  assert.equal(listingHasSettled([], records), false, "no panes at all is Herdr before it restored any");
+  assert.equal(listingHasSettled([{ ...withPty, terminal_id: null }], records), false,
+    "a pane we hold a record for with no PTY is not an answer yet");
+  assert.equal(listingHasSettled([withPty], records), true);
+
+  // A RECORD WHOSE PANE IS GONE IS NOT A REASON TO WAIT. Waiting on one would put ten seconds on
+  // every start, for ever, for a pane that is never coming back.
+  assert.equal(listingHasSettled([withPty], new Map([...records, ["gone", { wrapper: "claude-aify", argv: ["x"], terminalId: "t" }]])), true);
+
+  // NOR IS SOMEBODY ELSE'S PANE. A bare agent starting in the next pane is not this pass's business.
+  assert.equal(listingHasSettled([withPty, { pane_id: "w2:p1", label: "someone-elses", terminal_id: null }], records), true);
 });

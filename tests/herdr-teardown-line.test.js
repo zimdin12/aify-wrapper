@@ -82,6 +82,8 @@ test("THE SOURCE OF THE FLAGS, so this is not a test of a hand-written object", 
   };
   const io = { ...fs, existsSync: target => (String(target).endsWith("ready.json") ? true : fs.existsSync(target)) };
   const instance = new HerdrAifyInstance({
+    // Injected so this test does not depend on whether the machine running it has aify-env installed.
+    lookup: () => ({ ok: true, found: "aify-env", tried: [], why: null }),
     profileRoot: fs.mkdtempSync(path.join(os.tmpdir(), "aify-herdr-line-")),
     invocation: randomUUID(),
     platform: "win32",
