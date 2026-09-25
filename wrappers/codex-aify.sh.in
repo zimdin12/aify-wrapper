@@ -599,17 +599,20 @@ fi
 #   - date-sharded: ~/.codex/sessions/YYYY/MM/DD/rollout-<iso-ts>-<id>.jsonl
 #   - dir-per-session: ~/.codex/sessions/<id>/...
 # Accept any of these layouts when probing for a saved session.
+# Under `$CODEX_HOME` when it is set, as codex itself stores them: reading `~/.codex` regardless
+# reported a session that exists as "not found" and started a fresh codex instead.
+CODEX_SESSIONS_DIR="${CODEX_HOME:-$HOME/.codex}/sessions"
 CODEX_SESSION_FOUND=""
 if [ -n "${CODEX_RESUME_HANDLE:-}" ]; then
   # Try flat layout first (cheapest check)
-  if [ -f "$HOME/.codex/sessions/$CODEX_RESUME_HANDLE.jsonl" ]; then
-    CODEX_SESSION_FOUND="$HOME/.codex/sessions/$CODEX_RESUME_HANDLE.jsonl"
+  if [ -f "$CODEX_SESSIONS_DIR/$CODEX_RESUME_HANDLE.jsonl" ]; then
+    CODEX_SESSION_FOUND="$CODEX_SESSIONS_DIR/$CODEX_RESUME_HANDLE.jsonl"
   # Try dir-per-session
-  elif [ -d "$HOME/.codex/sessions/$CODEX_RESUME_HANDLE" ]; then
-    CODEX_SESSION_FOUND="$HOME/.codex/sessions/$CODEX_RESUME_HANDLE"
+  elif [ -d "$CODEX_SESSIONS_DIR/$CODEX_RESUME_HANDLE" ]; then
+    CODEX_SESSION_FOUND="$CODEX_SESSIONS_DIR/$CODEX_RESUME_HANDLE"
   # Try date-sharded — search recursively for files containing the handle
   else
-    CODEX_SESSION_FOUND="$(find "$HOME/.codex/sessions" -type f -name "*$CODEX_RESUME_HANDLE*" 2>/dev/null | head -1)"
+    CODEX_SESSION_FOUND="$(find "$CODEX_SESSIONS_DIR" -type f -name "*$CODEX_RESUME_HANDLE*" 2>/dev/null | head -1)"
   fi
 fi
 
