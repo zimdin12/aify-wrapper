@@ -415,12 +415,14 @@ export AIFY_RUNTIME="codex"
 # no local session store to fall back to — `claude-session-store.js` is claude-specific — so if the
 # service is unreachable the id stays empty and we say so out loud rather than degrade in silence.
 if [ -z "$CODEX_AIFY_AGENT_ID" ] && [ -n "${CODEX_RESUME_HANDLE:-}" ]; then
-  if command -v node >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
+  if command -v node >/dev/null 2>&1; then
     # `|| _aify_codex_rec=""` is load-bearing. Under `set -euo pipefail` this assignment inherits the
-    # PIPELINE's status, so an unreachable service ended the wrapper here: no codex, no message, just
-    # curl's exit code. Identity recovery is best-effort by design — the store lookup below and the
+    # command's status, so an unreachable service ended the wrapper here: no codex, no message, just
+    # the lookup's exit code. Identity recovery is best-effort by design — the store lookup below and the
     # explicit warning already cover the failure — so it must never be able to stop a launch.
-    _aify_codex_rec="$(curl -sS --max-time 2 "$HARNESS_ENDPOINT/api/v1/agents" 2>/dev/null | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const a=(JSON.parse(d).agents)||{};const h=process.argv[1];for(const k in a){const v=a[k]||{};const sh=String(v.sessionHandle||v.session_handle||"");if(sh&&sh===h&&String(v.runtime||"")==="codex"){process.stdout.write(k);break;}}}catch{}})' "$CODEX_RESUME_HANDLE" 2>/dev/null)" || _aify_codex_rec=""
+    # The bridge does the lookup: it knows where this host's API key is, and a launcher does not.
+    # A bare curl here got a 401 as soon as the service required a key (aify-comms D36).
+    _aify_codex_rec="$(node "@@BRIDGE_DIR@@/agent-for-handle.mjs" "$HARNESS_ENDPOINT" codex "$CODEX_RESUME_HANDLE" 2>/dev/null)" || _aify_codex_rec=""
     if [ -n "$_aify_codex_rec" ]; then
       CODEX_AIFY_AGENT_ID="$_aify_codex_rec"
       echo "[codex-aify] resolved aify agent '$CODEX_AIFY_AGENT_ID' from thread handle '$CODEX_RESUME_HANDLE' (service lookup)." >&2

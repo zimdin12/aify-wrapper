@@ -456,12 +456,14 @@ fi
 # unknown, say so out loud rather than degrade in silence. Anonymous sessions remain legal —
 # a plain claude+comms session is a real use case — they just can't be silent about it.
 if [ -z "$CLAUDE_AIFY_AGENT_ID" ] && [ -n "${CLAUDE_RESUME_ID:-}" ]; then
-  if command -v node >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
+  if command -v node >/dev/null 2>&1; then
     # `|| _aify_rec=""` is load-bearing. Under `set -euo pipefail` this assignment inherits the
-    # PIPELINE's status, so an unreachable service ended the wrapper here: no claude, no message, just
-    # curl's exit code. Identity recovery is best-effort by design — the store lookup below and the
+    # command's status, so an unreachable service ended the wrapper here: no claude, no message, just
+    # the lookup's exit code. Identity recovery is best-effort by design — the store lookup below and the
     # explicit warning already cover the failure — so it must never be able to stop a launch.
-    _aify_rec="$(curl -sS --max-time 2 "${AIFY_COMMS_URL:-http://localhost:8800}/api/v1/agents" 2>/dev/null | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{const a=(JSON.parse(d).agents)||{};const h=process.argv[1];for(const k in a){const v=a[k]||{};const sh=String(v.sessionHandle||v.session_handle||"");if(sh&&sh===h&&String(v.runtime||"")==="claude-code"){process.stdout.write(k);break;}}}catch{}})' "$CLAUDE_RESUME_ID" 2>/dev/null)" || _aify_rec=""
+    # The bridge does the lookup: it knows where this host's API key is, and a launcher does not.
+    # A bare curl here got a 401 as soon as the service required a key (aify-comms D36).
+    _aify_rec="$(node "@@BRIDGE_DIR@@/agent-for-handle.mjs" "${AIFY_COMMS_URL:-http://localhost:8800}" claude-code "$CLAUDE_RESUME_ID" 2>/dev/null)" || _aify_rec=""
     if [ -n "$_aify_rec" ]; then
       CLAUDE_AIFY_AGENT_ID="$_aify_rec"
       echo "[claude-aify] resolved aify agent '$CLAUDE_AIFY_AGENT_ID' from session handle '$CLAUDE_RESUME_ID' (service lookup)." >&2
