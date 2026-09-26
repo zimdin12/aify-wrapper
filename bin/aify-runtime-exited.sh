@@ -17,7 +17,11 @@
 bridge="${1:-}"
 pids=""
 if [ -n "${AIFY_AGENT_ID:-}" ] && [ -n "$bridge" ] && [ -f "$bridge/agent-state-event.mjs" ]; then
-  node "$bridge/agent-state-event.mjs" turn-end </dev/null >/dev/null 2>&1 &
+  # AS NATIVE NODE OPENS IT: the launcher passes the directory MSYS-style, which node reads only while
+  # Git Bash rewrites arguments, and MSYS_NO_PATHCONV=1 turns that off (aify-comms v0.7.1 review, W04).
+  event="$bridge/agent-state-event.mjs"
+  if command -v cygpath >/dev/null 2>&1; then event="$(cygpath -m "$event" 2>/dev/null || printf '%s' "$event")"; fi
+  node "$event" turn-end </dev/null >/dev/null 2>&1 &
   pids="$pids $!"
 fi
 if [ "${2:-}" = "herdr" ]; then

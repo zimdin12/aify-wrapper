@@ -16,6 +16,20 @@
 #|   @@ + SCRIPT_DIR@@   the repo checkout
 set -euo pipefail
 
+# THE BRIDGE DIRECTORY AS NATIVE NODE OPENS IT, converted ONCE, before anything hands it to node.
+# `@@BRIDGE_DIR@@` is rendered MSYS-style on Windows (/c/Users/...). Bash reads that; native Windows
+# node reads it only while Git Bash rewrites the argument on the way, and MSYS_NO_PATHCONV=1 -- which
+# hermes' own tool shell exports -- switches that off. Node then looked for C:/c/Users/..., and the
+# resume lookup failed in silence (aify-comms v0.7.1 review, W04). So every `node` call below takes
+# this, and bash keeps the raw placeholder.
+# THE UNCONVERTED PATH FIRST, and the substitution kept out of the assignment: under `set -e` a
+# `cygpath` that fails inside `VAR="$(...)"` would end the launch before the agent ran.
+AIFY_BRIDGE_DIR_FWD="@@BRIDGE_DIR@@"
+if command -v cygpath >/dev/null 2>&1; then
+  _aify_bridge_converted="$(cygpath -m "@@BRIDGE_DIR@@" 2>/dev/null || true)"
+  if [ -n "$_aify_bridge_converted" ]; then AIFY_BRIDGE_DIR_FWD="$_aify_bridge_converted"; fi
+fi
+
 # ONE LIVE INSTANCE PER AGENT (bin/aify-lease.sh, lib/agent-lease.mjs). Sourced first so every exit path,
 # traps included, can call the release; an installed bridge older than the helper gets no-op stubs.
 AIFY_LEASE_SH="@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-lease.sh"
@@ -399,7 +413,7 @@ if [ -z "$HERMES_AIFY_AGENT_ID" ] && [ -n "$HERMES_RECOVER_HANDLE" ]; then
         # explicit warning already cover the failure — so it must never be able to stop a launch.
         # The bridge does the lookup: it knows where this host's API key is, and a launcher does not.
         # A bare curl here got a 401 as soon as the service required a key (aify-comms D36).
-        _aify_rec="$(node "@@BRIDGE_DIR@@/agent-for-handle.mjs" "${AIFY_SERVER_URL%/}" hermes "$HERMES_RECOVER_HANDLE" 2>/dev/null)" || _aify_rec=""
+        _aify_rec="$(node "$AIFY_BRIDGE_DIR_FWD/agent-for-handle.mjs" "${AIFY_SERVER_URL%/}" hermes "$HERMES_RECOVER_HANDLE" 2>/dev/null)" || _aify_rec=""
         [ -n "$_aify_rec" ] && HERMES_AIFY_AGENT_ID="$_aify_rec"
       fi
       ;;

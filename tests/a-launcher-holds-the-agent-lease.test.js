@@ -282,7 +282,7 @@ test("NO AGENT ID and --shared claim nothing", { skip: WIN }, () => {
 test("the claim comes before every older reap of the same agent, so a refused start has ended nothing", () => {
   // claude's managed reap and hermes' kill-prior both stop this agent's previous processes. Run before the
   // claim, an automatic start ended a live instance that the claim would then have refused.
-  const order = { claude: 'node "@@BRIDGE_DIR@@/reap-managed-claude.js"', hermes: '  aify_hermes_kill_prior "$HERMES_AIFY_AGENT_ID"' };
+  const order = { claude: 'node "$AIFY_BRIDGE_DIR_FWD/reap-managed-claude.js"', hermes: '  aify_hermes_kill_prior "$HERMES_AIFY_AGENT_ID"' };
   for (const [client, reap] of Object.entries(order)) {
     const source = fs.readFileSync(path.join(ROOT, "wrappers", `${client}-aify.sh.in`), "utf8");
     const claim = source.indexOf('  aify_lease_claim "@@BRIDGE_DIR@@"');

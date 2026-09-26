@@ -24,6 +24,20 @@
 #| mcp/stdio/tests/claude-wrapper-template.test.js.
 set -euo pipefail
 
+# THE BRIDGE DIRECTORY AS NATIVE NODE OPENS IT, converted ONCE, before anything hands it to node.
+# `@@BRIDGE_DIR@@` is rendered MSYS-style on Windows (/c/Users/...). Bash reads that; native Windows
+# node reads it only while Git Bash rewrites the argument on the way, and MSYS_NO_PATHCONV=1 -- which
+# hermes' own tool shell exports -- switches that off. Node then looked for C:/c/Users/..., and the
+# resume lookup failed in silence (aify-comms v0.7.1 review, W04). So every `node` call below takes
+# this, and bash keeps the raw placeholder.
+# THE UNCONVERTED PATH FIRST, and the substitution kept out of the assignment: under `set -e` a
+# `cygpath` that fails inside `VAR="$(...)"` would end the launch before the agent ran.
+AIFY_BRIDGE_DIR_FWD="@@BRIDGE_DIR@@"
+if command -v cygpath >/dev/null 2>&1; then
+  _aify_bridge_converted="$(cygpath -m "@@BRIDGE_DIR@@" 2>/dev/null || true)"
+  if [ -n "$_aify_bridge_converted" ]; then AIFY_BRIDGE_DIR_FWD="$_aify_bridge_converted"; fi
+fi
+
 # ONE LIVE INSTANCE PER AGENT (bin/aify-lease.sh, lib/agent-lease.mjs). Sourced first so every exit path,
 # traps included, can call the release; an installed bridge older than the helper gets no-op stubs.
 AIFY_LEASE_SH="@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-lease.sh"
@@ -465,7 +479,7 @@ if [ -z "$CLAUDE_AIFY_AGENT_ID" ] && [ -n "${CLAUDE_RESUME_ID:-}" ]; then
     # A bare curl here got a 401 as soon as the service required a key (aify-comms D36).
     # It asks the endpoint this launch is bound to, as codex-aify does: an AIFY_COMMS_URL-or-localhost
     # fallback ignored a baked remote endpoint (aify-comms v0.7 review).
-    _aify_rec="$(node "@@BRIDGE_DIR@@/agent-for-handle.mjs" "$HARNESS_ENDPOINT" claude-code "$CLAUDE_RESUME_ID" 2>/dev/null)" || _aify_rec=""
+    _aify_rec="$(node "$AIFY_BRIDGE_DIR_FWD/agent-for-handle.mjs" "$HARNESS_ENDPOINT" claude-code "$CLAUDE_RESUME_ID" 2>/dev/null)" || _aify_rec=""
     if [ -n "$_aify_rec" ]; then
       CLAUDE_AIFY_AGENT_ID="$_aify_rec"
       echo "[claude-aify] resolved aify agent '$CLAUDE_AIFY_AGENT_ID' from session handle '$CLAUDE_RESUME_ID' (service lookup)." >&2
@@ -569,13 +583,9 @@ fi
 # aify-comms-channel stuck in "still connecting" state. The legacy
 # strict mode trades operator-visible MCP servers inside the wrapper for
 # guaranteed channel wake.
-# THE INSTALLED BRIDGE DIRECTORY, converted ONCE, for every consumer that is not bash.
-#
-# `@@BRIDGE_DIR@@` is substituted MSYS-style (/c/Users/.../.aify-comms/mcp/stdio). Bash reads that
-# fine -- the reaper call near the end of this file uses it raw -- but native-Windows Claude does
-# NOT: it fails to start the MCP server children on an MSYS path, which is why the conversion below
-# exists at all. So the raw placeholder is right for a `node` call made from this script, and this
-# converted form is right for anything written into Claude's own config.
+# THE INSTALLED BRIDGE DIRECTORY is `AIFY_BRIDGE_DIR_FWD`, converted once at the top of this file.
+# Native-Windows Claude fails to start the MCP server children on an MSYS path, so everything written
+# into Claude's own config below takes the converted form, as every `node` call in this file does.
 #
 # ONE NAME FOR ONE DIRECTORY. This launcher used to reach the same directory through
 # `AIFY_SCRIPT_DIR_FWD` + a hardcoded `/mcp/stdio/` segment, and that variable WAS assigned twice
@@ -585,11 +595,6 @@ fi
 # deploy models, and the hook silently opting out of "security fixes flow on reinstall". Both
 # assignments are gone -- nothing reads that name now, which is what makes the hazard unavailable
 # rather than merely corrected.
-if command -v cygpath >/dev/null 2>&1; then
-  AIFY_BRIDGE_DIR_FWD="$(cygpath -m "@@BRIDGE_DIR@@")"
-else
-  AIFY_BRIDGE_DIR_FWD="@@BRIDGE_DIR@@"
-fi
 CLAUDE_MCP_FLAGS=()
 AIFY_MCP_CONFIG=""
 if [ "${AIFY_CLAUDE_STRICT_MCP:-0}" = "1" ]; then
@@ -775,7 +780,7 @@ if [ "$CLAUDE_AIFY_SHARED" != true ] && [ "$AIFY_SESSION_MODE" = "managed" ] && 
   # kills THIS agent's prior managed claude (verified via the candidate's parent
   # --aify-agent wrapper), never another agent or a resident operator session
   # that happens to share the same --resume session id (handle collision).
-  node "@@BRIDGE_DIR@@/reap-managed-claude.js" "$CLAUDE_RESUME_ID" "$CLAUDE_AIFY_AGENT_ID" >/dev/null 2>&1 || true
+  node "$AIFY_BRIDGE_DIR_FWD/reap-managed-claude.js" "$CLAUDE_RESUME_ID" "$CLAUDE_AIFY_AGENT_ID" >/dev/null 2>&1 || true
 fi
 
 # --shared: HAND THE SESSION TO THE HOST TIER instead of running it as a child of this shell.

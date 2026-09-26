@@ -6,6 +6,12 @@
 // run by aify-comms against a keyed service and codex's by a pin, and hermes' was correct by reading
 // only. The three are run the same way here, so none of them is.
 //
+// AND WITH MSYS PATH REWRITING OFF (W04). `node "@@BRIDGE_DIR@@/agent-for-handle.mjs"` handed native
+// Windows node the bridge directory as rendered, `/c/Users/...`. Node can open that only while Git
+// Bash rewrites the argument on the way; with `MSYS_NO_PATHCONV=1` -- which hermes' own tool shell
+// exports -- node looked for `C:\c\Users\...`, the lookup failed in silence, and the resumed session
+// came up anonymous.
+//
 // The REAL rendered launchers run with the bridge directory rendered MSYS-style on Windows, as
 // aify-comms' installer renders it. The bridge's `agent-for-handle.mjs` is a stub that answers for one
 // handle; each runtime is a stub that records the environment it was started with. Nothing contacts a
@@ -121,6 +127,13 @@ for (const [client, expected, extraArgs] of CASES) {
       `the lookup did not reach the bridge (asked: ${JSON.stringify(asked)}):\n${run.stderr}`);
     assert.deepEqual(asked.map((a) => [a.endpoint.replace(/\/$/, ""), a.runtime, a.handle]),
       [[NOWHERE, expected.replace(/-recovered$/, ""), KNOWN]], "the lookup asked another endpoint, runtime or handle");
+  });
+
+  test(`${client}-aify --resume finds its agent with MSYS path rewriting off`, () => {
+    const { run, started, asked } = resume(client, KNOWN, { rewriting: false, extraArgs });
+    assert.ok(Object.keys(started).length, `the runtime never started:\n${run.stdout}\n${run.stderr}`);
+    assert.equal(started.AIFY_AGENT_ID, expected,
+      `node could not open the bridge's helper (asked: ${JSON.stringify(asked)}):\n${run.stderr}`);
   });
 
   test(`CONTROL: ${client}-aify stays anonymous for a handle the service does not know`, () => {
