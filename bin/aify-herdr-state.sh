@@ -39,20 +39,45 @@ case "$pane" in
   *) exit 0 ;;
 esac
 
-# AN UNCHANGED STATE IS NOT SENT AGAIN. The hooks run synchronously inside the agent's turn, and
-# PostToolUse fires on every tool call, so each report added a Herdr round trip to every tool call --
-# and a Herdr that hangs holds the agent for the hook's whole timeout. Only a change reaches Herdr.
-# The last report is kept per pane and tagged with the launcher that made it (AIFY_HERDR_LAUNCH), so a
-# later launch in a reused pane id starts clean. It is written only after Herdr accepted the report,
-# so a failed one is retried by the next hook.
+# AN UNCHANGED STATE IS NOT SENT AGAIN. PostToolUse fires on every tool call, so each report added a
+# Herdr round trip to every tool call. Only a change reaches Herdr. The last report is kept per pane and
+# tagged with the launcher that made it (AIFY_HERDR_LAUNCH), so a later launch in a reused pane id starts
+# clean. It is written only after Herdr accepted the report, so a failed one is retried by the next hook.
+#
+# IN THE ORDER THE HOOKS FIRED. The hooks run in the background so the agent never waits on them, and
+# two can finish out of order: an idle that lands before its turn's last working would leave the pane
+# reading working. Each report carries when it fired (AIFY_HOOK_FIRED_AT from the caller, else this
+# shell's EPOCHREALTIME; a shell with neither is unordered): one older than the last report is dropped,
+# and one that finishes after a later report re-sends that later state.
+fired="${AIFY_HOOK_FIRED_AT:-${EPOCHREALTIME:-}}"
+case "$fired" in *[.,]*) fired="${fired%%[.,]*}${fired#*[.,]}" ;; esac
+case "$fired" in ''|*[!0-9]*) fired=0 ;; esac
+report() {
+  "${HERDR_BIN_PATH:-herdr}" pane report-agent "$pane" --source herdr:aify --agent "$AIFY_HERDR_AGENT" --state "$1" >/dev/null 2>&1
+}
 cache=""
+last_state="" last_at=0
 if [ -n "${AIFY_HERDR_LAUNCH:-}" ]; then
   cache="${TMPDIR:-/tmp}/aify-herdr-$(printf '%s' "$pane" | tr ':' '-').state"
-  [ "$(cat "$cache" 2>/dev/null || true)" = "$AIFY_HERDR_LAUNCH $state" ] && exit 0
+  read_last() {
+    last_state="" last_at=0
+    set -- $(cat "$cache" 2>/dev/null || true)
+    [ "${1:-}" = "$AIFY_HERDR_LAUNCH" ] || return 0
+    last_state="${2:-}"
+    case "${3:-0}" in ''|*[!0-9]*) last_at=0 ;; *) last_at="$3" ;; esac
+  }
+  read_last
+  [ "$last_state" = "$state" ] && exit 0
+  [ "$fired" -gt 0 ] && [ "$last_at" -gt "$fired" ] && exit 0
 fi
 
 # The source must be the claim's, or Herdr refuses the report as coming from another owner.
-if "${HERDR_BIN_PATH:-herdr}" pane report-agent "$pane" --source herdr:aify --agent "$AIFY_HERDR_AGENT" --state "$state" >/dev/null 2>&1; then
-  if [ -n "$cache" ]; then printf '%s' "$AIFY_HERDR_LAUNCH $state" > "$cache" 2>/dev/null || true; fi
+if report "$state" && [ -n "$cache" ]; then
+  read_last
+  if [ "$fired" -gt 0 ] && [ "$last_at" -gt "$fired" ]; then
+    report "$last_state" || true
+  else
+    printf '%s' "$AIFY_HERDR_LAUNCH $state $fired" > "$cache" 2>/dev/null || true
+  fi
 fi
 exit 0

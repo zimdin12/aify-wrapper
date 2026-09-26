@@ -708,14 +708,14 @@ fi
 # PostToolUse re-asserts working after a permission prompt is answered and
 # covers a turn a channel wake starts without a UserPromptSubmit; PostToolUseFailure does the same for a
 # tool that failed. StopFailure ends a turn an API error killed, which runs no Stop. Nothing is added otherwise, so a
-# launch outside Herdr runs no extra hook.
+# launch outside Herdr runs no extra hook. They run in the background (`async`), and the script orders them.
 AIFY_HERDR_WORKING=""
 AIFY_HERDR_EVENTS=""
 if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then
   export AIFY_HERDR_AGENT="${0##*/}"
   export AIFY_HERDR_LAUNCH="$$"
   _aify_state_hook() {
-    printf '{ "type": "command", "command": "sh \\"%s/node_modules/aify-wrapper/bin/aify-herdr-state.sh\\" %s", "timeout": 5 }' "$AIFY_BRIDGE_DIR_FWD" "$1"
+    printf '{ "type": "command", "command": "sh \\"%s/node_modules/aify-wrapper/bin/aify-herdr-state.sh\\" %s", "timeout": 5, "async": true }' "$AIFY_BRIDGE_DIR_FWD" "$1"
   }
   AIFY_HERDR_WORKING=", $(_aify_state_hook working)"
   AIFY_HERDR_EVENTS=",

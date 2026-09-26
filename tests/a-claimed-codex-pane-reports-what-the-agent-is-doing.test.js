@@ -95,7 +95,7 @@ function launch({ env = {}, args = [], listFails = false, codexConfig = null } =
   /** event -> command, parsed back out of the `-c hooks.<Event>=[...]` values codex was given. */
   const hooks = {};
   argv.forEach((value, i) => {
-    const match = argv[i - 1] === "-c" && value.match(/^hooks\.(\w+)=\[\{hooks=\[\{type="command",command=("(?:[^"\\]|\\.)*"),timeout=3\}\]\}\]$/);
+    const match = argv[i - 1] === "-c" && value.match(/^hooks\.(\w+)=\[\{hooks=\[\{type="command",command=("(?:[^"\\]|\\.)*"),timeout=3,async=true\}\]\}\]$/);
     if (match) hooks[match[1]] = JSON.parse(match[2]);
   });
   const hookEnv = { ...baseEnv, ...env, AIFY_HERDR_AGENT: fs.readFileSync(agentVar, "utf8") };
@@ -189,27 +189,37 @@ test("A MANAGED RESUME gets no hooks until config.toml trusts them, because code
 // review screen, for hooks whose state script sat at this path. A hash computed here that disagrees
 // with these would withhold the hooks from every managed resume for good.
 const OBSERVED_SCRIPT = "/tmp/tmp.3v9uRgYo2E/bridge/node_modules/aify-wrapper/bin/aify-herdr-state.sh";
+// Reported by codex-cli 0.157.0 itself (`hooks/list` currentHash, 2026-09-26) for the `-c` hooks
+// codexHookArgs(OBSERVED_SCRIPT) makes, which run in the background (`async`).
 const OBSERVED_CONFIG = `
 [hooks.state."/<session-flags>/config.toml:permission_request:0:0"]
-trusted_hash = "sha256:daa3cdcf16c648f24b5ee8182482ce1e1c994b2eba043c300f23bf9915f6e21c"
+trusted_hash = "sha256:779a189fd797c38bb7db1e375fbbfd478a759d8b7162a9f6018034049e50a7e5"
 
 [hooks.state."/<session-flags>/config.toml:post_tool_use:0:0"]
-trusted_hash = "sha256:0bdea8b74137cba93e849f1b01202596f081743921e98a0bcf760c4956cfca6a"
+trusted_hash = "sha256:d91e57826a6217b35feffbaefc3cd57221447df58a6c47cfb2d5a5bb10cde313"
 
 [hooks.state."/<session-flags>/config.toml:user_prompt_submit:0:0"]
-trusted_hash = "sha256:09f233db276c4d6268aff22a2fda81fdc96eb16a1e0a3dbf4992756eadc74b0d"
+trusted_hash = "sha256:29f983c085d8b7d7edb50ecb4d9c2dc513fb5aea088a832aaade6cc8f455f14f"
 
 [hooks.state."/<session-flags>/config.toml:stop:0:0"]
-trusted_hash = "sha256:804734df8069f0443212767e405f4d5e39d6ff95ed27ac54a8aba0b60325233b"
+trusted_hash = "sha256:962f2fc1b2259397d872ee9ef471c1294e7a23fe66e5ea74af99cb9737ad4e14"
 
 [hooks.state."/<session-flags>/config.toml:interrupt:0:0"]
-trusted_hash = "sha256:3a487c62ac8fa57ecde0702e8297d700483d8be167c875c6239c8c6723654897"
+trusted_hash = "sha256:94b16defb18ee4aba19d4ecce4fe69d707815239821ccb4d6218c841a8fcd421"
+`;
+// What codex-cli wrote on 2026-09-15 when the operator trusted the same hooks before they ran in the
+// background: the stop hook's entry.
+const TRUSTED_BEFORE_ASYNC = `
+[hooks.state."/<session-flags>/config.toml:stop:0:0"]
+trusted_hash = "sha256:804734df8069f0443212767e405f4d5e39d6ff95ed27ac54a8aba0b60325233b"
 `;
 
 test("the hash matches the one codex wrote for the same hook", () => {
   assert.equal(codexHookHash("stop", codexStateCommand(OBSERVED_SCRIPT, "idle")),
-    "sha256:804734df8069f0443212767e405f4d5e39d6ff95ed27ac54a8aba0b60325233b");
+    "sha256:962f2fc1b2259397d872ee9ef471c1294e7a23fe66e5ea74af99cb9737ad4e14");
   assert.equal(codexHooksTrusted(OBSERVED_CONFIG, OBSERVED_SCRIPT, { windows: false }), true);
+  // Trust given before the hooks ran in the background covers them no longer, so codex asks once more.
+  assert.notEqual(codexHookHash("stop", codexStateCommand(OBSERVED_SCRIPT, "idle")), TRUSTED_BEFORE_ASYNC.match(/sha256:[0-9a-f]+/)[0]);
 });
 
 test("the trust check says no to anything it cannot match", () => {
@@ -220,7 +230,7 @@ test("the trust check says no to anything it cannot match", () => {
   const withoutInterrupt = OBSERVED_CONFIG.slice(0, OBSERVED_CONFIG.indexOf("[hooks.state.\"/<session-flags>/config.toml:interrupt"));
   assert.equal(codexHooksTrusted(withoutInterrupt, OBSERVED_SCRIPT, { windows: false }), false);
   // A table with no hash of its own does not borrow the next table's, even one holding the right hash.
-  const stopHash = "sha256:804734df8069f0443212767e405f4d5e39d6ff95ed27ac54a8aba0b60325233b";
+  const stopHash = "sha256:962f2fc1b2259397d872ee9ef471c1294e7a23fe66e5ea74af99cb9737ad4e14";
   const hashless = OBSERVED_CONFIG.replace(`:stop:0:0"]\ntrusted_hash = "${stopHash}"\n`,
     `:stop:0:0"]\nenabled = true\n\n[hooks.state."/home/someone/.codex/hooks.json:stop:0:0"]\ntrusted_hash = "${stopHash}"\n`);
   assert.notEqual(hashless, OBSERVED_CONFIG);
@@ -232,7 +242,7 @@ test("the trust check says no to anything it cannot match", () => {
 test("the -c values are the commands the trust check hashes, and report under the claim's source", () => {
   const args = codexHookArgs(OBSERVED_SCRIPT);
   assert.equal(args.length, CODEX_STATE_EVENTS.length * 2);
-  assert.ok(args.includes(`hooks.Stop=[{hooks=[{type="command",command=${JSON.stringify(codexStateCommand(OBSERVED_SCRIPT, "idle"))},timeout=3}]}]`));
+  assert.ok(args.includes(`hooks.Stop=[{hooks=[{type="command",command=${JSON.stringify(codexStateCommand(OBSERVED_SCRIPT, "idle"))},timeout=3,async=true}]}]`));
   const script = fs.readFileSync(path.join(ROOT, "bin", "aify-herdr-state.sh"), "utf8");
   assert.ok(script.includes(`--source ${AIFY_AGENT_SOURCE} `));
 });

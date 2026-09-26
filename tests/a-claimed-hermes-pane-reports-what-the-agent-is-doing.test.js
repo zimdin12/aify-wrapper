@@ -44,9 +44,16 @@ class Ctx:
 ctx = Ctx()
 module.register(ctx)
 print(json.dumps(sorted(ctx.hooks)))
+import threading, time
 for name, kwargs in json.loads(sys.argv[2]):
     for callback in ctx.hooks.get(name, []):
+        started = time.monotonic()
         assert callback(**kwargs) is None
+        assert time.monotonic() - started < 0.5, "the hook waited on its report"
+    # The report runs on a thread of its own; hermes' hooks are seconds apart, so let each land.
+    for thread in threading.enumerate():
+        if thread is not threading.current_thread():
+            thread.join()
 `;
 
 function launch({ env = {}, listFails = false } = {}) {
@@ -127,6 +134,14 @@ test("A CLAIMED HERMES PANE FOLLOWS THE AGENT: working, blocked, working, idle",
   assert.deepEqual(registered, ["on_session_end", "post_approval_response", "pre_approval_request", "pre_llm_call"]);
   assert.deepEqual(states(reports().slice(1)), ["working", "blocked", "working", "idle"]);
   for (const line of reports()) assert.match(line, new RegExp(`^pane report-agent w1:p2 --source ${AIFY_AGENT_SOURCE} --agent hermes-aify `));
+});
+
+test("a hook does not wait on Herdr: the report runs beside the agent's turn", { skip: NO_PYTHON }, () => {
+  const { hermes, fire } = launch({ env: IN_A_PANE });
+  const slow = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "aify-slow-herdr-")), "herdr");
+  fs.writeFileSync(slow, "#!/bin/sh\nsleep 2\n", { mode: 0o755 });
+  // The driver fails the run if a callback took 0.5 s or more.
+  fire([TURN[0]], hermes.plugin, { HERDR_BIN_PATH: slow });
 });
 
 test("a subagent's turn and an approval the auxiliary model decides do not move the dot", { skip: NO_PYTHON }, () => {

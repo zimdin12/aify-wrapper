@@ -27,13 +27,17 @@ so a child finishing does not make its parent read idle. An approval decided by 
 (surface "smart") waits on nobody and is ignored too.
 
 The report itself is bin/aify-herdr-state.sh, the one implementation of which pane and which source.
-Every callback returns None and never raises: hooks run on the agent's own thread.
+Every callback returns None and never raises: hooks run on the agent's own thread, which waited up to 3
+s on each report while the host was loaded. The report now runs on a thread of its own, carrying the
+time the hook fired so the script can drop one that lands after a later report.
 """
 
 from __future__ import annotations
 
 import os
 import subprocess
+import threading
+import time
 
 _STATE_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bin", "aify-herdr-state.sh")
 
@@ -41,8 +45,16 @@ _STATE_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "
 def _report(state: str) -> None:
     if not os.environ.get("AIFY_HERDR_AGENT"):
         return
+    env = dict(os.environ, AIFY_HOOK_FIRED_AT=f"{time.time():.6f}")
     try:
-        kwargs = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "timeout": 3}
+        threading.Thread(target=_run, args=(state, env), daemon=True).start()
+    except Exception:
+        pass
+
+
+def _run(state: str, env: dict) -> None:
+    try:
+        kwargs = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "timeout": 5, "env": env}
         if os.name == "nt":
             kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
         subprocess.run(["sh", _STATE_SCRIPT, state], check=False, **kwargs)
