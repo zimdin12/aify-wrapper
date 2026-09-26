@@ -95,6 +95,16 @@ test("the newest release is preferred when there are several", () => {
   assert.equal(resolved.bin, newer);
 });
 
+test("the newest release is chosen by version, not by string order", () => {
+  // aify-comms v0.7.1 review, E7: sorted as strings, "0.10.0" sorts below "0.9.0" and the older won.
+  const older = path.join(STANDALONE, "releases", "0.9.0-x86_64", "herdr.exe");
+  const newer = path.join(STANDALONE, "releases", "0.10.0-x86_64", "herdr.exe");
+  for (const listing of [["0.9.0-x86_64", "0.10.0-x86_64"], ["0.10.0-x86_64", "0.9.0-x86_64"]]) {
+    const resolved = resolveHerdrBinary({ env: {}, home: HOME, platform: "win32", io: diskWith([older, newer], listing) });
+    assert.equal(resolved.bin, newer, `listed as ${JSON.stringify(listing)}`);
+  }
+});
+
 test("nothing found anywhere still falls back to the bare name, and SAYS the search failed", () => {
   const resolved = resolveHerdrBinary({ env: {}, home: HOME, platform: "win32", io: diskWith([]) });
   assert.equal(resolved.ok, false);
