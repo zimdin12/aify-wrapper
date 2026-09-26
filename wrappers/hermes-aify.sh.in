@@ -590,11 +590,6 @@ AIFY_HERMES_DAEMON_CLI="$AIFY_HERMES_STDIO_DIR/hermes-daemon-cli.js"
 # branch brings up the gateway host, starts the delivery loop, and then EXECs a
 # real `hermes --tui` into THIS PTY (rendered windowless in the dashboard).
 AIFY_HERMES_MANAGED_HOST_JS="$AIFY_HERMES_STDIO_DIR/hermes-managed-host.js"
-# Loop ready-marker helper (WS1 Task 1.5). The delivery loop writes
-# `aify-hermes-loop-ready-<agent>` into os.tmpdir() once it is a LIVE CLAIMER;
-# the managed branch health-gates on this marker before exec'ing the visible TUI
-# so a TUI that can't receive work never shows (visible-TUI HARD requirement).
-AIFY_HERMES_LOOP_READY_JS="$AIFY_HERMES_STDIO_DIR/hermes-loop-ready.js"
 # Prebuilt ui-tui bundle dir (baked at install time). When non-empty and it
 # holds dist/entry.js, the managed branch exports it as HERMES_TUI_DIR so
 # `hermes --tui` runs the prebuilt bundle and skips the per-launch
