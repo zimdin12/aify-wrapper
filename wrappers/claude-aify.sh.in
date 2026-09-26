@@ -463,7 +463,9 @@ if [ -z "$CLAUDE_AIFY_AGENT_ID" ] && [ -n "${CLAUDE_RESUME_ID:-}" ]; then
     # explicit warning already cover the failure — so it must never be able to stop a launch.
     # The bridge does the lookup: it knows where this host's API key is, and a launcher does not.
     # A bare curl here got a 401 as soon as the service required a key (aify-comms D36).
-    _aify_rec="$(node "@@BRIDGE_DIR@@/agent-for-handle.mjs" "${AIFY_COMMS_URL:-http://localhost:8800}" claude-code "$CLAUDE_RESUME_ID" 2>/dev/null)" || _aify_rec=""
+    # It asks the endpoint this launch is bound to, as codex-aify does: an AIFY_COMMS_URL-or-localhost
+    # fallback ignored a baked remote endpoint (aify-comms v0.7 review).
+    _aify_rec="$(node "@@BRIDGE_DIR@@/agent-for-handle.mjs" "$HARNESS_ENDPOINT" claude-code "$CLAUDE_RESUME_ID" 2>/dev/null)" || _aify_rec=""
     if [ -n "$_aify_rec" ]; then
       CLAUDE_AIFY_AGENT_ID="$_aify_rec"
       echo "[claude-aify] resolved aify agent '$CLAUDE_AIFY_AGENT_ID' from session handle '$CLAUDE_RESUME_ID' (service lookup)." >&2
