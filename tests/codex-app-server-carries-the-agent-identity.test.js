@@ -13,9 +13,8 @@
 // and of the TUI separately. What each process was given is the assertion.
 
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
-import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -62,6 +61,7 @@ function world({ endpoint = NOWHERE } = {}) {
 
   return {
     launcher: path.join(out, "codex-aify"),
+    bridge: path.join(dir, "bridge"),
     // SEALED like `env -i`: nothing from this process's environment reaches the launcher.
     env: (extra = {}) => ({ PATH: [stubs, path.dirname(process.execPath), "/usr/bin", "/bin"].join(":"), HOME: home, TMPDIR: dir, ...extra }),
     seen: () => (fs.existsSync(seen) ? fs.readFileSync(seen, "utf8") : "").split("\n").filter(Boolean).map(line => JSON.parse(line)),
@@ -95,30 +95,30 @@ test("NO AGENT: the app-server gets no agent id, and the URL the TUI gets", { sk
   assert.deepEqual(r.server[0].env, r.tui[0].env);
 });
 
-test("an agent recovered from the service by thread handle reaches the app-server too", { skip: WIN }, async () => {
-  const server = http.createServer((req, res) => {
-    res.setHeader("content-type", "application/json");
-    res.end(JSON.stringify({ agents: { "probe-r": { runtime: "codex", sessionHandle: "thread-1" } } }));
-  });
-  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
-  const endpoint = `http://127.0.0.1:${server.address().port}`;
-  try {
-    const w = world({ endpoint });
-    // Async, because this process serves the lookup the launcher makes.
-    const child = spawn("bash", [w.launcher, "--resume", "thread-1"], { env: w.env(), stdio: ["ignore", "pipe", "pipe"] });
-    let stderr = "";
-    child.stderr.on("data", d => { stderr += d; });
-    const code = await new Promise(resolve => child.on("exit", resolve));
-    assert.equal(code, 0, stderr);
-    const [app] = w.seen().filter(row => row.role === "app-server");
-    const [tui] = w.seen().filter(row => row.role === "tui");
-    assert.match(tui.argv.join(" "), / resume --include-non-interactive thread-1$/, stderr);
-    assert.equal(tui.env.AIFY_AGENT_ID, "probe-r", `control: the lookup did not resolve:\n${stderr}`);
-    assert.equal(tui.env.AIFY_SESSION_HANDLE, "thread-1", "control: the resume handle was not exported");
-    assert.deepEqual(app.env, tui.env);
-  } finally {
-    server.close();
-  }
+test("an agent recovered from the service by thread handle reaches the app-server too", { skip: WIN }, () => {
+  // The launcher asks the bridge's `agent-for-handle.mjs` since 034f39a, not the service over HTTP, so
+  // the lookup is a stub in the bridge directory that answers for thread-1 and says what it was asked.
+  // This test served the old HTTP lookup until v0.7.2 and failed on every Linux run in between.
+  const w = world();
+  const asked = path.join(path.dirname(w.launcher), "..", "asked");
+  fs.mkdirSync(w.bridge, { recursive: true });
+  fs.writeFileSync(path.join(w.bridge, "agent-for-handle.mjs"), [
+    'import fs from "node:fs";',
+    "const [endpoint, runtime, handle] = process.argv.slice(2);",
+    `fs.appendFileSync(${JSON.stringify(asked)}, JSON.stringify({ endpoint, runtime, handle }) + "\\n");`,
+    'if (runtime === "codex" && handle === "thread-1") process.stdout.write("probe-r\\n");',
+    "",
+  ].join("\n"));
+  const run = spawnSync("bash", [w.launcher, "--resume", "thread-1"], { encoding: "utf8", env: w.env(), timeout: 60_000 });
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(fs.readFileSync(asked, "utf8").split("\n").filter(Boolean).map(l => JSON.parse(l)),
+    [{ endpoint: NOWHERE, runtime: "codex", handle: "thread-1" }], "the bridge was not asked for this thread");
+  const [app] = w.seen().filter(row => row.role === "app-server");
+  const [tui] = w.seen().filter(row => row.role === "tui");
+  assert.match(tui.argv.join(" "), / resume --include-non-interactive thread-1$/, run.stderr);
+  assert.equal(tui.env.AIFY_AGENT_ID, "probe-r", `control: the lookup did not resolve:\n${run.stderr}`);
+  assert.equal(tui.env.AIFY_SESSION_HANDLE, "thread-1", "control: the resume handle was not exported");
+  assert.deepEqual(app.env, tui.env);
 });
 
 test("MANAGED RESUME still resumes, and the app-server has the identity", { skip: WIN }, () => {

@@ -33,10 +33,12 @@ const KNOWN = "11111111-2222-3333-4444-555555555555";
 const UNKNOWN = "99999999-8888-7777-6666-555555555555";
 
 // Bash named outright, in the form this platform's node can spawn: the PATH handed to the launcher
-// below is bash's, not node's.
+// below is bash's, not node's. An absolute path on Linux too: a bare "bash" made BASH_DIR ".", so the
+// launcher found bash and coreutils only where node happens to sit in /usr/bin (v0.7.2, external
+// review: 9 failures under an nvm node).
 const BASH = WIN
   ? execFileSync("bash", ["-lc", 'cygpath -w "$(command -v bash)"'], { encoding: "utf8" }).trim()
-  : "bash";
+  : execFileSync("sh", ["-c", "command -v bash"], { encoding: "utf8" }).trim();
 const BASH_DIR = path.dirname(BASH);
 /** A path as the launcher's shell writes it: MSYS-style on Windows, which is what aify-comms bakes. */
 const shellPath = (p) => (WIN ? execFileSync(BASH, ["-c", 'cygpath -u "$1"', "_", p], { encoding: "utf8" }).trim() : p);
