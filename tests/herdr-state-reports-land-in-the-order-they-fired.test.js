@@ -112,6 +112,37 @@ test("with neither EPOCHREALTIME nor GNU date, a report still outranks the claim
   assert.equal(sent()[1].seq, "1790000000000000");
 });
 
+// REVIEW (external, 2026-09-29): "Claude Code runs the hooks with /bin/sh, which is dash on Linux and has
+// no EPOCHREALTIME, so the seq falls back to when node started, 32 to 160 ms late." Measured under a real
+// dash (WSL Ubuntu): the ladder reaches GNU `date +%s%N` and never starts node. This holds that, under
+// every POSIX shell this host has: `sh` is Git Bash on Windows and dash on Debian/Ubuntu, and dash is also
+// asked for by name. Each run drops EPOCHREALTIME (bash loses its special meaning on unset; dash never
+// had it) and shadows node with a stub that leaves a mark, so a ladder that asks node before date fails.
+const SHELLS = ["sh", "bash", "dash"].map((shell) => ({
+  shell, present: spawnSync(shell, ["-c", "exit 0"], { stdio: "ignore" }).status === 0,
+}));
+for (const { shell, present } of SHELLS) {
+  test(`under ${shell} with no EPOCHREALTIME, GNU date stamps the report and node is never started`,
+    { skip: present ? false : `${shell} is not on this host, so NOT verified here` }, () => {
+      const { dir, sent } = pane();
+      const stubs = `${dir}/node-marks`;
+      fs.mkdirSync(stubs);
+      fs.writeFileSync(`${stubs}/node`, `#!/bin/sh\ntouch '${dir}/node-ran'\nexit 127\n`, { mode: 0o755 });
+      const before = BigInt(Date.now()) * 1000n;
+      const result = spawnSync(shell, ["-c", 'unset EPOCHREALTIME; . "$0" "$1"', STATE_SCRIPT, "working"], {
+        input: "", encoding: "utf8",
+        env: { SYSTEMROOT: process.env.SYSTEMROOT, TMPDIR: dir, HERDR_BIN_PATH: `${dir}/herdr`, AIFY_HERDR_AGENT: "claude-aify",
+          AIFY_HERDR_PANE_ID: "w1:p2", PATH: [stubs, process.env.PATH].join(path.delimiter) },
+      });
+      const after = (BigInt(Date.now()) + 1n) * 1000n;
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(fs.existsSync(`${dir}/node-ran`), false, `${shell}: the ladder started node although date prints microseconds`);
+      const [{ seq }] = sent();
+      assert.match(seq, /^[0-9]{16}$/);
+      assert.ok(BigInt(seq) >= before && BigInt(seq) <= after, `${shell}: ${seq} is not the time the hook ran (${before}..${after})`);
+    });
+}
+
 // THE DEFECT THIS REPLACED. The script used to serialize reports under a per-pane lock. On Windows a
 // report took 2.7 s, a lock left by one killed at the hook's 5 s timeout made the next wait 15.8 s, each
 // of those was killed in turn, and a managed hermes pane read idle through every turn.
