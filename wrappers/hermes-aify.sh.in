@@ -789,8 +789,8 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
   # (3) Background delivery loop — detached, survives the exec below. Capture
   # its PID so kill-prior can EXCLUDE it (self-reap race) and so we can report
   # which loop we are health-gating on. ITS OUTPUT IS KEPT, one file per agent beside its markers and
-  # started fresh each launch: a loop that spun 18 days beside an orphaned gateway (pc-manager,
-  # 2026-09-28) wrote to /dev/null and left nothing to say why.
+  # started fresh each launch: pc-manager's loop, found 2026-09-28 beside a gateway with no TUI, had
+  # written to /dev/null and left nothing to say what it was doing.
   nohup node "$AIFY_HERMES_MANAGED_HOST_JS" run "$HERMES_AIFY_AGENT_ID" >"${TMPDIR:-/tmp}/aify-hermes-loop-$HERMES_AIFY_AGENT_ID.log" 2>&1 &
   HERMES_LOOP_PID="$!"
   disown 2>/dev/null || true

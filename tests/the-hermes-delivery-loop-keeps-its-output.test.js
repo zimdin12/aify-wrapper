@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // The hermes delivery loop's output is kept, in a file per agent, instead of thrown away.
 //
-// 2026-09-28: pc-manager's loop ran 18 days beside a gateway with no TUI, the agent reading `online`
-// throughout, and its output went to /dev/null, so nothing could say which path it was stuck on (the
-// likeliest, a 403 on a stale gateway token, was reconstructed from the code and a live probe). This
+// 2026-09-28: pc-manager's loop was found beside a gateway with no TUI (started 2026-09-25), the agent
+// still reading `online`, and its output had gone to /dev/null, so nothing could say which path it was
+// on. A reject-forever path was found in the code afterwards; whether this loop was on it is not known. This
 // reads the launcher line that starts the loop; the template is the artifact install.sh renders.
 
 import assert from "node:assert/strict";
