@@ -14,6 +14,8 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { reportSeq } from "../lib/herdr-pane.mjs";
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const STATE_SCRIPT = path.join(ROOT, "bin", "aify-herdr-state.sh").replace(/\\/g, "/");
 
@@ -77,6 +79,37 @@ test("with no time passed in, the shell's own clock stamps the report to the mic
   const [{ seq }] = sent();
   assert.match(seq, /^[0-9]{16}$/);
   assert.ok(Math.abs(Number(seq) - before) < 60_000_000, `${seq} is not this host's clock in microseconds`);
+});
+
+// REVIEW of 82b8331 (comms-senior-dev, 2026-09-28): on a shell with neither EPOCHREALTIME nor GNU
+// `date +%N` (macOS /bin/sh), whole seconds ranked a hook BELOW the claim's millisecond seq made earlier
+// in the same second, and Herdr drops the lower one. Driven here by sourcing the script with
+// EPOCHREALTIME unset (bash drops its special meaning) and a BSD-style `date` first on PATH.
+test("with neither EPOCHREALTIME nor GNU date, a report still outranks the claim made before it", () => {
+  const { dir, sent } = pane();
+  const stubs = `${dir}/bsd`;
+  fs.mkdirSync(stubs);
+  // BSD date: `+%s%N` prints a literal N, `+%s` whole seconds -- pinned to a second long past.
+  fs.writeFileSync(`${stubs}/date`, "#!/bin/sh\ncase \"$1\" in +%s%N) echo 1790000000N ;; *) echo 1790000000 ;; esac\n", { mode: 0o755 });
+  // A node that is missing is a stub that fails, SHADOWING the real one: dropping node's directory from
+  // PATH drops /usr/bin on Linux, and `sh` with it.
+  const noNode = `${dir}/no-node`;
+  fs.mkdirSync(noNode);
+  fs.writeFileSync(`${noNode}/node`, "#!/bin/sh\nexit 127\n", { mode: 0o755 });
+  const run = (withNode) => {
+    const result = spawnSync("sh", ["-c", 'unset EPOCHREALTIME; . "$0" "$1"', STATE_SCRIPT, "working"], {
+      input: "", encoding: "utf8",
+      env: { SYSTEMROOT: process.env.SYSTEMROOT, TMPDIR: dir, HERDR_BIN_PATH: `${dir}/herdr`, AIFY_HERDR_AGENT: "claude-aify",
+        AIFY_HERDR_PANE_ID: "w1:p2", PATH: [stubs, ...(withNode ? [] : [noNode]), process.env.PATH].join(path.delimiter) },
+    });
+    assert.equal(result.status, 0, result.stderr);
+  };
+  const claim = BigInt(reportSeq(Date.now()));
+  run(true);
+  assert.ok(BigInt(sent()[0].seq) >= claim, `the report's seq ${sent()[0].seq} ranks below the claim's ${claim}`);
+  // CONTROL: without node the same run falls to the stub's whole seconds, so the stub is what was read.
+  run(false);
+  assert.equal(sent()[1].seq, "1790000000000000");
 });
 
 // THE DEFECT THIS REPLACED. The script used to serialize reports under a per-pane lock. On Windows a

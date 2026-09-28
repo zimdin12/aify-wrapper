@@ -43,7 +43,11 @@ esac
 # in flight and land out of order; Herdr keeps the one with the highest seq and drops any older one, and
 # drops a report with NO seq once a seq'd one has landed (Herdr 0.9.1, measured on this pane type
 # 2026-09-28). So every report carries when its hook fired, in microseconds: AIFY_HOOK_FIRED_AT from the
-# caller, else this shell's EPOCHREALTIME, else GNU `date +%s%N`, else whole seconds.
+# caller, else this shell's EPOCHREALTIME, else GNU `date +%s%N`, else node's Date.now() -- the clock the
+# claim's own seq is read from, so a hook never ranks below the claim it follows (review of 82b8331:
+# whole seconds, on a shell with neither, did) -- and whole seconds only if node is missing too.
+# A wall clock stepped BACK by N seconds holds later reports below the last one for up to N seconds;
+# Herdr owns the order, so that is the price of having no lock here.
 #
 # NO LOCK AND NO RECORD. This script used to order and de-duplicate the reports itself, under a
 # per-pane lock. On Windows each report then took 2.7 s, and a lock left behind by a report killed at the
@@ -56,6 +60,7 @@ case "$fired" in
       case "$fired" in
         ???????????????????*) case "$fired" in *[!0-9]*) ;; *) fired="${fired%???}" ;; esac ;;
       esac
+      case "$fired" in ????????????????) ;; *) fired="$(node -e 'process.stdout.write(Date.now() + "000")' 2>/dev/null)" ;; esac
       case "$fired" in ????????????????) ;; *) fired="$(date +%s 2>/dev/null)000000" ;; esac ;;
 esac
 case "$fired" in ''|*[!0-9]*|000000) exit 0 ;; esac
