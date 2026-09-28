@@ -29,6 +29,7 @@ import {
   codexStateCommand,
 } from "../lib/codex-herdr-hooks.mjs";
 import { AIFY_AGENT_SOURCE } from "../lib/herdr-pane.mjs";
+import { reportLines } from "./herdr-report-lines.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -99,8 +100,7 @@ function launch({ env = {}, args = [], listFails = false, codexConfig = null } =
     if (match) hooks[match[1]] = JSON.parse(match[2]);
   });
   const hookEnv = { ...baseEnv, ...env, AIFY_HERDR_AGENT: fs.readFileSync(agentVar, "utf8") };
-  const reports = () => (fs.existsSync(calls) ? fs.readFileSync(calls, "utf8") : "")
-    .split("\n").filter(line => line.startsWith("pane report-agent"));
+  const reports = () => reportLines(fs.existsSync(calls) ? fs.readFileSync(calls, "utf8") : "");
   const fire = (event) => {
     assert.ok(hooks[event], `no ${event} hook was given to the app-server`);
     const result = spawnSync("sh", ["-c", hooks[event]], { input: "{}", encoding: "utf8", env: hookEnv });

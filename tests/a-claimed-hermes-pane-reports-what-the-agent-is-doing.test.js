@@ -20,6 +20,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { AIFY_AGENT_SOURCE } from "../lib/herdr-pane.mjs";
+import { reportLines } from "./herdr-report-lines.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -102,8 +103,7 @@ function launch({ env = {}, listFails = false } = {}) {
   const hermes = JSON.parse(fs.readFileSync(seen, "utf8"));
   assert.deepEqual(hermes.argv, ["model", "list"]);
 
-  const reports = () => (fs.existsSync(calls) ? fs.readFileSync(calls, "utf8") : "")
-    .split("\n").filter(line => line.startsWith("pane report-agent"));
+  const reports = () => reportLines(fs.existsSync(calls) ? fs.readFileSync(calls, "utf8") : "");
   /** Load the plugin hermes was told about, as the aify-comms loader does, and run hooks in order. */
   const fire = (events, pluginPath = hermes.plugin, extraEnv = {}) => {
     const hookEnv = { ...baseEnv, ...env, PYTHONDONTWRITEBYTECODE: "1", ...extraEnv };

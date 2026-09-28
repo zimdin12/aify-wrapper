@@ -27,6 +27,7 @@ import {
   readPaneContext,
   renamePaneArgv,
   reportAgentArgv,
+  reportSeq,
 } from "../lib/herdr-pane.mjs";
 
 /** The environment a pane's shell really had, copied from the measured dump. */
@@ -99,7 +100,7 @@ test("a colon in a field is refused, because the label is colon-delimited", () =
 });
 
 test("the claim reports under the aify source, which is what denies the pane a resume plan", () => {
-  const argv = reportAgentArgv({ paneId: "w1:p2", wrapper: "claude-aify" });
+  const argv = reportAgentArgv({ paneId: "w1:p2", wrapper: "claude-aify", seq: "1790000000000000" });
   assert.deepEqual(argv, [
     "pane",
     "report-agent",
@@ -110,6 +111,8 @@ test("the claim reports under the aify source, which is what denies the pane a r
     "claude-aify",
     "--state",
     "idle",
+    "--seq",
+    "1790000000000000",
   ]);
   // The measured asymmetry depends entirely on this value not being one of Herdr's own.
   assert.equal(AIFY_AGENT_SOURCE, "herdr:aify");
@@ -127,5 +130,15 @@ test("rename passes the label positionally, the way the CLI actually takes it", 
 test("renaming refuses a label this module does not own", () => {
   // A wrapper that could set an arbitrary label could quietly adopt somebody else's pane.
   assert.throws(() => renamePaneArgv({ paneId: "w1:p7", label: "scratch" }), /does not own/);
-  assert.throws(() => reportAgentArgv({ paneId: "nope", wrapper: "claude-aify" }), /pane id/);
+  assert.throws(() => reportAgentArgv({ paneId: "nope", wrapper: "claude-aify", seq: "1" }), /pane id/);
+});
+
+test("a claim carries a seq on the state hooks' clock, because Herdr drops a report without one", () => {
+  // Herdr 0.9.1 keeps the highest seq and drops a seq-less report once a seq'd one landed (measured
+  // 2026-09-28), so a claim in a pane id an earlier launch's hooks reported on would be dropped.
+  assert.throws(() => reportAgentArgv({ paneId: "w1:p2", wrapper: "claude-aify" }), /seq/);
+  assert.throws(() => reportAgentArgv({ paneId: "w1:p2", wrapper: "claude-aify", seq: "17.5" }), /seq/);
+  // The hooks send microseconds since the epoch; a claim made a millisecond later must outrank them.
+  assert.equal(reportSeq(1790000000123.9), "1790000000123000");
+  assert.ok(BigInt(reportSeq(1790000000124)) > 1790000000123999n);
 });

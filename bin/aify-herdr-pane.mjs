@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 import { codexHookArgs, codexHooksTrusted } from "../lib/codex-herdr-hooks.mjs";
 import { isMainModule } from "../lib/main-module.mjs";
 import { herdr, listPanes } from "../lib/herdr-cli.mjs";
-import { paneLabel, parsePaneLabel, readPaneContext, renamePaneArgv, reportAgentArgv } from "../lib/herdr-pane.mjs";
+import { paneLabel, parsePaneLabel, readPaneContext, renamePaneArgv, reportAgentArgv, reportSeq } from "../lib/herdr-pane.mjs";
 import { launcherName, replayCommand, replayableArgv, restoreArgv } from "../lib/herdr-replay.mjs";
 import { HerdrPaneLedger, restorePlan } from "../lib/herdr-restore.mjs";
 
@@ -115,7 +115,7 @@ function claim({ wrapper: launchedAs, argv: typed, env = process.env, ledger }) 
   const renamed = herdr(renamePaneArgv({ paneId: context.paneId, label }), options);
   if (!renamed.ok) return { claimed: false, why: `could not label the pane: ${renamed.error}` };
 
-  const reported = herdr(reportAgentArgv({ paneId: context.paneId, wrapper }), options);
+  const reported = herdr(reportAgentArgv({ paneId: context.paneId, wrapper, seq: reportSeq(Date.now()) }), options);
   if (!reported.ok) {
     // Undo the label so this pane is not left in the half-claimed state described above.
     const undone = herdr(["pane", "rename", context.paneId, ""], options);

@@ -20,6 +20,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { reportLines } from "./herdr-report-lines.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -113,7 +114,7 @@ function world(client, { eventScript = true } = {}) {
       ...extra,
     }),
     events: () => read(path.join(dir, "events")).split("\n").filter(Boolean).map(line => JSON.parse(line)),
-    reports: () => read(calls).split("\n").filter(line => line.startsWith("pane report-agent")),
+    reports: () => reportLines(read(calls)),
     runtimeRan: () => read(path.join(dir, "runtime-argv")).split("\n").filter(Boolean),
     hostAsked: () => read(path.join(dir, "aify-env-calls")),
     dir,

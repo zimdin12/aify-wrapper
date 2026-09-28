@@ -29,7 +29,7 @@ so a child finishing does not make its parent read idle. An approval decided by 
 The report itself is bin/aify-herdr-state.sh, the one implementation of which pane and which source.
 Every callback returns None and never raises: hooks run on the agent's own thread, which waited up to 3
 s on each report while the host was loaded. The report now runs on a thread of its own, carrying the
-time the hook fired so the script can drop one that lands after a later report.
+time the hook fired as Herdr's seq, so Herdr drops one that lands after a later report.
 """
 
 from __future__ import annotations

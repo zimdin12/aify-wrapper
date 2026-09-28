@@ -39,72 +39,28 @@ case "$pane" in
   *) exit 0 ;;
 esac
 
-# AN UNCHANGED STATE IS NOT SENT AGAIN. PostToolUse fires on every tool call, so each report added a
-# Herdr round trip to every tool call. Only a change reaches Herdr. The last report is kept per pane and
-# tagged with the launcher that made it (AIFY_HERDR_LAUNCH), so a later launch in a reused pane id starts
-# clean. It is written only after Herdr accepted the report, so a failed one is retried by the next hook.
+# HERDR PUTS THE REPORTS IN ORDER, by --seq. The hooks run in the background, so several reports can be
+# in flight and land out of order; Herdr keeps the one with the highest seq and drops any older one, and
+# drops a report with NO seq once a seq'd one has landed (Herdr 0.9.1, measured on this pane type
+# 2026-09-28). So every report carries when its hook fired, in microseconds: AIFY_HOOK_FIRED_AT from the
+# caller, else this shell's EPOCHREALTIME, else GNU `date +%s%N`, else whole seconds.
 #
-# IN THE ORDER THE HOOKS FIRED. The hooks run in the background so the agent never waits on them, and
-# several can be in flight at once. Each carries when it fired, in microseconds (AIFY_HOOK_FIRED_AT from
-# the caller, else this shell's EPOCHREALTIME, else GNU `date +%s%N`; with none of them a report is
-# serialized but unordered), and the record holds
-# the latest. Reading the record, reporting and writing it back happen under one lock per pane, so a
-# report never lands after a later one: a hook older than the record is dropped, and an unchanged state
-# still advances the record's time, so an older different state cannot follow it.
+# NO LOCK AND NO RECORD. This script used to order and de-duplicate the reports itself, under a
+# per-pane lock. On Windows each report then took 2.7 s, and a lock left behind by a report killed at the
+# hook's 5 s timeout made every later report wait 15.8 s: each was killed in turn, and the pane kept its
+# last state for good. One Herdr call is the whole report now.
 fired="${AIFY_HOOK_FIRED_AT:-${EPOCHREALTIME:-}}"
 case "$fired" in
   *[.,]*) frac="${fired#*[.,]}000000"; fired="${fired%%[.,]*}${frac%"${frac#??????}"}" ;;
-  '') fired="$(date +%s%N 2>/dev/null)"  # macOS prints a literal N: rejected below, not trimmed
-      case "$fired" in ''|*[!0-9]*) fired=0 ;; ???????????????????*) fired="${fired%???}" ;; *) fired=0 ;; esac ;;
+  '') fired="$(date +%s%N 2>/dev/null)"  # macOS prints a literal N: the seconds below, not trimmed
+      case "$fired" in
+        ???????????????????*) case "$fired" in *[!0-9]*) ;; *) fired="${fired%???}" ;; esac ;;
+      esac
+      case "$fired" in ????????????????) ;; *) fired="$(date +%s 2>/dev/null)000000" ;; esac ;;
 esac
-case "$fired" in ''|*[!0-9]*) fired=0 ;; esac
-report() {
-  "${HERDR_BIN_PATH:-herdr}" pane report-agent "$pane" --source herdr:aify --agent "$AIFY_HERDR_AGENT" --state "$1" >/dev/null 2>&1
-}
-[ -n "${AIFY_HERDR_LAUNCH:-}" ] || { report "$state"; exit 0; }
-
-cache="${TMPDIR:-/tmp}/aify-herdr-$(printf '%s' "$pane" | tr ':' '-').state"
-lock="$cache.lock"
-
-# THE LOCK is a directory, since mkdir is atomic everywhere and flock is missing from Git Bash and macOS.
-# Its holder writes its pid into it. A lock whose holder is gone (a hook killed at its timeout) is
-# broken, under a second directory so two waiters cannot both break it and one remove the other's fresh
-# lock; the holder is read again under it. One with no holder written after 20 waits died between its
-# mkdir and its write. A hook that cannot take the lock in about 100 waits gives up.
-holder() { cat "$lock/owner" 2>/dev/null || true; }
-take_lock() {
-  waits=0
-  while ! mkdir "$lock" 2>/dev/null; do
-    seen="$(holder)"
-    if { [ -n "$seen" ] && ! kill -0 "$seen" 2>/dev/null; } || { [ -z "$seen" ] && [ "$waits" -ge 20 ]; }; then
-      if mkdir "$lock.break" 2>/dev/null; then
-        [ "$(holder)" = "$seen" ] && rm -rf "$lock"
-        rmdir "$lock.break" 2>/dev/null
-        continue
-      fi
-    fi
-    waits=$((waits + 1))
-    [ "$waits" -le 100 ] || return 1
-    sleep 0.05
-  done
-  printf '%s' "$$" > "$lock/owner"
-}
-take_lock || exit 0
-trap '[ "$(holder)" = "$$" ] && rm -rf "$lock"' EXIT
-
-last_state="" last_at=0
-set -- $(cat "$cache" 2>/dev/null || true)
-if [ "${1:-}" = "$AIFY_HERDR_LAUNCH" ]; then
-  last_state="${2:-}"
-  case "${3:-0}" in ''|*[!0-9]*) last_at=0 ;; *) last_at="$3" ;; esac
-fi
-[ "$fired" -gt 0 ] && [ "$last_at" -gt "$fired" ] && exit 0
-record() { printf '%s' "$AIFY_HERDR_LAUNCH $state $fired" > "$cache" 2>/dev/null || true; }
-if [ "$last_state" = "$state" ]; then
-  [ "$fired" -gt "$last_at" ] && record
-  exit 0
-fi
+case "$fired" in ''|*[!0-9]*|000000) exit 0 ;; esac
 
 # The source must be the claim's, or Herdr refuses the report as coming from another owner.
-report "$state" && record
+"${HERDR_BIN_PATH:-herdr}" pane report-agent "$pane" --source herdr:aify --agent "$AIFY_HERDR_AGENT" \
+  --state "$state" --seq "$fired" >/dev/null 2>&1
 exit 0

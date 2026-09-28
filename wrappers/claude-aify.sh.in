@@ -713,7 +713,6 @@ AIFY_HERDR_WORKING=""
 AIFY_HERDR_EVENTS=""
 if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then
   export AIFY_HERDR_AGENT="${0##*/}"
-  export AIFY_HERDR_LAUNCH="$$"
   _aify_state_hook() {
     printf '{ "type": "command", "command": "sh \\"%s/node_modules/aify-wrapper/bin/aify-herdr-state.sh\\" %s", "timeout": 5, "async": true }' "$AIFY_BRIDGE_DIR_FWD" "$1"
   }

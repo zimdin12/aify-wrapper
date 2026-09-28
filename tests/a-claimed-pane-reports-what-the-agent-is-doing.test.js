@@ -19,6 +19,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { AIFY_AGENT_SOURCE } from "../lib/herdr-pane.mjs";
+import { reportLines } from "./herdr-report-lines.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -44,11 +45,9 @@ function launch({ env = {}, listFails = false } = {}) {
 
   const settings = path.join(dir, "settings.json");
   const agentVar = path.join(dir, "agent-var");
-  const launchVar = path.join(dir, "launch-var");
   fs.writeFileSync(path.join(stubs, "claude"), [
     "#!/bin/sh",
     `printf '%s' "\${AIFY_HERDR_AGENT:-}" > '${agentVar}'`,
-    `printf '%s' "\${AIFY_HERDR_LAUNCH:-}" > '${launchVar}'`,
     'while [ $# -gt 0 ]; do',
     `  if [ "$1" = "--settings" ]; then cp "$2" '${settings}'; fi`,
     "  shift",
@@ -87,10 +86,8 @@ function launch({ env = {}, listFails = false } = {}) {
   const hookEnv = {
     ...baseEnv, ...env,
     AIFY_HERDR_AGENT: fs.readFileSync(agentVar, "utf8"),
-    AIFY_HERDR_LAUNCH: fs.readFileSync(launchVar, "utf8"),
   };
-  const reports = () => (fs.existsSync(calls) ? fs.readFileSync(calls, "utf8") : "")
-    .split("\n").filter(line => line.startsWith("pane report-agent"));
+  const reports = () => reportLines(fs.existsSync(calls) ? fs.readFileSync(calls, "utf8") : "");
   /** Run every command hook registered for one event, as Claude would. */
   const fire = (event) => {
     for (const group of config.hooks[event] || []) {
@@ -141,23 +138,6 @@ test("A CLAIMED PANE FOLLOWS THE AGENT: working, blocked, working again, idle", 
   assert.ok(!new RegExp(`^(?:${notification.matcher})$`).test("idle_prompt"));
   // The session-id hook the launcher always had is still there, first.
   assert.match(config.hooks.UserPromptSubmit[0].hooks[0].command, /claude-session-hook\.js/);
-});
-
-test("AN UNCHANGED STATE IS NOT SENT: a tool call per hook does not cost a Herdr round trip each", { skip: WIN }, () => {
-  const { fire, reports, hookEnv } = launch({ env: IN_A_PANE });
-  assert.match(hookEnv.AIFY_HERDR_LAUNCH, /^[0-9]+$/, "the launcher exported no launch id for the hooks");
-  fire("UserPromptSubmit");
-  for (let i = 0; i < 5; i += 1) fire("PostToolUse");
-  fire("Stop");
-  fire("Stop");
-  // slice(2): the claim's idle and the launcher's own exit report come first.
-  assert.deepEqual(reports().slice(2).map(line => line.split(" --state ")[1]), ["working", "idle"]);
-
-  // CONTROL: another launch in the same pane id starts clean, so its first report is not skipped.
-  const other = { ...hookEnv, AIFY_HERDR_LAUNCH: `${hookEnv.AIFY_HERDR_LAUNCH}9` };
-  const again = spawnSync("sh", [STATE_SCRIPT, "idle"], { input: "", encoding: "utf8", env: other });
-  assert.equal(again.status, 0);
-  assert.equal(reports().length, 5, "a different launch's idle was skipped as a repeat");
 });
 
 test("OUTSIDE HERDR the settings are exactly what they were", { skip: WIN }, () => {

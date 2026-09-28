@@ -146,11 +146,13 @@ claimed pane read idle while its agent worked (observed on a live pane mid-turn)
 adds `aify-herdr-state.sh` to the agent's hooks when the claim succeeds: `UserPromptSubmit`,
 `PostToolUse` and `PostToolUseFailure` report working, `PermissionRequest` (fired the moment an
 approval dialog opens) and a permission or input `Notification` report blocked, `Stop` and
-`StopFailure` (a turn an API error ended) report idle. The hooks run synchronously
-on every tool call, so the script sends Herdr a state only when it CHANGES: the last report is kept
-per pane under `TMPDIR`, tagged with the launcher's pid (`AIFY_HERDR_LAUNCH`) so a later launch in a
-reused pane id starts clean, and written only after Herdr accepted it. A managed worker is not in the pane that shows it, so it reports to the pane id aify-env writes
-to `AIFY_HERDR_PANE_FILE`.
+`StopFailure` (a turn an API error ended) report idle. The hooks run in the background, so reports
+can land out of order; each carries `--seq`, the microsecond it fired, and Herdr keeps the highest
+and drops an older one (0.9.1). Herdr also drops a report with no seq once a seq'd one has landed,
+so the claim and aify-env's first report carry one too. The script is one Herdr call with no lock:
+the lock it used to take made a report wait 15.8 s on Windows after a killed one, past the hooks'
+5 s timeout, so a pane kept its last state for good. A managed worker is not in the pane that shows
+it, so it reports to the pane id aify-env writes to `AIFY_HERDR_PANE_FILE`.
 
 `codex-aify` does the same through the `codex app-server` it starts, which is the process that runs
 the agent's hooks. They go on that command line as `-c hooks.<Event>=...`, so nothing is written to

@@ -29,6 +29,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { reportLines } from "./herdr-report-lines.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -113,8 +114,7 @@ function launch({ env = {}, listFails = false } = {}) {
       }
     }
   };
-  const reports = () => (fs.existsSync(calls) ? fs.readFileSync(calls, "utf8") : "")
-    .split("\n").filter(line => line.startsWith("pane report-agent"));
+  const reports = () => reportLines(fs.existsSync(calls) ? fs.readFileSync(calls, "utf8") : "");
   return { seen, fire, reports };
 }
 
