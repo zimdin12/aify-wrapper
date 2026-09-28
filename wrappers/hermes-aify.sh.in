@@ -788,8 +788,10 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
   HERMES_RESUME_REAL_ID="$(node -e 'import("'"$AIFY_HERMES_STDIO_DIR"'/hermes-endpoint.js").then(m=>process.stdout.write(m.readSessionIdMarker(process.argv[1])||"")).catch(()=>{})' "$HERMES_AIFY_AGENT_ID" 2>/dev/null || true)"
   # (3) Background delivery loop — detached, survives the exec below. Capture
   # its PID so kill-prior can EXCLUDE it (self-reap race) and so we can report
-  # which loop we are health-gating on.
-  nohup node "$AIFY_HERMES_MANAGED_HOST_JS" run "$HERMES_AIFY_AGENT_ID" >/dev/null 2>&1 &
+  # which loop we are health-gating on. ITS OUTPUT IS KEPT, one file per agent beside its markers and
+  # started fresh each launch: a loop that spun 18 days beside an orphaned gateway (pc-manager,
+  # 2026-09-28) wrote to /dev/null and left nothing to say why.
+  nohup node "$AIFY_HERMES_MANAGED_HOST_JS" run "$HERMES_AIFY_AGENT_ID" >"${TMPDIR:-/tmp}/aify-hermes-loop-$HERMES_AIFY_AGENT_ID.log" 2>&1 &
   HERMES_LOOP_PID="$!"
   disown 2>/dev/null || true
   aify_lease_attach "$HERMES_LOOP_PID" delivery-loop
