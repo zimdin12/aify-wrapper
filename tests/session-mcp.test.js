@@ -273,3 +273,23 @@ test("an unknown key at entry level is accepted and dropped, so services can car
   const inside = parseRegistry(JSON.stringify(registryWith({ "aify-dashboard": { ...DASHBOARD, sessionInject: { mcp: true, advertise: false } } })));
   assert.equal(inside.ok, false);
 });
+
+test("a neighbour's key variable in another case is refused too, through the real CLI", () => {
+  // ⛔ The bug this catches (the senior reviewer's C3, 2026-10-01): a native Windows environment folds case, so a key
+  // kept in `synthetic_credential_var` and an opted-in endpointEnv `SYNTHETIC_CREDENTIAL_VAR` are one variable there.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-session-alias-"));
+  const file = path.join(dir, "services.json");
+  const verb = (services) => {
+    fs.writeFileSync(file, JSON.stringify({ version: 1, services }));
+    return spawnSync(process.execPath, [CLI, "session-fragment-b64", file], { encoding: "utf8" });
+  };
+  const holder = { "aify-comms": { ...COMMS["aify-comms"], keyEnv: ["synthetic_credential_var"] } };
+  const alias = verb({ ...holder, "aify-dashboard": { ...DASHBOARD, endpointEnv: ["SYNTHETIC_CREDENTIAL_VAR"] } });
+  assert.deepEqual([alias.status, alias.stdout], [78, ""], "an endpoint variable aliasing a neighbour's key was accepted");
+  assert.match(alias.stderr, /"SYNTHETIC_CREDENTIAL_VAR".*aify-comms/);
+  // The control: a distinct name beside the same lower-case holder.
+  const distinct = verb({ ...holder, "aify-dashboard": { ...DASHBOARD, endpointEnv: ["AIFY_DASHBOARD_URL"] } });
+  assert.equal(distinct.status, 0, distinct.stderr);
+  assert.notEqual(distinct.stdout, "");
+  fs.rmSync(dir, { recursive: true, force: true });
+});
