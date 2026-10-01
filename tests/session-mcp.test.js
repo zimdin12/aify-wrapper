@@ -26,6 +26,8 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { definitionsEnv, readerBridge } from "./definition-reader-bridge.mjs";
+
 import { parseRegistry, sessionMcpConfig, sessionMcpConfigBase64, sessionMcpEntriesFor } from "../lib/registry.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -67,7 +69,8 @@ function launch(registry, env = {}) {
   const registryFile = path.join(dir, "services.json");
   fs.writeFileSync(registryFile, JSON.stringify(registry));
 
-  const rendered = spawnSync("bash", [INSTALL, "--client", "claude", "--endpoint", NOWHERE, "--render-only", out, "--registry", registryFile], {
+  const rendered = spawnSync("bash", [INSTALL, "--client", "claude", "--endpoint", NOWHERE, "--render-only", out, "--registry", registryFile,
+    "--bridge-dir", posix(readerBridge(path.join(dir, "bridge")))], {
     encoding: "utf8",
     timeout: 120_000,
   });
@@ -90,7 +93,8 @@ function launch(registry, env = {}) {
 
   const run = spawnSync("bash", [path.join(out, "claude-aify")], {
     encoding: "utf8",
-    env: { PATH: [winPath(stubs), bashDir()].join(SEP), HOME: posix(home), HARNESS_IDENTITY: "probe-agent", ...env },
+    env: { PATH: [winPath(stubs), path.dirname(process.execPath), bashDir()].join(SEP), HOME: posix(home),
+      ...definitionsEnv(path.join(dir, "defs")), HARNESS_IDENTITY: "probe-agent", ...env },
     timeout: 60_000,
   });
   assert.equal(run.status, 0, `launcher failed: ${run.stdout}\n${run.stderr}`);
