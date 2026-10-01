@@ -219,3 +219,57 @@ test("sessionMcpEntriesFor: only opted-in services, ordered by service name what
   assert.equal(parsed.ok, true, parsed.errors.join("; "));
   assert.deepEqual(sessionMcpEntriesFor(parsed.registry).map((e) => e.name), ["aa-server", "zz-server"]);
 });
+
+test("an opted-in endpointEnv name that ANY service keeps a key in is refused at parse", () => {
+  // ⛔ The bug this catches (aify-comms' senior review, 2026-10-01): the keyEnv refusal is per service, so an opted-in
+  // entry could name, in endpointEnv, the variable a NEIGHBOUR keeps its key in. Claude binds it to this entry's
+  // endpoint, so no key reaches the file, but the bridge's copy of the variable is silently a URL; codex forwards the
+  // inherited value. The same registries are refused for both runtimes.
+  const neighbour = { "aify-comms": { ...COMMS["aify-comms"], keyEnv: ["SYNTHETIC_CREDENTIAL_VAR"] } };
+  const clash = parseRegistry(JSON.stringify({ version: 1, services: { ...neighbour, "aify-dashboard": { ...DASHBOARD, endpointEnv: ["SYNTHETIC_CREDENTIAL_VAR"] } } }));
+  assert.equal(clash.ok, false, "a neighbour's key variable was accepted as an endpoint variable");
+  assert.match(clash.errors.join("\n"), /"SYNTHETIC_CREDENTIAL_VAR".*aify-comms/);
+  // The controls: a distinct name beside the same keyed neighbour, and the same clash on an entry that did not opt in.
+  assert.equal(parseRegistry(JSON.stringify({ version: 1, services: { ...neighbour, "aify-dashboard": { ...DASHBOARD, endpointEnv: ["AIFY_DASHBOARD_URL"] } } })).ok, true);
+  const unopted = { ...DASHBOARD, sessionInject: { mcp: false }, endpointEnv: ["SYNTHETIC_CREDENTIAL_VAR"] };
+  assert.equal(parseRegistry(JSON.stringify({ version: 1, services: { ...neighbour, "aify-dashboard": unopted } })).ok, true, "the rule reached beyond opted-in entries");
+});
+
+test("a neighbour's key set in the installing environment reaches neither the document nor the launcher", () => {
+  // ⛔ The bug this catches: any path that resolves a key VALUE into what the installer bakes. The neighbour declares
+  // keyEnv and is not opted in; the value is set where the installer runs, which is where mcpEntriesFor reads it.
+  const SENTINEL_VAR = "SYNTHETIC_NEIGHBOUR_KEY";
+  const sentinel = "sentinel-value-that-must-not-be-baked-7f3a";
+  process.env[SENTINEL_VAR] = sentinel;
+  try {
+    const registry = { version: 1, services: { "aify-comms": { ...COMMS["aify-comms"], keyEnv: [SENTINEL_VAR] }, "aify-dashboard": { ...DASHBOARD, endpointEnv: ["AIFY_DASHBOARD_URL"] } } };
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-session-sentinel-"));
+    const file = path.join(dir, "services.json");
+    fs.writeFileSync(file, JSON.stringify(registry));
+    const verb = spawnSync(process.execPath, [CLI, "session-fragment-b64", file], { encoding: "utf8" });
+    assert.equal(verb.status, 0, verb.stderr);
+    const document = Buffer.from(verb.stdout, "base64").toString("utf8");
+    assert.ok(!document.includes(sentinel), "the neighbour's key is in the session document");
+    // The positive control on this instrument: the document does hold the value it should, the endpoint.
+    assert.ok(document.includes("http://127.0.0.2:9700"), "the document read is not the session document");
+
+    const { dir: launched } = launch(registry);
+    const launcher = fs.readFileSync(path.join(launched, "out", "claude-aify"), "utf8");
+    assert.ok(!launcher.includes(sentinel), "the neighbour's key is baked into the launcher");
+    assert.ok(launcher.includes(Buffer.from(sessionMcpConfig(parseRegistry(JSON.stringify(registry)).registry)).toString("base64")), "the launcher read does not carry the session document");
+    fs.rmSync(launched, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true });
+  } finally {
+    delete process.env[SENTINEL_VAR];
+  }
+});
+
+test("an unknown key at entry level is accepted and dropped, so services can carry fields this parser does not read", () => {
+  // aify-env reads `advertise` from the same file; this parser must not refuse it. Unknown keys INSIDE sessionInject
+  // are refused, because that object is this package's to define.
+  const withAdvertise = parseRegistry(JSON.stringify(registryWith({ "aify-dashboard": { ...DASHBOARD, advertise: false } })));
+  assert.equal(withAdvertise.ok, true, withAdvertise.errors.join("; "));
+  assert.equal("advertise" in withAdvertise.registry.services["aify-dashboard"], false, "a field this parser does not own was kept");
+  const inside = parseRegistry(JSON.stringify(registryWith({ "aify-dashboard": { ...DASHBOARD, sessionInject: { mcp: true, advertise: false } } })));
+  assert.equal(inside.ok, false);
+});
