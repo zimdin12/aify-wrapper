@@ -747,6 +747,22 @@ else
     echo "[claude-aify] this launcher was installed with --mcp-transport sse, which is read only in" >&2
     echo "              strict MCP mode. This session uses the built-in stdio bridge instead." >&2
   fi
+  # Services that asked to reach every session, added BESIDE the operator's own servers: --mcp-config
+  # without --strict-mcp-config. A file per session, so nothing edits ~/.claude.json, which running
+  # sessions rewrite. Base64 for the reason the strict branch gives; removed by the EXIT trap below.
+  if [ -n "@@SESSION_MCP_B64@@" ]; then
+    if ! command -v base64 >/dev/null 2>&1; then
+      echo "[claude-aify] a service asked to be added to every session but 'base64' is not on PATH." >&2
+      echo "              Install coreutils, or clear \"sessionInject\" from the service registry." >&2
+      exit "$HARNESS_EXIT_CONFIG"
+    fi
+    AIFY_MCP_CONFIG="$(mktemp -t aify-mcp.XXXXXX.json 2>/dev/null || mktemp -t aify-mcp)"
+    printf '%s' "@@SESSION_MCP_B64@@" | base64 -d > "$AIFY_MCP_CONFIG"
+    # One word, with `=`. `--mcp-config` takes several values, so the spaced form reads any bare word after it
+    # as a second config path (measured on Claude Code 2.1.286, 2026-10-01). Today `--settings` is always
+    # appended after this, so nothing is swallowed; the equals form keeps that true whatever is added later.
+    CLAUDE_MCP_FLAGS+=("--mcp-config=$AIFY_MCP_CONFIG")
+  fi
 fi
 
 # Session-id truth capture (2026-05-30, #138): install SessionStart +

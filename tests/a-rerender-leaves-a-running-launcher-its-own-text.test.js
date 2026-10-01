@@ -22,7 +22,7 @@ function render(out, endpoint) {
   const r = spawnSync("bash", [RENDER, "claude-aify.sh.in", posix(out),
     `ENDPOINT=${endpoint}`, "REGISTRY_FINGERPRINT=fp", "SERVICE_NAME=aify-comms", "WRAPPER_VERSION=0.6.0",
     "NATIVE_BASE=/tmp/base", "SCRIPT_DIR=/tmp/base", "MCP_TRANSPORT=stdio", "BRIDGE_DIR=/tmp/base/mcp/stdio",
-    "STRICT_EXTRA_MCP_B64=",
+    "STRICT_EXTRA_MCP_B64=", "SESSION_MCP_B64=",
   ], { encoding: "utf8", timeout: 120_000 });
   assert.equal(r.status, 0, `render failed: ${r.stdout}${r.stderr}`);
 }

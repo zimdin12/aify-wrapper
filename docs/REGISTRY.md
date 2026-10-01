@@ -44,6 +44,7 @@ the launcher stale rather than leaving you to notice.
 | `<service>.endpoint` | yes | Where the service is reachable. |
 | `<service>.endpointEnv` | no | The environment variable names **this service's own code reads** to find its endpoint. |
 | `<service>.mcp` | no | MCP servers this service contributes to a runtime. Each needs `name` and `command`; `args` optional. |
+| `<service>.sessionInject` | no | `{ "mcp": true }` adds this service's `mcp` servers to every default-mode Claude session, beside the operator's own. See below. |
 
 ## Why `endpointEnv` exists, and why nothing is guessed
 
@@ -60,6 +61,38 @@ A service therefore declares which names carry its endpoint. **A service that de
 empty environment**, which is the honest answer. Filling in a plausible default would work silently
 for whichever service the default was copied from and fail silently for every other one, putting the
 symptom as far as possible from the cause.
+
+## `sessionInject`: a service in every session
+
+`"sessionInject": { "mcp": true }` puts the service's `mcp` servers into every Claude session the launcher
+starts in the default mode. The launcher writes them to a per-session file and passes it as
+`--mcp-config=<file>`, **without** `--strict-mcp-config`, so they load beside the servers the operator
+configured (proven on Claude Code 2.1.286, 2026-10-01, with every user-level server still loaded). The
+equals form is deliberate: the flag takes several values, and the spaced form reads any bare word after
+it as a second config path. The launcher always appends `--settings` after it today, so nothing is
+swallowed; the equals form keeps that true without depending on the order. The file is removed when the
+session ends.
+Nothing is written to `~/.claude.json`: running sessions rewrite that file, so an installer that edits
+it races them.
+
+- A host where no service opted in gets no `--mcp-config` at all, the same launch as before.
+- Strict mode is unaffected. It carries `strictMcp` services only.
+- The entry's env block holds the `endpointEnv` names bound to the endpoint, and nothing else.
+- **`keyEnv` beside `sessionInject.mcp` is refused at parse**, because the key's value would be baked
+  into every launcher (WRAP-M1). A service that opts in reads its key itself, from its `credentialRef`
+  file.
+- `sessionInject` is an object, `mcp` is `true` or `false`, and any other key is refused.
+
+The installer gets the document from `registry-cli.mjs session-fragment-b64 <path>`:
+
+| case | stdout | exit |
+|---|---|---|
+| no service opted in, or no file | empty | 0 |
+| one or more opted in | the `--mcp-config` document, base64, no trailing newline | 0 |
+| a registry that does not parse | empty (reasons on stderr) | 78 |
+
+The template's placeholder is `SESSION_MCP_B64`. `render.sh` refuses a template with any placeholder
+left, so an installer that renders the claude template must supply it, empty or not.
 
 ## Rules the parser enforces
 
@@ -96,6 +129,9 @@ strictMcpEntriesFor(registry)    // -> the same entries, strict-MCP shaped
 strictMcpSecretProblem(registry, env = process.env)  // -> a reason, or "" when there is none
 strictMcpFragment(registry)      // -> the config fragment a strict-MCP client wants
 strictMcpFragmentBase64(registry)// -> that fragment, base64, for an argv
+sessionMcpEntriesFor(registry)   // -> the entries opted into every session, endpointEnv bound
+sessionMcpConfig(registry)       // -> a whole --mcp-config document, or "" when none opted in
+sessionMcpConfigBase64(registry) // -> that document, base64, for an argv
 ```
 
 **This block is checked against the module's real exports** by
