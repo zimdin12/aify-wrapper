@@ -147,3 +147,19 @@ test("a command or argument UTF-8 cannot carry is refused, never silently replac
   assert.equal(paired.ok, true);
   assert.ok(Buffer.from(paired.value, "base64").toString("utf8").includes(`a${emoji}b`), "a paired surrogate did not survive");
 });
+
+test("a neighbour's key variable spelled in another case is refused too, because Windows names are one variable", () => {
+  // ⛔ The bug this catches (the senior reviewer's C3, 2026-10-01): the whole-registry join compared exact strings, but
+  // a native Windows environment folds case, so `synthetic_credential_var` and `SYNTHETIC_CREDENTIAL_VAR` are ONE
+  // variable there. Refused case-folded on every platform; the names keep their own spelling in the reason.
+  const endpointAlias = cli({ "aify-comms": { ...COMMS, keyEnv: ["synthetic_credential_var"] }, "aify-dashboard": { ...DASHBOARD, endpointEnv: ["SYNTHETIC_CREDENTIAL_VAR"] } });
+  assert.deepEqual([endpointAlias.status, endpointAlias.stdout], [78, ""], "an endpoint variable aliasing a key was forwarded");
+  assert.match(endpointAlias.stderr, /"SYNTHETIC_CREDENTIAL_VAR".*aify-comms/);
+  const identityAlias = cli({ "aify-comms": { ...COMMS, keyEnv: ["aify_agent_id"] }, "aify-dashboard": DASHBOARD });
+  assert.deepEqual([identityAlias.status, identityAlias.stdout], [78, ""], "the agent id was forwarded while a neighbour keeps a key in its alias");
+  assert.match(identityAlias.stderr, /"AIFY_AGENT_ID".*aify-comms/);
+  // The control: a distinct name beside the same lower-case holder is accepted.
+  const distinct = cli({ "aify-comms": { ...COMMS, keyEnv: ["synthetic_credential_var"] }, "aify-dashboard": { ...DASHBOARD, endpointEnv: ["AIFY_DASHBOARD_URL"] } });
+  assert.equal(distinct.status, 0, distinct.stderr);
+  assert.notEqual(distinct.stdout, "");
+});
