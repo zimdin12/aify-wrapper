@@ -195,11 +195,12 @@ HARNESS_EXIT_NO_RUNTIME=127
 # ~/.aify/agent-definitions/<id>.json, written by aify-env, gives this launcher DEFAULTS for role,
 # model and effort: below a flag and the environment, above the built-in default. aify-wrapper's
 # `aify-definition` helper reads it, never writes it, and validates it as aify-env does. Missing is
-# today's behaviour. An invalid file, or one defining another harness, refuses the launch with 78
-# unless --aify-ignore-definition, because starting without the definition the operator wrote would
-# look like honouring it. A managed launch reads no file: its launch payload carries what the host
-# already checked. Read for the id known from a flag or the environment; an id recovered later from
-# a resume handle gets no defaults.
+# today's behaviour, and only a missing file is: an invalid file, one defining another harness, or a
+# launcher that cannot run the reader refuses the launch with 78 unless --aify-ignore-definition,
+# because starting without the definition the operator wrote would look like honouring it. A managed
+# launch reads no file: its launch payload carries what the host already checked. The file is read for
+# the RESOLVED id, after a resume handle has named the agent, so a resumed agent gets the same
+# defaults and the same refusal as one named by a flag.
 AIFY_DEF_FILE=""
 AIFY_DEF_ROLE=""
 AIFY_DEF_MODEL=""
@@ -213,15 +214,14 @@ aify_read_definition() {
   if [ -z "$_id" ] || [ "$AIFY_IGNORE_DEFINITION" = true ] || [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ]; then
     return 0
   fi
-  # AN INSTALL WITHOUT THE READER applies no definition, and says so: a launch is never refused for
-  # a file it cannot even look for. A reader that is present and fails refuses, below.
+  # AN INSTALL WITHOUT THE READER cannot tell a missing file from an invalid one, so it refuses as an
+  # invalid file does: not being able to look is not the same as finding nothing (review of P6, R2).
   if [ ! -f "$_reader" ]; then
-    echo "[codex-aify] no definition reader at $_reader, so any definition of '$_id' is not applied." >&2
-    return 0
+    echo "[codex-aify] no definition reader at $_reader, so the definition of '$_id' cannot be checked." >&2
   fi
-  if ! _out="$(node "$_reader" "$_id" codex)"; then
+  if [ ! -f "$_reader" ] || ! _out="$(node "$_reader" "$_id" codex)"; then
     echo "[codex-aify] the definition of '$_id' cannot be used (above), so nothing was started." >&2
-    echo "              Fix the file, or start with --aify-ignore-definition to launch without it." >&2
+    echo "              Fix the file or the install, or start with --aify-ignore-definition to launch without it." >&2
     exit "$HARNESS_EXIT_CONFIG"
   fi
   eval "$_out"
@@ -248,36 +248,6 @@ if ! command -v codex >/dev/null 2>&1; then
   echo "[codex-aify] runtime CLI 'codex' was not found on PATH." >&2
   exit "$HARNESS_EXIT_NO_RUNTIME"
 fi
-
-# --check answers "is this configured and can it find its runtime" WITHOUT starting anything. The
-# identity scan here is a deliberate SUBSET of the real parser below — the two flag spellings, and no
-# more — because the full parse is followed by a service lookup and the app-server launch, neither of which
-# --check may do. It reports what it resolved rather than implying it ran the whole parser.
-for ARG in "$@"; do
-  case "$ARG" in
-    --check)
-      _check_identity="$HARNESS_IDENTITY"
-      _prev=""
-      for A in "$@"; do
-        case "$_prev" in --aify-agent|--agent-id) _check_identity="$A" ;; esac
-        case "$A" in --aify-agent=*|--agent-id=*) _check_identity="${A#*=}" ;; esac
-        _prev="$A"
-      done
-      aify_read_definition "$_check_identity"
-      echo "codex-aify $HARNESS_WRAPPER_VERSION"
-      echo "  runtime   : $HARNESS_WRAPPER_RUNTIME ($(command -v codex))"
-      echo "  endpoint  : $HARNESS_ENDPOINT"
-      echo "  identity  : ${_check_identity:-<none — this session would be anonymous>}"
-      echo "  role      : ${HARNESS_ROLE:-${AIFY_DEF_ROLE:-coder}}"
-      echo "  definition: ${AIFY_DEF_FILE:-<none>}"
-      echo "  cwd       : ${HARNESS_CWD:-<inherited>}"
-      echo "  mcp       : not used by this wrapper (codex mcp add runs at install time)"
-      echo "  registry  : $HARNESS_REGISTRY_FINGERPRINT"
-      echo "OK — nothing was started."
-      exit 0
-      ;;
-  esac
-done
 
 pick_port() {
   node -e '
@@ -313,19 +283,6 @@ wait_for_port() {
     attempt();
   ' "$port"
 }
-
-PORT="$(pick_port)"
-if [ -z "$PORT" ]; then
-  echo "Failed to allocate a local port for codex app-server." >&2
-  exit 1
-fi
-
-APP_SERVER_URL="ws://127.0.0.1:$PORT"
-export AIFY_CODEX_APP_SERVER_URL="$APP_SERVER_URL"
-
-LOG_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/@@SERVICE_NAME@@"
-mkdir -p "$LOG_ROOT"
-LOG_FILE="$LOG_ROOT/codex-aify-app-server-$PORT.log"
 
 CODEX_AUTO=true
 for ARG in "$@"; do
@@ -379,6 +336,7 @@ CODEX_AIFY_AGENT_ID="$HARNESS_IDENTITY"
 CODEX_AIFY_ROLE="${HARNESS_ROLE:-}"
 CODEX_AIFY_SESSION_MODE="${AIFY_SESSION_MODE:-}"
 CODEX_RESUME_HANDLE=""
+HARNESS_CHECK=false
 PREV_ARG=""
 for ARG in "$@"; do
   # EXACTLY THIS WORD. `--shared-anything` belongs to whoever reads it; a prefix test here would
@@ -428,6 +386,10 @@ for ARG in "$@"; do
   if [ "$ARG" = "--aify-ignore-definition" ]; then
     continue
   fi
+  if [ "$ARG" = "--check" ]; then
+    HARNESS_CHECK=true
+    continue
+  fi
   if [ "$ARG" = "--aify-agent" ] || [ "$ARG" = "--agent-id" ] || [ "$ARG" = "--aify-role" ]; then
     PREV_ARG="$ARG"
     continue
@@ -452,11 +414,55 @@ for ARG in "$@"; do
   esac
   CODEX_ARGS+=("$ARG")
 done
-aify_read_definition "$CODEX_AIFY_AGENT_ID"
-CODEX_AIFY_ROLE="${CODEX_AIFY_ROLE:-${AIFY_DEF_ROLE:-coder}}"
-if [ -n "$AIFY_DEF_MODEL$AIFY_DEF_EFFORT" ]; then
-  echo "[codex-aify] the definition's model and effort are not applied by this launcher: codex-aify uses its own" >&2
-  echo "              configuration for them. Its role is applied." >&2
+# A model or effort the operator gave codex itself (`-m`, `--model`, `-c model=...`,
+# `-c model_reasoning_effort=...`) is theirs: nothing below adds one beside it.
+CODEX_HAS_MODEL=false
+CODEX_HAS_EFFORT=false
+_codex_prev=""
+for _codex_arg in "${CODEX_ARGS[@]}"; do
+  case "$_codex_prev $_codex_arg" in
+    "-c model="*|"--config model="*) CODEX_HAS_MODEL=true ;;
+    "-c model_reasoning_effort="*|"--config model_reasoning_effort="*) CODEX_HAS_EFFORT=true ;;
+  esac
+  case "$_codex_arg" in
+    -m|--model|--model=*|--config=model=*) CODEX_HAS_MODEL=true ;;
+    --config=model_reasoning_effort=*) CODEX_HAS_EFFORT=true ;;
+  esac
+  _codex_prev="$_codex_arg"
+done
+# Role, model and effort for the id known now: a flag, then the environment (HARNESS_ROLE or
+# AIFY_AGENT_ROLE; a managed launch's AIFY_MANAGED_MODEL / AIFY_MANAGED_EFFORT), then the definition,
+# then the built-in default (codex's own, for model and effort). --check and the launch both resolve it
+# here, so the check reports what the launch would use (review of P6, R4); the launch runs it again below
+# for an id a resume handle names.
+CODEX_AIFY_ROLE_GIVEN="$CODEX_AIFY_ROLE"
+codex_aify_defaults() {
+  aify_read_definition "$CODEX_AIFY_AGENT_ID"
+  CODEX_AIFY_ROLE="${CODEX_AIFY_ROLE_GIVEN:-${AIFY_DEF_ROLE:-coder}}"
+  CODEX_AIFY_MODEL=""
+  CODEX_AIFY_EFFORT=""
+  if [ "$CODEX_HAS_MODEL" = false ]; then CODEX_AIFY_MODEL="${AIFY_MANAGED_MODEL:-$AIFY_DEF_MODEL}"; fi
+  if [ "$CODEX_HAS_EFFORT" = false ]; then CODEX_AIFY_EFFORT="${AIFY_MANAGED_EFFORT:-$AIFY_DEF_EFFORT}"; fi
+}
+
+# --check answers "is this configured and can it find its runtime" WITHOUT starting anything. It
+# reports what the argument loop resolved and exits before the service lookup and the app-server
+# launch, neither of which it may do; an id only a resume handle would name is therefore not shown.
+if [ "$HARNESS_CHECK" = true ]; then
+  codex_aify_defaults
+  echo "codex-aify $HARNESS_WRAPPER_VERSION"
+  echo "  runtime   : $HARNESS_WRAPPER_RUNTIME ($(command -v codex))"
+  echo "  endpoint  : $HARNESS_ENDPOINT"
+  echo "  identity  : ${CODEX_AIFY_AGENT_ID:-<none — this session would be anonymous>}"
+  echo "  role      : $CODEX_AIFY_ROLE"
+  echo "  definition: ${AIFY_DEF_FILE:-<none>}"
+  echo "  model     : $([ "$CODEX_HAS_MODEL" = true ] && echo "<given as an argument>" || echo "${CODEX_AIFY_MODEL:-<the runtime default>}")"
+  echo "  effort    : $([ "$CODEX_HAS_EFFORT" = true ] && echo "<given as an argument>" || echo "${CODEX_AIFY_EFFORT:-<the runtime default>}")"
+  echo "  cwd       : ${HARNESS_CWD:-<inherited>}"
+  echo "  mcp       : not used by this wrapper (codex mcp add runs at install time)"
+  echo "  registry  : $HARNESS_REGISTRY_FINGERPRINT"
+  echo "OK — nothing was started."
+  exit 0
 fi
 export AIFY_RUNTIME="codex"
 # IDENTITY RECOVERY (2026-07-28) — the third wrapper finally gets what the other two have.
@@ -495,6 +501,8 @@ fi
 if [ -z "$CODEX_AIFY_AGENT_ID" ] && [ -n "${CODEX_RESUME_HANDLE:-}" ]; then
   echo "[codex-aify] NO AGENT ID for --resume $CODEX_RESUME_HANDLE: aify turn/status detection is DISABLED for this session (status will latch). Pass --aify-agent <id> if this is a registered agent." >&2
 fi
+# Read for the resolved id, a recovered one included, before anything is exported or started (P6 R3).
+codex_aify_defaults
 if [ -n "$CODEX_AIFY_AGENT_ID" ]; then
   export AIFY_AGENT_ID="$CODEX_AIFY_AGENT_ID"
   export AIFY_AGENT_ROLE="$CODEX_AIFY_ROLE"
@@ -545,6 +553,20 @@ else
   export AIFY_SESSION_HANDLE="$CODEX_RESUME_HANDLE"
 fi
 
+# The app-server's port and log, chosen here, below --check, which writes nothing.
+PORT="$(pick_port)"
+if [ -z "$PORT" ]; then
+  echo "Failed to allocate a local port for codex app-server." >&2
+  exit 1
+fi
+
+APP_SERVER_URL="ws://127.0.0.1:$PORT"
+export AIFY_CODEX_APP_SERVER_URL="$APP_SERVER_URL"
+
+LOG_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/@@SERVICE_NAME@@"
+mkdir -p "$LOG_ROOT"
+LOG_FILE="$LOG_ROOT/codex-aify-app-server-$PORT.log"
+
 # ── Herdr: the pane's status dot follows the agent ───
 #
 # A claimed pane shows the state its claim last reported, not what Herdr sees on screen, so the
@@ -577,10 +599,31 @@ if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]
   done < <(node "$AIFY_HERDR_HELPER" codex-hooks --state-script "$AIFY_HERDR_BRIDGE/node_modules/aify-wrapper/bin/aify-herdr-state.sh" "${_aify_herdr_trust[@]}" 2>>"$AIFY_HERDR_LOG" || true)
 fi
 
+# ── The app-server's configuration ───
+#
+# ONE array, built here and expanded on both app-server lines, never on the TUI's: the app-server runs
+# the agent, and the TUI takes its configuration from the app-server (`config/read`) and starts its
+# thread with that model. Observed on codex-cli 0.159.3 through a logging proxy: `-c model=...` and
+# `-c model_reasoning_effort=...` here decide the thread's model and effort over CODEX_HOME's
+# config.toml, and a `-m` given to the TUI still beats them (aify-comms
+# docs/superpowers/plans/evidence/2026-10-01-p6/codex-model-probe.mjs). Other blocks add their own
+# labelled pairs below this one rather than a second array.
+# A TOML basic string. The pattern and replacement are quoted so every bash reads them literally.
+codex_toml_string() {
+  local _v="$1" _bs='\' _dq='"'
+  _v="${_v//"$_bs"/"$_bs$_bs"}"
+  _v="${_v//"$_dq"/"$_bs$_dq"}"
+  printf '"%s"' "$_v"
+}
+CODEX_APP_SERVER_CONFIG=()
+# The agent's model and effort: a managed launch's, else its definition's (codex_aify_defaults).
+if [ -n "$CODEX_AIFY_MODEL" ]; then CODEX_APP_SERVER_CONFIG+=(-c "model=$(codex_toml_string "$CODEX_AIFY_MODEL")"); fi
+if [ -n "$CODEX_AIFY_EFFORT" ]; then CODEX_APP_SERVER_CONFIG+=(-c "model_reasoning_effort=$(codex_toml_string "$CODEX_AIFY_EFFORT")"); fi
+
 if command -v setsid >/dev/null 2>&1; then
-  setsid codex "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_HERDR_HOOKS[@]}" app-server --listen "$APP_SERVER_URL" </dev/null >>"$LOG_FILE" 2>&1 &
+  setsid codex "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_HERDR_HOOKS[@]}" "${CODEX_APP_SERVER_CONFIG[@]}" app-server --listen "$APP_SERVER_URL" </dev/null >>"$LOG_FILE" 2>&1 &
 else
-  codex "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_HERDR_HOOKS[@]}" app-server --listen "$APP_SERVER_URL" </dev/null >>"$LOG_FILE" 2>&1 &
+  codex "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_HERDR_HOOKS[@]}" "${CODEX_APP_SERVER_CONFIG[@]}" app-server --listen "$APP_SERVER_URL" </dev/null >>"$LOG_FILE" 2>&1 &
 fi
 APP_SERVER_PID=$!
 RUNTIME_PID=""

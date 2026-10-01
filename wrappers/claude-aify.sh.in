@@ -213,11 +213,12 @@ HARNESS_EXIT_NO_RUNTIME=127
 # ~/.aify/agent-definitions/<id>.json, written by aify-env, gives this launcher DEFAULTS for role,
 # model and effort: below a flag and the environment, above the built-in default. aify-wrapper's
 # `aify-definition` helper reads it, never writes it, and validates it as aify-env does. Missing is
-# today's behaviour. An invalid file, or one defining another harness, refuses the launch with 78
-# unless --aify-ignore-definition, because starting without the definition the operator wrote would
-# look like honouring it. A managed launch reads no file: its launch payload carries what the host
-# already checked. Read for the id known from a flag or the environment; an id recovered later from
-# a resume handle gets no defaults.
+# today's behaviour, and only a missing file is: an invalid file, one defining another harness, or a
+# launcher that cannot run the reader refuses the launch with 78 unless --aify-ignore-definition,
+# because starting without the definition the operator wrote would look like honouring it. A managed
+# launch reads no file: its launch payload carries what the host already checked. The file is read for
+# the RESOLVED id, after a resume handle has named the agent, so a resumed agent gets the same
+# defaults and the same refusal as one named by a flag.
 AIFY_DEF_FILE=""
 AIFY_DEF_ROLE=""
 AIFY_DEF_MODEL=""
@@ -231,15 +232,14 @@ aify_read_definition() {
   if [ -z "$_id" ] || [ "$AIFY_IGNORE_DEFINITION" = true ] || [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ]; then
     return 0
   fi
-  # AN INSTALL WITHOUT THE READER applies no definition, and says so: a launch is never refused for
-  # a file it cannot even look for. A reader that is present and fails refuses, below.
+  # AN INSTALL WITHOUT THE READER cannot tell a missing file from an invalid one, so it refuses as an
+  # invalid file does: not being able to look is not the same as finding nothing (review of P6, R2).
   if [ ! -f "$_reader" ]; then
-    echo "[claude-aify] no definition reader at $_reader, so any definition of '$_id' is not applied." >&2
-    return 0
+    echo "[claude-aify] no definition reader at $_reader, so the definition of '$_id' cannot be checked." >&2
   fi
-  if ! _out="$(node "$_reader" "$_id" claude)"; then
+  if [ ! -f "$_reader" ] || ! _out="$(node "$_reader" "$_id" claude)"; then
     echo "[claude-aify] the definition of '$_id' cannot be used (above), so nothing was started." >&2
-    echo "              Fix the file, or start with --aify-ignore-definition to launch without it." >&2
+    echo "              Fix the file or the install, or start with --aify-ignore-definition to launch without it." >&2
     exit "$HARNESS_EXIT_CONFIG"
   fi
   eval "$_out"
@@ -400,15 +400,21 @@ for ARG in "$@"; do
   CLAUDE_ARGS+=("$ARG")
   PREV_ARG="$ARG"
 done
-aify_read_definition "$CLAUDE_AIFY_AGENT_ID"
-CLAUDE_AIFY_ROLE="${CLAUDE_AIFY_ROLE:-${AIFY_DEF_ROLE:-coder}}"
-# A flag in the arguments wins; then a managed launch's value; then the definition's.
-CLAUDE_AIFY_MODEL=""
-CLAUDE_AIFY_EFFORT=""
-if [ "$CLAUDE_HAS_MODEL" = false ]; then CLAUDE_AIFY_MODEL="${AIFY_MANAGED_MODEL:-$AIFY_DEF_MODEL}"; fi
-if [ "$CLAUDE_HAS_EFFORT" = false ]; then CLAUDE_AIFY_EFFORT="${AIFY_MANAGED_EFFORT:-$AIFY_DEF_EFFORT}"; fi
-if [ -n "$CLAUDE_AIFY_MODEL" ]; then CLAUDE_ARGS+=(--model "$CLAUDE_AIFY_MODEL"); fi
-if [ -n "$CLAUDE_AIFY_EFFORT" ]; then CLAUDE_ARGS+=(--effort "$CLAUDE_AIFY_EFFORT"); fi
+# Role, model and effort for the id known now, which --check reports; run again below for an id a
+# resume handle names. A flag in the arguments wins; then the environment or a managed launch's value;
+# then the definition's; then the built-in default.
+CLAUDE_AIFY_ROLE_GIVEN="$CLAUDE_AIFY_ROLE"
+CLAUDE_AIFY_DEFAULTS_FOR=""
+claude_aify_defaults() {
+  CLAUDE_AIFY_DEFAULTS_FOR="$CLAUDE_AIFY_AGENT_ID"
+  aify_read_definition "$CLAUDE_AIFY_AGENT_ID"
+  CLAUDE_AIFY_ROLE="${CLAUDE_AIFY_ROLE_GIVEN:-${AIFY_DEF_ROLE:-coder}}"
+  CLAUDE_AIFY_MODEL=""
+  CLAUDE_AIFY_EFFORT=""
+  if [ "$CLAUDE_HAS_MODEL" = false ]; then CLAUDE_AIFY_MODEL="${AIFY_MANAGED_MODEL:-$AIFY_DEF_MODEL}"; fi
+  if [ "$CLAUDE_HAS_EFFORT" = false ]; then CLAUDE_AIFY_EFFORT="${AIFY_MANAGED_EFFORT:-$AIFY_DEF_EFFORT}"; fi
+}
+claude_aify_defaults
 
 # ── Contract validation, then the runtime, then --check ─────────────────────
 #
@@ -547,6 +553,10 @@ fi
 if [ -z "$CLAUDE_AIFY_AGENT_ID" ]; then
   echo "[claude-aify] NO AGENT ID: aify turn/status detection is DISABLED for this session (status will latch). Pass --aify-agent <id> if this is a registered agent." >&2
 fi
+# An id the resume handle named is read now, so it gets its definition and its refusal (P6 R3).
+if [ "$CLAUDE_AIFY_AGENT_ID" != "$CLAUDE_AIFY_DEFAULTS_FOR" ]; then claude_aify_defaults; fi
+if [ -n "$CLAUDE_AIFY_MODEL" ]; then CLAUDE_ARGS+=(--model "$CLAUDE_AIFY_MODEL"); fi
+if [ -n "$CLAUDE_AIFY_EFFORT" ]; then CLAUDE_ARGS+=(--effort "$CLAUDE_AIFY_EFFORT"); fi
 export AIFY_RUNTIME="claude-code"
 if [ -n "$CLAUDE_AIFY_AGENT_ID" ]; then
   export AIFY_AGENT_ID="$CLAUDE_AIFY_AGENT_ID"

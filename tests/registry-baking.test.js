@@ -20,8 +20,10 @@ import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
+
+import { definitionsEnv, readerBridge } from "./definition-reader-bridge.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -55,13 +57,19 @@ const winPath = (p) => (WIN
   ? execFileSync("bash", ["-c", `cygpath -w "${p.replace(/\\/g, "/")}"`], { encoding: "utf8" }).trim()
   : p);
 
+// ONE bridge for the file: its path is baked into the launcher, and two renders compared byte for byte
+// must bake the same one.
+const BRIDGE_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "aify-fp-bridge-"));
+const BRIDGE = readerBridge(path.join(BRIDGE_ROOT, "bridge")).replace(/\\/g, "/");
+after(() => fs.rmSync(BRIDGE_ROOT, { recursive: true, force: true }));
+
 /** Render one client with a given registry. `registry` may be an object, a raw string, or null. */
 function renderWith(client, registry, { extraArgs = [] } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-fp-"));
   const out = path.join(dir, "out");
   fs.mkdirSync(out, { recursive: true });
 
-  const args = [INSTALL, "--client", client, "--endpoint", NOWHERE, "--render-only", out, ...extraArgs];
+  const args = [INSTALL, "--client", client, "--endpoint", NOWHERE, "--render-only", out, "--bridge-dir", BRIDGE, ...extraArgs];
   if (registry !== null) {
     const file = path.join(dir, "services.json");
     fs.writeFileSync(file, typeof registry === "string" ? registry : JSON.stringify(registry));
@@ -167,8 +175,9 @@ test("--check REPORTS the fingerprint, and still starts nothing", () => {
   const run = spawnSync("bash", [path.join(out, "claude-aify"), "--check"], {
     encoding: "utf8",
     env: {
-      PATH: [winPath(stubs), bashDir].join(WIN ? ";" : ":"),
+      PATH: [winPath(stubs), path.dirname(process.execPath), bashDir].join(WIN ? ";" : ":"),
       HOME: home.replace(/\\/g, "/"),
+      ...definitionsEnv(path.join(dir, "defs")),
       HARNESS_IDENTITY: "probe-agent",
     },
     timeout: 60_000,

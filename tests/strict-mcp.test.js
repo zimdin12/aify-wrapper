@@ -21,6 +21,8 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { definitionsEnv, readerBridge } from "./definition-reader-bridge.mjs";
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
 const NOWHERE = "http://127.0.0.2:1";
@@ -77,7 +79,7 @@ function strictConfigFor(registry) {
 
   const rendered = spawnSync("bash", [
     INSTALL, "--client", "claude", "--endpoint", NOWHERE,
-    "--render-only", out, "--registry", registryFile,
+    "--render-only", out, "--registry", registryFile, "--bridge-dir", posix(readerBridge(path.join(dir, "bridge"))),
   ], { encoding: "utf8", timeout: 120_000 });
   assert.equal(rendered.status, 0, `render failed: ${rendered.stdout}\n${rendered.stderr}`);
 
@@ -97,8 +99,9 @@ function strictConfigFor(registry) {
   const run = spawnSync("bash", [path.join(out, "claude-aify")], {
     encoding: "utf8",
     env: {
-      PATH: [winPath(stubs), bashDir()].join(SEP),
+      PATH: [winPath(stubs), path.dirname(process.execPath), bashDir()].join(SEP),
       HOME: posix(home),
+      ...definitionsEnv(path.join(dir, "defs")),
       AIFY_CLAUDE_STRICT_MCP: "1",
       HARNESS_IDENTITY: "probe-agent",
     },

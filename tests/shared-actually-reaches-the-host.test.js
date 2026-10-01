@@ -31,6 +31,7 @@ import test from "node:test";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import { definitionsEnv, readerBridge } from "./definition-reader-bridge.mjs";
 import { CLIENTS_ALL_RENDERS, sealedPath, withPath } from "./sealed-path.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -59,6 +60,7 @@ function world() {
   const sealed = sealedPath(CLIENTS_ALL_RENDERS);
   const result = spawnSync("bash", [
     INSTALL, "--all", "--endpoint", "http://127.0.0.2:1", "--render-only", posix(dir),
+    "--bridge-dir", posix(readerBridge(path.join(dir, "bridge"))),
   ], { encoding: "utf8", timeout: 180_000, env: withPath(process.env, sealed.PATH) });
   assert.equal(result.status, 0, result.stderr);
 
@@ -119,6 +121,7 @@ function world() {
   ].join(LF));
   fs.copyFileSync(path.join(bin, "aify-env-stub.sh"), path.join(bin, "aify-env"));
 
+  definitionsEnv(path.join(dir, "defs"));
   WORLD = { dir, bin, rendered, marker: path.join(dir, "asked.txt") };
   return WORLD;
 }
@@ -141,6 +144,7 @@ function askedTheHost(name, extraArgs = []) {
     env -i PATH="$BIN:$NODE:/usr/bin:/bin" HOME="$DIR" TERM=dumb \
       AIFY_TEST_MARKER="$DIR/asked.txt" \
       AIFY_COMMS_URL=http://127.0.0.2:1 \
+      AIFY_AGENT_DEFINITIONS_DIR="$DIR/defs" \
       bash "$DIR/${name}" ${args} >/dev/null 2>&1
     exit 0
   `;

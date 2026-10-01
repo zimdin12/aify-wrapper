@@ -18,6 +18,8 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { definitionsEnv, readerBridge } from "./definition-reader-bridge.mjs";
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const posix = (p) => p.split(String.fromCharCode(92)).join("/");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -36,7 +38,8 @@ const CLIENTS = [
 
 function render(client, extra = []) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `aify-wrapper-${client}-`));
-  execFileSync("bash", [INSTALL, "--client", client, "--endpoint", NOWHERE, "--render-only", dir, ...extra], {
+  const bridge = posix(readerBridge(path.join(dir, "bridge")));
+  execFileSync("bash", [INSTALL, "--client", client, "--endpoint", NOWHERE, "--render-only", dir, "--bridge-dir", bridge, ...extra], {
     encoding: "utf8",
   });
   return dir;
@@ -52,7 +55,7 @@ function run(dir, name, args, env = {}) {
   }
   return spawnSync("bash", [path.join(dir, name), ...args], {
     encoding: "utf8",
-    env: { ...clean, HOME: home.replace(/\\/g, "/"), ...env },
+    env: { ...clean, HOME: home.replace(/\\/g, "/"), ...definitionsEnv(path.join(dir, "defs")), ...env },
     timeout: 30_000,
   });
 }

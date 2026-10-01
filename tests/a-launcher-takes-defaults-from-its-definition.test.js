@@ -4,15 +4,14 @@
 // EXECUTED THROUGH `--check`, on a rendered launcher, a sealed PATH and a stubbed runtime: `--check`
 // reads the definition with the same function the launch does, reports what it resolved, and starts
 // nothing. Precedence is flag > HARNESS_* > AIFY_* > definition > default; missing is today's
-// behaviour; an invalid file, or one for another harness, refuses with 78 unless
-// --aify-ignore-definition; a managed launch reads no file.
+// behaviour; an invalid file, one for another harness, or a launcher that cannot run the reader refuses
+// with 78 unless --aify-ignore-definition; a managed launch reads no file.
 //
-// THE BRIDGE DIRECTORY HOLDS ONLY THE READER. A whole aify-wrapper there would let the launcher find
-// and run its lease script, which writes under the real home; HOME is a temporary directory as well.
+// THE BRIDGE DIRECTORY HOLDS ONLY THE READER (definition-reader-bridge.mjs); HOME is temporary too.
 //
-// WHAT IS NOT EXECUTED: codex and hermes are judged through `--check` and their rendered text. Their
-// launch path cannot run here without starting an app-server or a gateway host, so the lines that
-// apply the definition after the argument loop are pinned structurally, and say so.
+// `--check` resolves through the same function the launch does, after the same argument loop, so what
+// it reports is what the launch would use (review of P6, R4). The launch itself, to a stub runtime and
+// for an id a resume handle names, is executed in a-resumed-session-finds-its-agent-through-the-bridge.
 
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -22,30 +21,23 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
+import { definitionsEnv, readerBridge } from "./definition-reader-bridge.mjs";
 import { RUNTIME_COMMANDS, sealedPath, withPath } from "./sealed-path.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const NOWHERE = "http://127.0.0.2:1";
-const READER = ["bin/aify-definition.mjs", "lib/agent-definition-defaults.mjs", "lib/agent-definition-schema.mjs", "lib/main-module.mjs"];
-
 function setUp(client) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-definition-launcher-"));
-  const bridge = path.join(dir, "bridge");
-  for (const file of READER) {
-    const to = path.join(bridge, "node_modules", "aify-wrapper", file);
-    fs.mkdirSync(path.dirname(to), { recursive: true });
-    fs.copyFileSync(path.join(ROOT, file), to);
-  }
+  const bridge = readerBridge(path.join(dir, "bridge"));
   const out = path.join(dir, `${client}-aify`);
   execFileSync("bash", [path.join(ROOT, "render.sh"), `${client}-aify.sh.in`, out,
     `ENDPOINT=${NOWHERE}`, "REGISTRY_FINGERPRINT=test-fp", "SERVICE_NAME=aify-comms",
     `BRIDGE_DIR=${bridge.replace(/\\/g, "/")}`, "WRAPPER_VERSION=0.6.0", "SCRIPT_DIR=/nowhere", "NATIVE_BASE=/nowhere",
     "MCP_TRANSPORT=stdio", "STRICT_EXTRA_MCP_B64=", "HERMES_PLUGIN_PATH=/nowhere", "HERMES_STDIO_DIR=/nowhere",
     "HERMES_TUI_DIR=/nowhere"], { encoding: "utf8" });
-  const defs = path.join(dir, "defs");
-  fs.mkdirSync(defs);
+  const defs = definitionsEnv(path.join(dir, "defs")).AIFY_AGENT_DEFINITIONS_DIR;
   fs.mkdirSync(path.join(dir, "home"));
-  return { dir, out, defs, home: path.join(dir, "home") };
+  return { dir, out, defs, bridge, home: path.join(dir, "home") };
 }
 
 const definition = (over = {}) => ({ version: 1, agent: { id: "lead", name: "Lead", role: "reviewer", harness: "claude",
@@ -86,12 +78,22 @@ test("CLAUDE: the definition supplies role, model and effort when nothing above 
   assert.equal(line(found.stdout, "definition"), path.join(setup.defs, "lead.json"));
 }));
 
-test("CLAUDE PRECEDENCE: a flag, then HARNESS_*, then AIFY_*, each beats the definition", () => withLauncher("claude", (setup) => {
+for (const client of ["claude", "codex", "hermes"]) {
+  test(`${client.toUpperCase()} ROLE PRECEDENCE: a flag in either spelling, then HARNESS_*, then AIFY_*, each beats the definition`, () => withLauncher(client, (setup) => {
+    fs.writeFileSync(path.join(setup.defs, "lead.json"), JSON.stringify(definition({ harness: client })));
+    const role = (options) => { const r = check(setup, options); assert.equal(r.status, 0, r.stderr); return line(r.stdout, "role"); };
+    for (const flag of [["--aify-role", "flagged"], ["--aify-role=flagged"]]) {
+      assert.equal(role({ args: ["--aify-agent", "lead", ...flag] }), "flagged", `${flag.join(" ")} against the definition`);
+      assert.equal(role({ args: ["--aify-agent", "lead", ...flag], env: { HARNESS_ROLE: "harness" } }), "flagged", `${flag.join(" ")} against HARNESS_ROLE`);
+    }
+    assert.equal(role({ args: ["--aify-agent", "lead"], env: { HARNESS_ROLE: "harness", AIFY_AGENT_ROLE: "legacy" } }), "harness");
+    assert.equal(role({ args: ["--aify-agent", "lead"], env: { AIFY_AGENT_ROLE: "legacy" } }), "legacy");
+    assert.equal(role({ args: ["--aify-agent", "lead"] }), "reviewer", "the definition, when nothing above it says");
+  }));
+}
+
+test("CLAUDE PRECEDENCE: the environment, then a flag, each beats the definition's model and effort", () => withLauncher("claude", (setup) => {
   fs.writeFileSync(path.join(setup.defs, "lead.json"), JSON.stringify(definition()));
-  const role = (result) => line(result.stdout, "role");
-  assert.equal(role(check(setup, { args: ["--aify-agent", "lead", "--aify-role", "flagged"], env: { HARNESS_ROLE: "harness" } })), "flagged");
-  assert.equal(role(check(setup, { args: ["--aify-agent", "lead"], env: { HARNESS_ROLE: "harness", AIFY_AGENT_ROLE: "legacy" } })), "harness");
-  assert.equal(role(check(setup, { args: ["--aify-agent", "lead"], env: { AIFY_AGENT_ROLE: "legacy" } })), "legacy");
   const managedValues = check(setup, { args: ["--aify-agent", "lead"], env: { AIFY_MANAGED_MODEL: "m-env", AIFY_MANAGED_EFFORT: "e-env" } });
   assert.deepEqual([line(managedValues.stdout, "model"), line(managedValues.stdout, "effort")], ["m-env", "e-env"], "the environment beats the definition");
   const flagged = check(setup, { args: ["--aify-agent", "lead", "--model", "sonnet", "--effort=low"] });
@@ -128,30 +130,38 @@ for (const client of ["claude", "codex", "hermes"]) {
 }
 
 for (const client of ["codex", "hermes"]) {
-  test(`${client.toUpperCase()}: --check takes the role from the definition, and the launch path applies it after the loop`, () => withLauncher(client, (setup) => {
+  test(`${client.toUpperCase()}: --check takes the role from the definition`, () => withLauncher(client, (setup) => {
     fs.writeFileSync(path.join(setup.defs, "lead.json"), JSON.stringify(definition({ harness: client })));
     const found = check(setup, { args: ["--aify-agent", "lead"] });
     assert.equal(found.status, 0, found.stderr);
     assert.equal(line(found.stdout, "role"), "reviewer");
     assert.equal(line(found.stdout, "definition"), path.join(setup.defs, "lead.json"));
-    const text = fs.readFileSync(setup.out, "utf8");
-    const prefix = client.toUpperCase();
-    const read = text.indexOf(`aify_read_definition "$${prefix}_AIFY_AGENT_ID"`);
-    const applied = text.indexOf(`${prefix}_AIFY_ROLE="\${${prefix}_AIFY_ROLE:-\${AIFY_DEF_ROLE:-coder}}"`);
-    const exported = text.indexOf(`export AIFY_AGENT_ROLE="$${prefix}_AIFY_ROLE"`);
-    assert.ok(read > 0 && applied > read && exported > applied, `read ${read}, applied ${applied}, exported ${exported}: out of order or missing`);
-    assert.match(text, /the definition's model and effort are not applied by this launcher/);
+    assert.deepEqual([line(found.stdout, "model"), line(found.stdout, "effort")], ["opus", "high"], "the values the launch applies");
+    const managed = check(setup, { args: ["--aify-agent", "lead"], env: { AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_MANAGED_MODEL: "m", AIFY_MANAGED_EFFORT: "e" } });
+    assert.deepEqual([line(managed.stdout, "model"), line(managed.stdout, "effort")], ["m", "e"]);
+    const given = check(setup, { args: ["--aify-agent", "lead", client === "codex" ? "--model=x" : "-m", ...(client === "codex" ? [] : ["x"])] });
+    assert.match(line(given.stdout, "model"), /^<given as an argument/);
+    assert.equal(line(given.stdout, "effort"), "high");
   }));
 }
 
-test("AN INSTALL WITHOUT THE READER launches as before, and says the definition is not applied", () => withLauncher("claude", (setup) => {
-  fs.rmSync(path.join(path.dirname(setup.out), "bridge"), { recursive: true, force: true });
-  fs.writeFileSync(path.join(setup.defs, "lead.json"), JSON.stringify(definition()));
-  const result = check(setup, { args: ["--aify-agent", "lead"] });
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stderr, /no definition reader at .*, so any definition of 'lead' is not applied/);
-  assert.deepEqual([line(result.stdout, "definition"), line(result.stdout, "role")], ["<none>", "coder"]);
-}));
+for (const client of ["claude", "codex", "hermes"]) {
+  test(`${client.toUpperCase()}: A LAUNCHER THAT CANNOT RUN THE READER refuses with 78; ignoring the definition, or a managed launch, starts`, () => withLauncher(client, (setup) => {
+    // Not being able to look is not finding nothing (review of P6, R2): with no file at all, the launch
+    // still refuses, because without the reader it cannot know there is none.
+    fs.rmSync(setup.bridge, { recursive: true, force: true });
+    const refused = check(setup, { args: ["--aify-agent", "lead"] });
+    assert.equal(refused.status, 78, `${refused.stdout}${refused.stderr}`);
+    assert.match(refused.stderr, /no definition reader at .*, so the definition of 'lead' cannot be checked/);
+    assert.match(refused.stderr, /--aify-ignore-definition/);
+    const ignored = check(setup, { args: ["--aify-agent", "lead", "--aify-ignore-definition"] });
+    assert.equal(ignored.status, 0, ignored.stderr);
+    const managed = check(setup, { args: ["--aify-agent", "lead"], env: { AIFY_MANAGED_VIA_WRAPPER: "1" } });
+    assert.equal(managed.status, 0, managed.stderr);
+    const anonymous = check(setup);
+    assert.equal(anonymous.status, 0, `no id, nothing to read: ${anonymous.stderr}`);
+  }));
+}
 
 for (const client of ["claude", "codex", "hermes"]) {
   test(`${client.toUpperCase()}: --aify-ignore-definition is consumed by the argument loop, never handed to the runtime`, () => {

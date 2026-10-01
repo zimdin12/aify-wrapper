@@ -12,106 +12,17 @@
 // exports -- node looked for `C:\c\Users\...`, the lookup failed in silence, and the resumed session
 // came up anonymous.
 //
-// The REAL rendered launchers run with the bridge directory rendered MSYS-style on Windows, as
-// aify-comms' installer renders it. The bridge's `agent-for-handle.mjs` is a stub that answers for one
-// handle; each runtime is a stub that records the environment it was started with. Nothing contacts a
-// service: the endpoint is 127.0.0.2:1.
+// The REAL rendered launchers run to a stub runtime (launch-to-a-stub-runtime.mjs), with the bridge
+// directory rendered MSYS-style on Windows, as aify-comms' installer renders it, and a stub lookup that
+// answers for one handle. Nothing contacts a service: the endpoint is 127.0.0.2:1.
 
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const INSTALL = path.join(ROOT, "install.sh");
-const NOWHERE = "http://127.0.0.2:1";
-const WIN = process.platform === "win32";
-const KNOWN = "11111111-2222-3333-4444-555555555555";
-const UNKNOWN = "99999999-8888-7777-6666-555555555555";
+import { KNOWN, NOWHERE, UNKNOWN, launch } from "./launch-to-a-stub-runtime.mjs";
 
-// Bash named outright, in the form this platform's node can spawn: the PATH handed to the launcher
-// below is bash's, not node's. An absolute path on Linux too: a bare "bash" made BASH_DIR ".", so the
-// launcher found bash and coreutils only where node happens to sit in /usr/bin (v0.7.2, external
-// review: 9 failures under an nvm node).
-const BASH = WIN
-  ? execFileSync("bash", ["-lc", 'cygpath -w "$(command -v bash)"'], { encoding: "utf8" }).trim()
-  : execFileSync("sh", ["-c", "command -v bash"], { encoding: "utf8" }).trim();
-const BASH_DIR = path.dirname(BASH);
-/** A path as the launcher's shell writes it: MSYS-style on Windows, which is what aify-comms bakes. */
-const shellPath = (p) => (WIN ? execFileSync(BASH, ["-c", 'cygpath -u "$1"', "_", p], { encoding: "utf8" }).trim() : p);
-
-// STUB LOOKUP. Answers `<runtime>-recovered` for the known handle only, and says what it was asked.
-const LOOKUP = [
-  'import fs from "node:fs";',
-  "const [endpoint, runtime, handle] = process.argv.slice(2);",
-  "fs.appendFileSync(process.env.STUB_LOOKUPS, JSON.stringify({ endpoint, runtime, handle }) + '\\n');",
-  `if (handle === ${JSON.stringify(KNOWN)}) process.stdout.write(runtime + "-recovered\\n");`,
-  "",
-].join("\n");
-
-/** A stub runtime: records its environment, except codex's app-server, which must listen. */
-function runtimeStub(node) {
-  return [
-    "#!/bin/bash",
-    'for a in "$@"; do if [ "$a" = "app-server" ]; then',
-    '  url=""; prev=""; for b in "$@"; do [ "$prev" = "--listen" ] && url="$b"; prev="$b"; done',
-    `  exec "${node}" -e 'require("net").createServer(s => s.end()).listen(Number(process.argv[1].split(":").pop()), "127.0.0.1")' "$url"`,
-    "fi; done",
-    'env > "$STUB_RUNTIME_ENV"',
-    "exit 0",
-    "",
-  ].join("\n");
-}
-
-/** Render one launcher with a stub bridge and a stub runtime, in a fresh directory. */
-function world(client) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `aify-resume-${client}-`));
-  const [out, stubs, home, bridge] = ["out", "stubs", "home", "bridge"].map((d) => path.join(dir, d));
-  for (const d of [out, stubs, home, bridge]) fs.mkdirSync(d, { recursive: true });
-  fs.writeFileSync(path.join(bridge, "agent-for-handle.mjs"), LOOKUP);
-  // claude-aify keeps a `--resume` only for a session it can find on disk; codex-aify reads CODEX_HOME.
-  fs.mkdirSync(path.join(home, ".claude", "projects", "p"), { recursive: true });
-  for (const id of [KNOWN, UNKNOWN]) fs.writeFileSync(path.join(home, ".claude", "projects", "p", `${id}.jsonl`), "{}\n");
-  fs.mkdirSync(path.join(home, ".codex", "sessions"), { recursive: true });
-  const rendered = spawnSync(BASH, [INSTALL, "--client", client, "--endpoint", NOWHERE,
-    "--render-only", out, "--bridge-dir", shellPath(bridge)], { encoding: "utf8", timeout: 120_000 });
-  assert.equal(rendered.status, 0, `render failed: ${rendered.stdout}\n${rendered.stderr}`);
-  const runtime = client === "claude" ? "claude" : client;
-  fs.writeFileSync(path.join(stubs, runtime), runtimeStub(shellPath(process.execPath)), { mode: 0o755 });
-  return { dir, home, stubs, launcher: path.join(out, `${client}-aify`) };
-}
-
-/** Run the launcher with nothing of this machine's environment but what a shell needs. */
-function resume(client, handle, { rewriting, extraArgs = [] }) {
-  const w = world(client);
-  const lookups = path.join(w.dir, "lookups");
-  const runtimeEnv = path.join(w.dir, "runtime-env");
-  const env = {
-    PATH: [w.stubs, path.dirname(process.execPath), BASH_DIR].join(WIN ? ";" : ":"),
-    HOME: w.home,
-    USERPROFILE: w.home,
-    CODEX_HOME: path.join(w.home, ".codex"),
-    TMPDIR: w.dir,
-    TEMP: w.dir,
-    TMP: w.dir,
-    AIFY_HERMES_SKIP_NODE_CHECK: "1",
-    AIFY_HERMES_DISABLE_PLUGIN: "1",
-    STUB_LOOKUPS: lookups,
-    STUB_RUNTIME_ENV: runtimeEnv,
-    ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-    ...(rewriting ? {} : { MSYS_NO_PATHCONV: "1", MSYS2_ARG_CONV_EXCL: "*" }),
-  };
-  const run = spawnSync(BASH, [w.launcher, "--resume", handle, ...extraArgs], { encoding: "utf8", env, timeout: 60_000 });
-  const read = (file) => (fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "");
-  const started = Object.fromEntries(read(runtimeEnv).split(/\r?\n/).filter((l) => l.includes("="))
-    .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
-  const asked = read(lookups).split("\n").filter(Boolean).map((l) => JSON.parse(l));
-  fs.rmSync(w.dir, { recursive: true, force: true });
-  return { run, started, asked };
-}
+/** `<client>-aify --resume <handle> ...extraArgs`, with no agent id given. */
+const resume = (client, handle, { extraArgs = [], ...options }) => launch(client, ["--resume", handle, ...extraArgs], options);
 
 //: hermes is given a subcommand so it runs the stub directly instead of its gateway host; the lookup
 //: happens before that choice either way.
@@ -143,5 +54,47 @@ for (const [client, expected, extraArgs] of CASES) {
     assert.ok(Object.keys(started).length, `the runtime never started:\n${run.stdout}\n${run.stderr}`);
     assert.ok(asked.length > 0, `positive control: the lookup never ran:\n${run.stderr}`);
     assert.equal(started.AIFY_AGENT_ID, undefined);
+  });
+}
+
+// AN ID THE HANDLE NAMES GETS ITS DEFINITION (P0 C9; review of P6, R3). Each launcher used to read the
+// definition for the id known from a flag or the environment, before recovery, so a resumed agent
+// started with no defaults and an invalid file was never refused. Executed through the whole launch to
+// the stub runtime: the role reaches the runtime's environment, and claude's model and effort its argv.
+// The defaults are recomputed from what the flags and environment gave, so the role the first, id-less
+// read defaulted to cannot pass for a given one.
+const defined = (client, id, over = {}) => ({ version: 1, agent: { id, name: "Recovered", role: "reviewer",
+  harness: client, mode: "resident", workspace: "C:/work", model: "opus", effort: "high", instructions: "",
+  env: {}, herdrSpace: true, ...over } });
+
+for (const [client, expected, extraArgs] of CASES) {
+  test(`${client}-aify --resume applies the RECOVERED agent's definition`, () => {
+    const { run, started, args } = resume(client, KNOWN, { rewriting: true, extraArgs,
+      definitions: { [expected]: defined(client, expected) } });
+    assert.equal(started.AIFY_AGENT_ID, expected, `${run.stdout}\n${run.stderr}`);
+    assert.equal(started.AIFY_AGENT_ROLE, "reviewer", `the recovered agent's definition was not applied:\n${run.stderr}`);
+    if (client === "claude") {
+      assert.deepEqual([args[args.indexOf("--model") + 1], args[args.indexOf("--effort") + 1]], ["opus", "high"], args.join(" "));
+    }
+  });
+
+  test(`CONTROL: a role flag still beats the recovered ${client} agent's definition`, () => {
+    const { run, started } = resume(client, KNOWN, { rewriting: true, extraArgs: ["--aify-role=flagged", ...extraArgs],
+      definitions: { [expected]: defined(client, expected) } });
+    assert.equal(started.AIFY_AGENT_ROLE, "flagged", `${run.stdout}\n${run.stderr}`);
+  });
+
+  test(`${client}-aify --resume REFUSES the recovered agent's invalid definition, and starts nothing`, () => {
+    const { run, started } = resume(client, KNOWN, { rewriting: true, extraArgs, definitions: { [expected]: "{ not json" } });
+    assert.equal(run.status, 78, `${run.stdout}\n${run.stderr}`);
+    assert.match(run.stderr, new RegExp(`the definition of '${expected}' cannot be used`));
+    assert.deepEqual(started, {}, "the runtime started");
+  });
+
+  test(`${client}-aify --resume REFUSES when it cannot run the reader for the recovered agent`, () => {
+    const { run, started } = resume(client, KNOWN, { rewriting: true, extraArgs, reader: false });
+    assert.equal(run.status, 78, `${run.stdout}\n${run.stderr}`);
+    assert.match(run.stderr, new RegExp(`no definition reader at .*, so the definition of '${expected}' cannot be checked`));
+    assert.deepEqual(started, {}, "the runtime started");
   });
 }
