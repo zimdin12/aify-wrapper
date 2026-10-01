@@ -190,6 +190,43 @@ HARNESS_EXTRA_ENV="${HARNESS_EXTRA_ENV:-}"
 HARNESS_EXIT_CONFIG=78
 HARNESS_EXIT_NO_RUNTIME=127
 
+# ── The agent's definition (P0 C9) ──────────────────────────────────────────
+#
+# ~/.aify/agent-definitions/<id>.json, written by aify-env, gives this launcher DEFAULTS for role,
+# model and effort: below a flag and the environment, above the built-in default. aify-wrapper's
+# `aify-definition` helper reads it, never writes it, and validates it as aify-env does. Missing is
+# today's behaviour. An invalid file, or one defining another harness, refuses the launch with 78
+# unless --aify-ignore-definition, because starting without the definition the operator wrote would
+# look like honouring it. A managed launch reads no file: its launch payload carries what the host
+# already checked. Read for the id known from a flag or the environment; an id recovered later from
+# a resume handle gets no defaults.
+AIFY_DEF_FILE=""
+AIFY_DEF_ROLE=""
+AIFY_DEF_MODEL=""
+AIFY_DEF_EFFORT=""
+AIFY_IGNORE_DEFINITION=false
+for _aify_def_arg in "$@"; do
+  if [ "$_aify_def_arg" = "--aify-ignore-definition" ]; then AIFY_IGNORE_DEFINITION=true; fi
+done
+aify_read_definition() {
+  local _id="$1" _out _reader="$AIFY_BRIDGE_DIR_FWD/node_modules/aify-wrapper/bin/aify-definition.mjs"
+  if [ -z "$_id" ] || [ "$AIFY_IGNORE_DEFINITION" = true ] || [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ]; then
+    return 0
+  fi
+  # AN INSTALL WITHOUT THE READER applies no definition, and says so: a launch is never refused for
+  # a file it cannot even look for. A reader that is present and fails refuses, below.
+  if [ ! -f "$_reader" ]; then
+    echo "[codex-aify] no definition reader at $_reader, so any definition of '$_id' is not applied." >&2
+    return 0
+  fi
+  if ! _out="$(node "$_reader" "$_id" codex)"; then
+    echo "[codex-aify] the definition of '$_id' cannot be used (above), so nothing was started." >&2
+    echo "              Fix the file, or start with --aify-ignore-definition to launch without it." >&2
+    exit "$HARNESS_EXIT_CONFIG"
+  fi
+  eval "$_out"
+}
+
 if [ -n "$HARNESS_EXTRA_ENV" ]; then
   while IFS= read -r _pair; do
     case "$_pair" in
@@ -226,11 +263,13 @@ for ARG in "$@"; do
         case "$A" in --aify-agent=*|--agent-id=*) _check_identity="${A#*=}" ;; esac
         _prev="$A"
       done
+      aify_read_definition "$_check_identity"
       echo "codex-aify $HARNESS_WRAPPER_VERSION"
       echo "  runtime   : $HARNESS_WRAPPER_RUNTIME ($(command -v codex))"
       echo "  endpoint  : $HARNESS_ENDPOINT"
       echo "  identity  : ${_check_identity:-<none — this session would be anonymous>}"
-      echo "  role      : ${HARNESS_ROLE:-coder}"
+      echo "  role      : ${HARNESS_ROLE:-${AIFY_DEF_ROLE:-coder}}"
+      echo "  definition: ${AIFY_DEF_FILE:-<none>}"
       echo "  cwd       : ${HARNESS_CWD:-<inherited>}"
       echo "  mcp       : not used by this wrapper (codex mcp add runs at install time)"
       echo "  registry  : $HARNESS_REGISTRY_FINGERPRINT"
@@ -336,7 +375,8 @@ for _ORIGINAL in "$@"; do
 done
 
 CODEX_AIFY_AGENT_ID="$HARNESS_IDENTITY"
-CODEX_AIFY_ROLE="${HARNESS_ROLE:-coder}"
+# The built-in default is applied after the argument loop, below the agent's definition (P0 C9).
+CODEX_AIFY_ROLE="${HARNESS_ROLE:-}"
 CODEX_AIFY_SESSION_MODE="${AIFY_SESSION_MODE:-}"
 CODEX_RESUME_HANDLE=""
 PREV_ARG=""
@@ -385,6 +425,9 @@ for ARG in "$@"; do
     CODEX_AIFY_SESSION_MODE="managed"
     continue
   fi
+  if [ "$ARG" = "--aify-ignore-definition" ]; then
+    continue
+  fi
   if [ "$ARG" = "--aify-agent" ] || [ "$ARG" = "--agent-id" ] || [ "$ARG" = "--aify-role" ]; then
     PREV_ARG="$ARG"
     continue
@@ -409,6 +452,12 @@ for ARG in "$@"; do
   esac
   CODEX_ARGS+=("$ARG")
 done
+aify_read_definition "$CODEX_AIFY_AGENT_ID"
+CODEX_AIFY_ROLE="${CODEX_AIFY_ROLE:-${AIFY_DEF_ROLE:-coder}}"
+if [ -n "$AIFY_DEF_MODEL$AIFY_DEF_EFFORT" ]; then
+  echo "[codex-aify] the definition's model and effort are not applied by this launcher: codex-aify uses its own" >&2
+  echo "              configuration for them. Its role is applied." >&2
+fi
 export AIFY_RUNTIME="codex"
 # IDENTITY RECOVERY (2026-07-28) — the third wrapper finally gets what the other two have.
 #

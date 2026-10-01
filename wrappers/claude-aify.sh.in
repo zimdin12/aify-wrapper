@@ -208,6 +208,43 @@ HARNESS_CHECK=false
 HARNESS_EXIT_CONFIG=78
 HARNESS_EXIT_NO_RUNTIME=127
 
+# ── The agent's definition (P0 C9) ──────────────────────────────────────────
+#
+# ~/.aify/agent-definitions/<id>.json, written by aify-env, gives this launcher DEFAULTS for role,
+# model and effort: below a flag and the environment, above the built-in default. aify-wrapper's
+# `aify-definition` helper reads it, never writes it, and validates it as aify-env does. Missing is
+# today's behaviour. An invalid file, or one defining another harness, refuses the launch with 78
+# unless --aify-ignore-definition, because starting without the definition the operator wrote would
+# look like honouring it. A managed launch reads no file: its launch payload carries what the host
+# already checked. Read for the id known from a flag or the environment; an id recovered later from
+# a resume handle gets no defaults.
+AIFY_DEF_FILE=""
+AIFY_DEF_ROLE=""
+AIFY_DEF_MODEL=""
+AIFY_DEF_EFFORT=""
+AIFY_IGNORE_DEFINITION=false
+for _aify_def_arg in "$@"; do
+  if [ "$_aify_def_arg" = "--aify-ignore-definition" ]; then AIFY_IGNORE_DEFINITION=true; fi
+done
+aify_read_definition() {
+  local _id="$1" _out _reader="$AIFY_BRIDGE_DIR_FWD/node_modules/aify-wrapper/bin/aify-definition.mjs"
+  if [ -z "$_id" ] || [ "$AIFY_IGNORE_DEFINITION" = true ] || [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ]; then
+    return 0
+  fi
+  # AN INSTALL WITHOUT THE READER applies no definition, and says so: a launch is never refused for
+  # a file it cannot even look for. A reader that is present and fails refuses, below.
+  if [ ! -f "$_reader" ]; then
+    echo "[claude-aify] no definition reader at $_reader, so any definition of '$_id' is not applied." >&2
+    return 0
+  fi
+  if ! _out="$(node "$_reader" "$_id" claude)"; then
+    echo "[claude-aify] the definition of '$_id' cannot be used (above), so nothing was started." >&2
+    echo "              Fix the file, or start with --aify-ignore-definition to launch without it." >&2
+    exit "$HARNESS_EXIT_CONFIG"
+  fi
+  eval "$_out"
+}
+
 # Host-supplied environment, exported verbatim before launch. Malformed lines are skipped rather than
 # fatal: a config file with a trailing newline must not stop an agent starting.
 if [ -n "$HARNESS_EXTRA_ENV" ]; then
@@ -246,7 +283,8 @@ CLAUDE_RESUME_ID="${CLAUDE_SESSION_ID:-}"
 # omp --auto-approve). Opt out per-launch with --safe / --no-auto.
 CLAUDE_AUTO=true
 CLAUDE_AIFY_AGENT_ID="$HARNESS_IDENTITY"
-CLAUDE_AIFY_ROLE="${HARNESS_ROLE:-coder}"
+# The built-in default is applied after the argument loop, below the agent's definition (P0 C9).
+CLAUDE_AIFY_ROLE="${HARNESS_ROLE:-}"
 # Explicit session-mode opt-in. --resident is the default for human
 # invocation; --managed is set by aify-comms when it spawns this wrapper
 # as a backing process. If neither flag is passed and AIFY_SESSION_MODE
@@ -300,6 +338,9 @@ for ARG in "$@"; do
   # runtime" WITHOUT starting anything — the same distinction `aify-comms --check` exists for, after a
   # four-second run meant only to confirm a launcher still worked superseded the live environment
   # bridge and reaped the managed fleet.
+  if [ "$ARG" = "--aify-ignore-definition" ]; then
+    continue
+  fi
   if [ "$ARG" = "--check" ]; then
     HARNESS_CHECK=true
     continue
@@ -359,12 +400,15 @@ for ARG in "$@"; do
   CLAUDE_ARGS+=("$ARG")
   PREV_ARG="$ARG"
 done
-if [ -n "${AIFY_MANAGED_MODEL:-}" ] && [ "$CLAUDE_HAS_MODEL" = false ]; then
-  CLAUDE_ARGS+=(--model "$AIFY_MANAGED_MODEL")
-fi
-if [ -n "${AIFY_MANAGED_EFFORT:-}" ] && [ "$CLAUDE_HAS_EFFORT" = false ]; then
-  CLAUDE_ARGS+=(--effort "$AIFY_MANAGED_EFFORT")
-fi
+aify_read_definition "$CLAUDE_AIFY_AGENT_ID"
+CLAUDE_AIFY_ROLE="${CLAUDE_AIFY_ROLE:-${AIFY_DEF_ROLE:-coder}}"
+# A flag in the arguments wins; then a managed launch's value; then the definition's.
+CLAUDE_AIFY_MODEL=""
+CLAUDE_AIFY_EFFORT=""
+if [ "$CLAUDE_HAS_MODEL" = false ]; then CLAUDE_AIFY_MODEL="${AIFY_MANAGED_MODEL:-$AIFY_DEF_MODEL}"; fi
+if [ "$CLAUDE_HAS_EFFORT" = false ]; then CLAUDE_AIFY_EFFORT="${AIFY_MANAGED_EFFORT:-$AIFY_DEF_EFFORT}"; fi
+if [ -n "$CLAUDE_AIFY_MODEL" ]; then CLAUDE_ARGS+=(--model "$CLAUDE_AIFY_MODEL"); fi
+if [ -n "$CLAUDE_AIFY_EFFORT" ]; then CLAUDE_ARGS+=(--effort "$CLAUDE_AIFY_EFFORT"); fi
 
 # ── Contract validation, then the runtime, then --check ─────────────────────
 #
@@ -391,6 +435,9 @@ if [ "$HARNESS_CHECK" = true ]; then
   echo "  endpoint  : $HARNESS_ENDPOINT"
   echo "  identity  : ${CLAUDE_AIFY_AGENT_ID:-<none — this session would be anonymous>}"
   echo "  role      : $CLAUDE_AIFY_ROLE"
+  echo "  definition: ${AIFY_DEF_FILE:-<none>}"
+  echo "  model     : $([ "$CLAUDE_HAS_MODEL" = true ] && echo "<given as an argument>" || echo "${CLAUDE_AIFY_MODEL:-<the runtime default>}")"
+  echo "  effort    : $([ "$CLAUDE_HAS_EFFORT" = true ] && echo "<given as an argument>" || echo "${CLAUDE_AIFY_EFFORT:-<the runtime default>}")"
   echo "  cwd       : ${HARNESS_CWD:-<inherited>}"
   # SAY WHETHER IT IS APPLIED, not merely what was configured. `HARNESS_MCP_COMMAND` and
   # `--mcp-transport sse` are read ONLY inside the strict-MCP branch below, which is opt-in via
