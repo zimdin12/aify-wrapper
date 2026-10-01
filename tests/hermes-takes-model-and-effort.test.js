@@ -8,9 +8,12 @@
 // it per session is aify-comms' (mcp/stdio/hermes-session-effort.mjs).
 //
 // EXECUTED on the launcher's plain path (`hermes-aify chat`), to a stub hermes that records its
-// environment. The two variables are exported after the agent is resolved and before the launcher
-// chooses a path, so the gateway host and the delivery loop it spawns on the other path inherit the same
-// values; that path is not run here, because it starts a gateway host.
+// environment and argv. The two variables are exported after the agent is resolved and before the
+// launcher chooses a path, so the gateway host and the delivery loop it spawns on the other path inherit
+// the same values; that path is not run here, because it starts a gateway host.
+//
+// The plain `chat` itself is the classic CLI, which reads neither: it gets both as its own `-m` and
+// `--reasoning` (review of P6r, L1: it was started with `chat` alone).
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -23,10 +26,20 @@ const definition = (over = {}) => ({ version: 1, agent: { id: "lead", name: "Lea
 const run = (args, options) => launch("hermes", ["--aify-agent", "lead", ...args, "chat"], options);
 
 test("THE DEFINITION'S model seeds hermes, and its effort goes to the loop", () => {
-  const { run: r, started } = run([], { definitions: { lead: definition() } });
+  const { run: r, started, args } = run([], { definitions: { lead: definition() } });
   assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
   assert.deepEqual([started.HERMES_INFERENCE_MODEL, started.AIFY_HERMES_SESSION_EFFORT, started.AIFY_AGENT_ROLE],
     ["anthropic/claude-sonnet-4.6", "high", "reviewer"]);
+  assert.deepEqual(args, ["chat", "-m", "anthropic/claude-sonnet-4.6", "--reasoning", "high"], "the plain chat consumes both");
+});
+
+test("A PLAIN CHAT keeps its own arguments after the agent's, and a non-chat command gets none", () => {
+  const chat = launch("hermes", ["--aify-agent", "lead", "chat", "-q", "hi"], { definitions: { lead: definition() } });
+  assert.equal(chat.run.status, 0, chat.run.stderr);
+  assert.deepEqual(chat.args, ["chat", "-m", "anthropic/claude-sonnet-4.6", "--reasoning", "high", "-q", "hi"]);
+  const other = launch("hermes", ["--aify-agent", "lead", "model", "list"], { definitions: { lead: definition() } });
+  assert.equal(other.run.status, 0, other.run.stderr);
+  assert.deepEqual(other.args, ["model", "list"]);
 });
 
 test("A MANAGED LAUNCH's values are used; it reads no file", () => {
@@ -46,6 +59,8 @@ test("THE OPERATOR'S OWN model or effort is theirs: -m, HERMES_INFERENCE_MODEL, 
   const flagged = run(["-m", "flag/model", "--reasoning", "max"], { definitions: { lead: definition() } });
   assert.equal(flagged.run.status, 0, flagged.run.stderr);
   assert.deepEqual([flagged.started.HERMES_INFERENCE_MODEL, flagged.started.AIFY_HERMES_SESSION_EFFORT], [undefined, ""]);
+  const own = launch("hermes", ["--aify-agent", "lead", "chat", "--reasoning", "max"], { definitions: { lead: definition() } });
+  assert.deepEqual(own.args, ["chat", "-m", "anthropic/claude-sonnet-4.6", "--reasoning", "max"], "only the one not given is added");
   const env = run([], { definitions: { lead: definition() }, env: { HERMES_INFERENCE_MODEL: "env/model" } });
   assert.equal(env.started.HERMES_INFERENCE_MODEL, "env/model");
 });

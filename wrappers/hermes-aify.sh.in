@@ -501,6 +501,15 @@ if [ -n "$HERMES_AIFY_MODEL" ]; then export HERMES_INFERENCE_MODEL="$HERMES_AIFY
 # THE EFFORT has no launch-time lever on the gateway path; aify-comms' delivery loop sets it on each live
 # session (mcp/stdio/hermes-session-effort.mjs). Always written, so an inherited value never applies.
 export AIFY_HERMES_SESSION_EFFORT="$HERMES_AIFY_EFFORT"
+# A PLAIN `hermes chat` runs the classic CLI, past the gateway and the delivery loop, so neither of the
+# above reaches it (review of P6r, L1). It takes both as its own arguments (hermes 0.21.5
+# hermes_cli/_parser.py, the chat parser's `-m` and `--reasoning`), placed after the subcommand.
+if [ "${HERMES_ARGS[0]:-}" = "chat" ]; then
+  HERMES_CHAT_DEFAULTS=()
+  if [ -n "$HERMES_AIFY_MODEL" ]; then HERMES_CHAT_DEFAULTS+=(-m "$HERMES_AIFY_MODEL"); fi
+  if [ -n "$HERMES_AIFY_EFFORT" ]; then HERMES_CHAT_DEFAULTS+=(--reasoning "$HERMES_AIFY_EFFORT"); fi
+  HERMES_ARGS=(chat "${HERMES_CHAT_DEFAULTS[@]}" "${HERMES_ARGS[@]:1}")
+fi
 if [ -n "$HERMES_AIFY_AGENT_ID" ]; then
   export AIFY_AGENT_ID="$HERMES_AIFY_AGENT_ID"
   export AIFY_AGENT_ROLE="$HERMES_AIFY_ROLE"

@@ -443,6 +443,13 @@ codex_aify_defaults() {
   CODEX_AIFY_EFFORT=""
   if [ "$CODEX_HAS_MODEL" = false ]; then CODEX_AIFY_MODEL="${AIFY_MANAGED_MODEL:-$AIFY_DEF_MODEL}"; fi
   if [ "$CODEX_HAS_EFFORT" = false ]; then CODEX_AIFY_EFFORT="${AIFY_MANAGED_EFFORT:-$AIFY_DEF_EFFORT}"; fi
+  # codex takes both as TOML strings, and a control character such as a newline has no place in a model
+  # or an effort: written raw it made the app-server's configuration invalid (review of P6r, L2).
+  case "$CODEX_AIFY_MODEL$CODEX_AIFY_EFFORT" in
+    *[[:cntrl:]]*)
+      echo "codex-aify: the model or effort for '${CODEX_AIFY_AGENT_ID:-<no agent>}' holds a control character, which codex's configuration cannot take; refusing to start." >&2
+      exit 78 ;;
+  esac
 }
 
 # --check answers "is this configured and can it find its runtime" WITHOUT starting anything. It

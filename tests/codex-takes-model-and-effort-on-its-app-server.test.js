@@ -64,3 +64,16 @@ test("CONTROL: no definition and no managed values add nothing, and a quote in a
   assert.equal(quoted.run.status, 0, quoted.run.stderr);
   assert.deepEqual(configPairs(quoted.appServerArgs), ['model="a\\"b\\\\c"']);
 });
+
+test("A CONTROL CHARACTER in a model or effort refuses the launch before anything starts (review of P6r, L2)", () => {
+  // Written raw into `-c model="..."`, a newline made the app-server's configuration invalid TOML.
+  for (const [label, opts] of [
+    ["the definition's model", { definitions: { lead: definition({ model: "gpt\nx" }) } }],
+    ["a managed effort", { env: { AIFY_MANAGED_EFFORT: "high\tx" } }],
+  ]) {
+    const { run, appServerArgs, started } = launch("codex", ["--aify-agent", "lead"], opts);
+    assert.equal(run.status, 78, `${label}: ${run.stdout}\n${run.stderr}`);
+    assert.match(run.stderr, /holds a control character/, label);
+    assert.deepEqual([appServerArgs, started], [[], {}], `${label}: nothing may start`);
+  }
+});
