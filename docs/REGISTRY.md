@@ -96,10 +96,16 @@ attaches to it). `registry-cli.mjs session-codex-b64 <path>` (in `lib/session-co
 opted-in server, `-c mcp_servers.<name>.command=…`, `-c mcp_servers.<name>.args=[…]` and
 `-c mcp_servers.<name>.env_vars=["AIFY_AGENT_ID", <endpointEnv names>]`, each word NUL-terminated, the whole
 in base64. `env_vars` is required: codex passes an MCP server no variable it is not told to (measured on codex
-0.159.3, 2026-10-01). The launcher appends the words to its app-server array with
-`while IFS= read -r -d '' w; do …+=("$w"); done`, so no registry value is ever parsed as shell. Empty when
-nothing opted in or there is no file; exit 78 for a registry that does not parse, a server name that is not a
-plain TOML key, or a variable name a shell cannot export. Its placeholder is `SESSION_MCP_CODEX_B64`.
+0.159.3, 2026-10-01). **Pending wiring:** the codex launcher does not read these words yet. When it does, it
+appends them to its app-server array with `while IFS= read -r -d '' w; do …+=("$w"); done`, so no registry value is
+ever parsed as shell, through the placeholder `SESSION_MCP_CODEX_B64`. Empty when nothing opted in or there is no
+file. Exit 78 for a registry that does not parse; a server name that is not a plain TOML key; a variable name a
+shell cannot export; a forwarded name that any service in the registry keeps a key in; or a command or argument
+UTF-8 cannot carry (a lone surrogate).
+
+Unlike Claude's env block, which binds each `endpointEnv` name to the entry's endpoint, codex's `env_vars`
+forwards whatever value the app-server inherited under that name. The launcher integration must test what an
+unset or conflicting inherited value does.
 
 The claude template's placeholder is `SESSION_MCP_B64`. `render.sh` refuses a template with any placeholder
 left, so an installer that renders the claude template must supply it, empty or not.

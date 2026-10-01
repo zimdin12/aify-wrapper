@@ -115,3 +115,35 @@ test("session-codex-b64: empty for no opt-in or no file, the words for one, 78 f
   assert.equal(keyed.status, 78);
   assert.equal(keyed.stdout, "");
 });
+
+test("a forwarded name that ANY service declares as a key is refused, so no credential variable reaches the server", () => {
+  // ⛔ The bug this catches (the senior reviewer's C1, 2026-10-01): the parse refusal is per service, so an opted-in
+  // entry with no keyEnv of its own could list, in endpointEnv, the variable ANOTHER service keeps its key in. codex
+  // forwards a variable's inherited VALUE, so the server would be handed that credential.
+  const keyed = { ...COMMS, keyEnv: ["SYNTHETIC_CREDENTIAL_VAR"] };
+  const result = sessionCodexWords(parsed({ "aify-comms": keyed, "aify-dashboard": { ...DASHBOARD, endpointEnv: ["SYNTHETIC_CREDENTIAL_VAR"] } }));
+  assert.equal(result.ok, false, "a key variable was forwarded");
+  assert.match(result.problems.join("\n"), /"SYNTHETIC_CREDENTIAL_VAR".*aify-comms/);
+  // And the identity variable is no exception: forwarded to every server, so refused if any service keeps a key in it.
+  const agentAsKey = sessionCodexWords(parsed({ "aify-comms": { ...COMMS, keyEnv: ["AIFY_AGENT_ID"] }, "aify-dashboard": DASHBOARD }));
+  assert.equal(agentAsKey.ok, false);
+  // The control: a distinct name beside the same keyed neighbour is accepted.
+  assert.equal(sessionCodexWords(parsed({ "aify-comms": keyed, "aify-dashboard": { ...DASHBOARD, endpointEnv: ["AIFY_DASHBOARD_URL"] } })).ok, true);
+});
+
+test("a command or argument UTF-8 cannot carry is refused, never silently replaced", () => {
+  // ⛔ The bug this catches (the senior reviewer's C2, 2026-10-01): a lone surrogate parses as JSON and becomes U+FFFD
+  // on the way to UTF-8, so codex would be given a different path than the registry holds, with exit 0.
+  const high = String.fromCharCode(0xd800);
+  const low = String.fromCharCode(0xdc00);
+  const loneArg = sessionCodexWords(parsed({ "aify-dashboard": { ...DASHBOARD, mcp: [{ name: "aify-dashboard", command: "node", args: [`prefix${high}suffix`] }] } }));
+  assert.equal(loneArg.ok, false, "a lone high surrogate in an argument was accepted");
+  const loneCommand = sessionCodexWords(parsed({ "aify-dashboard": { ...DASHBOARD, mcp: [{ name: "aify-dashboard", command: `prefix${low}suffix`, args: [] }] } }));
+  assert.equal(loneCommand.ok, false, "a lone low surrogate in the command was accepted");
+  assert.match(`${loneArg.problems} ${loneCommand.problems}`, /UTF-8/);
+  // The control: a correctly paired surrogate is ordinary text and round-trips through base64 unchanged.
+  const emoji = String.fromCodePoint(0x1f600);
+  const paired = sessionCodexWordsBase64(parsed({ "aify-dashboard": { ...DASHBOARD, mcp: [{ name: "aify-dashboard", command: "node", args: [`a${emoji}b`] }] } }));
+  assert.equal(paired.ok, true);
+  assert.ok(Buffer.from(paired.value, "base64").toString("utf8").includes(`a${emoji}b`), "a paired surrogate did not survive");
+});
