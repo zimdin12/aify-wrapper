@@ -168,6 +168,9 @@ REGISTRY_FINGERPRINT="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" fingerp
 # Services that opted into strict mode, base64 so no path metacharacter survives the trip. Empty
 # unless a service asked, which keeps strict mode byte-identical on every host that did not.
 STRICT_EXTRA_MCP_B64="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" strict-fragment-b64 "$(node_path "$REGISTRY")")" || exit "$EXIT_CONFIG"
+# Services that opted into every default-mode session ("sessionInject": {"mcp": true}), as a whole
+# --mcp-config document in base64. Empty unless a service asked, and then the launcher passes nothing.
+SESSION_MCP_B64="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" session-fragment-b64 "$(node_path "$REGISTRY")")" || exit "$EXIT_CONFIG"
 
 # The launcher name follows the client name. pi is the one exception: it ships an alias, which is real
 # information and not derivable from a filename, so it is the only thing written down here.
@@ -206,6 +209,7 @@ install_one() {
         "WRAPPER_VERSION=$VERSION" \
         "REGISTRY_FINGERPRINT=$REGISTRY_FINGERPRINT" \
         "STRICT_EXTRA_MCP_B64=$STRICT_EXTRA_MCP_B64" \
+        "SESSION_MCP_B64=$SESSION_MCP_B64" \
         "MCP_TRANSPORT=$MCP_TRANSPORT" \
         "SERVICE_NAME=$SERVICE_NAME" \
         "BRIDGE_DIR=$BRIDGE_DIR" \
