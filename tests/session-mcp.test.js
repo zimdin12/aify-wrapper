@@ -110,9 +110,10 @@ test("a host that opted nothing in launches exactly as today, with no --mcp-conf
 test("an opted-in service reaches the default-mode session beside the user's own servers, with no env block", () => {
   const { args, config, dir } = launch(registryWith({ "aify-dashboard": DASHBOARD }));
   assert.ok(args.some((a) => a.startsWith("--mcp-config=")), `no --mcp-config= was passed: ${args.join(" ")}`);
-  // ⛔ The equals form, never `--mcp-config <file>`. The flag takes several values, so with the auto flag off
-  // a bare prompt after it is read as a second config path and the launch fails. Measured on Claude Code
-  // 2.1.286, 2026-10-01 (aify-dashboard docs/evidence/wrapper-session-mcp-2026-10-01/variadic.txt).
+  // ⛔ The equals form, never `--mcp-config <file>`. The flag takes several values, and the spaced form reads
+  // any bare word after it as a second config path (Claude Code 2.1.286, 2026-10-01; aify-dashboard
+  // docs/evidence/wrapper-session-mcp-2026-10-01/variadic.txt). Today `--settings` always follows it, so the
+  // equals form is what keeps that safe if a flag is ever appended between them, or the order changes.
   assert.ok(!args.includes("--mcp-config"), "the spelling that swallows a following prompt was used");
   // ⛔ Never strict in the default mode: strict would hide every server the operator configured.
   assert.ok(!args.includes("--strict-mcp-config"), "the default mode was made strict");

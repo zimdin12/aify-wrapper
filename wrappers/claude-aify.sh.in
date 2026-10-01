@@ -701,8 +701,9 @@ else
     fi
     AIFY_MCP_CONFIG="$(mktemp -t aify-mcp.XXXXXX.json 2>/dev/null || mktemp -t aify-mcp)"
     printf '%s' "@@SESSION_MCP_B64@@" | base64 -d > "$AIFY_MCP_CONFIG"
-    # One word, with `=`. `--mcp-config` takes several values, so the spaced form reads a bare prompt that
-    # follows it as a second config path and the launch fails (measured on Claude Code 2.1.286, 2026-10-01).
+    # One word, with `=`. `--mcp-config` takes several values, so the spaced form reads any bare word after it
+    # as a second config path (measured on Claude Code 2.1.286, 2026-10-01). Today `--settings` is always
+    # appended after this, so nothing is swallowed; the equals form keeps that true whatever is added later.
     CLAUDE_MCP_FLAGS+=("--mcp-config=$AIFY_MCP_CONFIG")
   fi
 fi

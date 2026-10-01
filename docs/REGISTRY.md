@@ -68,8 +68,10 @@ symptom as far as possible from the cause.
 starts in the default mode. The launcher writes them to a per-session file and passes it as
 `--mcp-config=<file>`, **without** `--strict-mcp-config`, so they load beside the servers the operator
 configured (proven on Claude Code 2.1.286, 2026-10-01, with every user-level server still loaded). The
-equals form is deliberate: the flag takes several values, and the spaced form reads a bare prompt that
-follows it as a second config path. The file is removed when the session ends.
+equals form is deliberate: the flag takes several values, and the spaced form reads any bare word after
+it as a second config path. The launcher always appends `--settings` after it today, so nothing is
+swallowed; the equals form keeps that true without depending on the order. The file is removed when the
+session ends.
 Nothing is written to `~/.claude.json`: running sessions rewrite that file, so an installer that edits
 it races them.
 
