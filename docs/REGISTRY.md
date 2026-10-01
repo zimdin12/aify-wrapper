@@ -91,7 +91,17 @@ The installer gets the document from `registry-cli.mjs session-fragment-b64 <pat
 | one or more opted in | the `--mcp-config` document, base64, no trailing newline | 0 |
 | a registry that does not parse | empty (reasons on stderr) | 78 |
 
-The template's placeholder is `SESSION_MCP_B64`. `render.sh` refuses a template with any placeholder
+**Codex** gets the same servers as `-c` words for `codex app-server`, which owns the session (the TUI only
+attaches to it). `registry-cli.mjs session-codex-b64 <path>` (in `lib/session-codex.mjs`) prints, per
+opted-in server, `-c mcp_servers.<name>.command=…`, `-c mcp_servers.<name>.args=[…]` and
+`-c mcp_servers.<name>.env_vars=["AIFY_AGENT_ID", <endpointEnv names>]`, each word NUL-terminated, the whole
+in base64. `env_vars` is required: codex passes an MCP server no variable it is not told to (measured on codex
+0.159.3, 2026-10-01). The launcher appends the words to its app-server array with
+`while IFS= read -r -d '' w; do …+=("$w"); done`, so no registry value is ever parsed as shell. Empty when
+nothing opted in or there is no file; exit 78 for a registry that does not parse, a server name that is not a
+plain TOML key, or a variable name a shell cannot export. Its placeholder is `SESSION_MCP_CODEX_B64`.
+
+The claude template's placeholder is `SESSION_MCP_B64`. `render.sh` refuses a template with any placeholder
 left, so an installer that renders the claude template must supply it, empty or not.
 
 ## Rules the parser enforces
