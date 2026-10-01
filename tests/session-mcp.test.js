@@ -256,6 +256,12 @@ test("a neighbour's key set in the installing environment reaches neither the do
     const { dir: launched } = launch(registry);
     const launcher = fs.readFileSync(path.join(launched, "out", "claude-aify"), "utf8");
     assert.ok(!launcher.includes(sentinel), "the neighbour's key is baked into the launcher");
+    // ⛔ And not baked ENCODED either (the senior review, 2026-10-01): the launcher carries base64 payloads, and a
+    // sentinel inside one would pass a raw-text check. Every base64 run is decoded and searched. The positive control
+    // is that one decoded run IS the session document, so the decoder can find what is there.
+    const decoded = [...launcher.matchAll(/[A-Za-z0-9+/]{16,}={0,2}/g)].map((m) => Buffer.from(m[0], "base64").toString("utf8"));
+    assert.ok(decoded.every((text) => !text.includes(sentinel)), "the neighbour's key is baked into the launcher in base64");
+    assert.ok(decoded.some((text) => text.includes('"aify-dashboard"') && text.includes("http://127.0.0.2:9700")), "the decoder found no session document, so it cannot be trusted to find a key");
     assert.ok(launcher.includes(Buffer.from(sessionMcpConfig(parseRegistry(JSON.stringify(registry)).registry)).toString("base64")), "the launcher read does not carry the session document");
     fs.rmSync(launched, { recursive: true, force: true });
     fs.rmSync(dir, { recursive: true, force: true });
