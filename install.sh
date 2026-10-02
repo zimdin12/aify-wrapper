@@ -284,15 +284,32 @@ for _client in "${CLIENTS[@]}"; do
   if [ "$_client" = "codex" ]; then
     SESSION_MCP_CODEX_B64="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" session-codex-b64 "$(node_path "$REGISTRY")")" || exit "$EXIT_CONFIG"
   fi
+  # Hermes has no per-session MCP flag, so its session servers go into the USER'S hermes config, which every hermes
+  # session on this host reads (docs/REGISTRY.md). What hermes could never be given is refused here, before any
+  # launcher is written; the write itself is the hermes step after the launchers.
+  if [ "$_client" = "hermes" ]; then
+    node "$(node_path "$HERE/lib/hermes-config-cli.mjs")" --check "$(node_path "$REGISTRY")" || exit "$EXIT_CONFIG"
+  fi
 done
 
 for _client in "${CLIENTS[@]}"; do
   install_one "$_client"
 done
 
+# --render-only writes launchers and nothing else, so it never touches the user's hermes config.
 if [ -n "$RENDER_ONLY" ]; then
   exit 0
 fi
+
+for _client in "${CLIENTS[@]}"; do
+  if [ "$_client" = "hermes" ]; then
+    # Its own step, named when it fails: the hermes launcher is installed either way, and works without the servers.
+    if ! node "$(node_path "$HERE/lib/hermes-config-cli.mjs")" "$(node_path "$REGISTRY")"; then
+      echo "install.sh: the hermes launcher is installed, but the hermes config step above did not finish." >&2
+      exit "$EXIT_CONFIG"
+    fi
+  fi
+done
 
 # A launcher not on PATH is a launcher nobody runs. Say so rather than leaving it to be discovered.
 case ":$PATH:" in
