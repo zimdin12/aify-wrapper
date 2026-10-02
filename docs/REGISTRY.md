@@ -45,6 +45,7 @@ the launcher stale rather than leaving you to notice.
 | `<service>.endpointEnv` | no | The environment variable names **this service's own code reads** to find its endpoint. |
 | `<service>.mcp` | no | MCP servers this service contributes to a runtime. Each needs `name` and `command`; `args` optional. |
 | `<service>.sessionInject` | no | `{ "mcp": true }` adds this service's `mcp` servers to every default-mode Claude session, beside the operator's own. See below. |
+| `<service>.advertise` | no | Read by aify-env, not by this package. `false` means aify-env sends this service no environment heartbeat; absent, or any other value, means it does. This parser accepts the field and leaves it out of what it returns. |
 
 ## Why `endpointEnv` exists, and why nothing is guessed
 
@@ -81,7 +82,13 @@ it races them.
 - **`keyEnv` beside `sessionInject.mcp` is refused at parse**, because the key's value would be baked
   into every launcher (WRAP-M1). A service that opts in reads its key itself, from its `credentialRef`
   file.
+- **An opted-in `endpointEnv` name that any service keeps a key in is refused at parse.** The rule above is per
+  service, so without this an opted-in entry could name the variable a neighbour's credential lives in. Claude binds
+  the name to this entry's endpoint, so the key never reaches the file, but the bridge's copy of the variable is
+  silently a URL, and codex would forward the inherited value. Found by aify-comms' senior review, 2026-10-01.
 - `sessionInject` is an object, `mcp` is `true` or `false`, and any other key is refused.
+- Keys at entry level that this parser does not read, such as aify-env's `advertise`, are accepted and dropped from
+  the parsed entry. Other readers of the same file own them.
 
 The installer gets the document from `registry-cli.mjs session-fragment-b64 <path>`:
 
