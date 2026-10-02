@@ -161,3 +161,19 @@ test("a hermes call that timed out refuses at its step, and nothing is written a
   assert.match(outcome.problem, /exit null.*ETIMEDOUT/);
   assert.deepEqual(calls, ["config get mcp_servers", "config get mcp_servers.aify-dashboard"]);
 });
+
+test("every entry is read and decided before anything is written, so a refusal leaves the config as it was", () => {
+  // The bug this catches: deciding and writing entry by entry. With two opted-in servers, the first was written and an
+  // old entry of ours removed before the second turned out to be the operator's, so a refused install changed the
+  // config anyway.
+  const services = { "aify-dashboard": { ...DASHBOARD, mcp: [
+    { name: "aify-dashboard", command: "node", args: ["/d/bridge.mjs"] },
+    { name: "zz-second", command: "node", args: ["/d/second.mjs"] },
+  ] } };
+  const servers = { "old-service": { command: "old", ...MARK }, "zz-second": { command: "theirs" } };
+  const { run, calls, after } = install({ services, servers });
+  assert.equal(run.status, 78);
+  assert.match(run.stderr, /failed at hermes config get mcp_servers\.zz-second/);
+  assert.deepEqual(after, servers, "a refused install changed the config");
+  assert.ok(!verbs(calls).some((call) => /^(set|unset)/.test(call)), verbs(calls).join(", "));
+});
