@@ -1,4 +1,5 @@
-// What only codex refuses stops only an install that writes a codex launcher.
+// What only codex refuses stops only an install that writes a codex launcher. (A dotted name also stops hermes, whose
+// config nests on dots; the last case says so.)
 //
 // The codex verb refuses things that are codex's limits, not the registry's: a server name that is not a bare
 // TOML key (`a.b` would be read by codex as a nested table) and a key kept in a variable codex forwards. The
@@ -47,7 +48,7 @@ function install(selection, serverName, { runtimes } = {}) {
   return { run, written };
 }
 
-for (const client of ["claude", "hermes", "pi"]) {
+for (const client of ["claude", "pi"]) {
   test(`a server name codex cannot take does not stop a ${client} install`, () => {
     const { run, written } = install(["--client", client], "a.b");
     assert.equal(run.status, 0, `${run.stdout}${run.stderr}`);
@@ -77,7 +78,16 @@ test("--all with codex present refuses before writing ANY launcher", () => {
 });
 
 test("--all without codex installs what is present", () => {
-  const { run, written } = install(["--all"], "a.b", { runtimes: ["claude", "hermes"] });
+  const { run, written } = install(["--all"], "a.b", { runtimes: ["claude"] });
   assert.equal(run.status, 0, `${run.stdout}${run.stderr}`);
-  assert.deepEqual(written, ["claude-aify", "hermes-aify"]);
+  assert.deepEqual(written, ["claude-aify"]);
+});
+
+test("hermes refuses the same name, because it would be a nested key in hermes' config too", () => {
+  // Not a codex-only limit after all: hermes' entries are written as `mcp_servers.<name>`, so a dot nests it. Refused
+  // before any launcher is written, like codex's, and with nothing written to the user's hermes config either.
+  const { run, written } = install(["--client", "hermes"], "a.b");
+  assert.equal(run.status, 78, `${run.stdout}${run.stderr}`);
+  assert.match(run.stderr, /not a plain key/);
+  assert.deepEqual(written, []);
 });

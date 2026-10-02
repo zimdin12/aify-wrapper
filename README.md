@@ -155,6 +155,11 @@ Codex, hermes and pi accept it and **report it as unused** through `--check`, be
 are registered at install time by the client's own tooling rather than by the launcher. A wrapper that
 silently swallowed the input would be claiming a job it does not do.
 
+A service that opts into every session (`"sessionInject": {"mcp": true}` in `~/.aify/services.json`) reaches claude
+and codex sessions through their launchers. **For hermes it reaches every hermes session on the host**, hermes-aify
+or not: hermes has no per-session way in, so `install.sh` writes the server into the user's hermes config through
+hermes' own `config set`, marked as ours, and never over an entry the operator wrote. See docs/REGISTRY.md.
+
 ### Exit codes
 
 | Code | Meaning |

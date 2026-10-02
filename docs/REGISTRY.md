@@ -116,6 +116,30 @@ Unlike Claude's env block, which binds each `endpointEnv` name to the entry's en
 forwards whatever value the app-server inherited under that name. The launcher integration must test what an
 unset or conflicting inherited value does.
 
+**Hermes: for hermes, `sessionInject` means EVERY hermes session on the host,** not only hermes-aify ones. Hermes has
+no per-session MCP flag, so `install.sh` writes each opted-in server into the user's hermes config, which every hermes
+session reads, the way aify-comms' own entry is written. It does so only when a hermes launcher is among the clients,
+and never with `--render-only`. Its managed-scope overlay (`HERMES_MANAGED_DIR`) looked like a per-session way in, but
+measured on hermes 0.21.5 it deletes a same-named server from the user's config on any save, and leaves a dead
+`<name>: {}` behind for any other name (aify-dashboard `docs/evidence/hermes-session-mcp-2026-10-02`).
+
+- **Hermes' own writer.** `lib/hermes-config-cli.mjs` runs `hermes config get`, then `hermes config set
+  mcp_servers.<name> '<JSON>'`, and `hermes config unset` for removal. The operator's comments and other servers
+  survive, and nothing here edits YAML.
+- **Only its own entries.** Each entry carries `"x-aify-owner": "aify-wrapper"`. A same-named entry without it is the
+  operator's, and the install refuses with 78 rather than replacing it. An entry of ours that no service opts into any
+  more is removed; nothing else is.
+- **A `get` answer is trusted only with exit 0 and an empty stderr.** On an unparseable config hermes exits 0 and
+  answers from its last good read, saying so only on stderr. Any other answer refuses with the step named.
+- **Not while hermes is mid-update.** Before any hermes call, `installs/*/source-completion-pending` is looked for
+  under every hermes root. Any hermes command run then would re-run that update. This reads hermes 0.21.5's private
+  layout: finding a marker refuses, and finding none proves only that there is none where 0.21.5 keeps it.
+- **What `lib/session-hermes.mjs` refuses:** everything the codex verb refuses, plus `${` in a server's command or
+  arguments, because hermes expands `${...}` in arguments too. `AIFY_AGENT_ID` and every `endpointEnv` name go in the
+  entry's `env` as `${NAME}`. Hermes gives a stdio server only its safe-env allowlist plus that block.
+- **A session no launcher gave an id passes the server the literal text `${AIFY_AGENT_ID}`.** A service that opts in
+  must treat it as no agent.
+
 The claude template's placeholder is `SESSION_MCP_B64`. `render.sh` refuses a template with any placeholder
 left, so an installer that renders the claude template must supply it, empty or not.
 
