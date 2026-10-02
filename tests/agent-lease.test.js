@@ -381,8 +381,9 @@ test("orphanedChildren: children named by a gone pid, within its life, outside t
 
 test("watchInstance: collects once the instance is gone, and leaves when the lease names another", async () => {
   const calls = [];
-  const fakeLease = (states, collect = { collected: true, stopped: [] }) => ({
+  const fakeLease = (states, collect = { collected: true, stopped: [] }, holds = () => true) => ({
     holderState: () => { const s = states.shift() ?? "gone"; calls.push(s); return s; },
+    holds: (instance) => { const held = holds(instance); calls.push(held ? "holds" : "released"); return held; },
     collect: () => { calls.push("collect"); return typeof collect === "function" ? collect() : collect; },
   });
   let alive = true;
@@ -393,12 +394,13 @@ test("watchInstance: collects once the instance is gone, and leaves when the lea
   assert.equal(sleeps.length, 3, "control: it looked while the instance was alive, without asking the lease every time");
 
   calls.length = 0;
-  const replaced = await watchInstance({ lease: fakeLease(["ours", "not-the-holder"]), instance: 9, isAlive: () => true, sleep: async () => {}, recheckEvery: 2 });
-  assert.deepEqual([replaced.reason, calls], ["not-the-holder", ["ours", "not-the-holder"]]);
+  let reads = 0;
+  const replaced = await watchInstance({ lease: fakeLease([], undefined, () => ++reads < 2), instance: 9, isAlive: () => true, sleep: async () => {}, recheckEvery: 2 });
+  assert.deepEqual([replaced.reason, calls], ["not-the-holder", ["holds", "released"]], "a released lease is read from the record, without asking the OS");
 
   // A pid that stays alive but belongs to another process now is an ended instance.
   calls.length = 0;
-  const reused = await watchInstance({ lease: fakeLease(["reused"]), instance: 9, isAlive: () => true, sleep: async () => {}, recheckEvery: 1 });
+  const reused = await watchInstance({ lease: fakeLease(["reused"]), instance: 9, isAlive: () => true, sleep: async () => {}, identityEvery: 1 });
   assert.deepEqual([reused.collected, calls], [true, ["reused", "collect"]]);
 
   // A collect that could not finish is retried, then left to the next claim.
@@ -411,6 +413,15 @@ test("watchInstance: collects once the instance is gone, and leaves when the lea
   const gaveUp = await watchInstance({ lease: fakeLease(["gone"], () => { tries += 1; return { collected: false, reason: "could-not-stop", stopped: [] }; }),
     instance: 9, isAlive: () => false, sleep: async () => {}, attempts: 2 });
   assert.deepEqual([gaveUp.reason, tries], ["could-not-stop", 2]);
+});
+
+test("watchInstance: a live instance costs the OS one identity question in 300 looks, and a death is asked at once", async () => {
+  let probes = 0, reads = 0, looks = 0;
+  const lease = { holderState: () => { probes += 1; return looks > 600 ? "gone" : "ours"; }, holds: () => { reads += 1; return true; }, collect: () => ({ collected: true, stopped: [] }) };
+  const result = await watchInstance({ lease, instance: 9, isAlive: () => looks <= 600, sleep: async () => { looks += 1; } });
+  assert.equal(result.collected, true);
+  assert.equal(probes, 3, "600 live looks ask the OS twice (looks 300 and 600), and the dead look once more");
+  assert.equal(reads, 118, "every fifth look reads the record, except where the OS was asked instead");
 });
 
 test("startWatch: detached from the launcher, holding no directory, carrying no lease; none when switched off", () => {
