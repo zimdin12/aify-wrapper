@@ -171,9 +171,6 @@ STRICT_EXTRA_MCP_B64="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" strict-
 # Services that opted into every default-mode session ("sessionInject": {"mcp": true}), as a whole
 # --mcp-config document in base64. Empty unless a service asked, and then the launcher passes nothing.
 SESSION_MCP_B64="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" session-fragment-b64 "$(node_path "$REGISTRY")")" || exit "$EXIT_CONFIG"
-# The same services for codex, as NUL-terminated `-c` words in base64. Computed for every client, as comms'
-# installer does: a registry codex would refuse (a key kept in a variable codex forwards) is refused whole.
-SESSION_MCP_CODEX_B64="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" session-codex-b64 "$(node_path "$REGISTRY")")" || exit "$EXIT_CONFIG"
 
 # The launcher name follows the client name. pi is the one exception: it ships an alias, which is real
 # information and not derivable from a filename, so it is the only thing written down here.
@@ -257,6 +254,18 @@ if [ "$ALL" = "1" ]; then
 else
   CLIENTS=("$CLIENT")
 fi
+
+# The same session services for codex, as NUL-terminated `-c` words in base64, built only when a codex
+# launcher is being written. What the verb refuses is codex's own limit (a server name that is not a bare
+# TOML key, a key kept in a variable codex forwards), so it stops a codex install and never a claude, hermes
+# or pi one; the refusals every client shares come from the parse above. Here, after the client set is known
+# and before the first launcher is written, so `--all` refuses before it writes anything.
+SESSION_MCP_CODEX_B64=""
+for _client in "${CLIENTS[@]}"; do
+  if [ "$_client" = "codex" ]; then
+    SESSION_MCP_CODEX_B64="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" session-codex-b64 "$(node_path "$REGISTRY")")" || exit "$EXIT_CONFIG"
+  fi
+done
 
 for _client in "${CLIENTS[@]}"; do
   install_one "$_client"

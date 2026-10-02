@@ -103,12 +103,14 @@ attaches to it). `registry-cli.mjs session-codex-b64 <path>` (in `lib/session-co
 opted-in server, `-c mcp_servers.<name>.command=…`, `-c mcp_servers.<name>.args=[…]` and
 `-c mcp_servers.<name>.env_vars=["AIFY_AGENT_ID", <endpointEnv names>]`, each word NUL-terminated, the whole
 in base64. `env_vars` is required: codex passes an MCP server no variable it is not told to (measured on codex
-0.159.3, 2026-10-01). **Pending wiring:** the codex launcher does not read these words yet. When it does, it
-appends them to its app-server array with `while IFS= read -r -d '' w; do …+=("$w"); done`, so no registry value is
-ever parsed as shell, through the placeholder `SESSION_MCP_CODEX_B64`. Empty when nothing opted in or there is no
-file. Exit 78 for a registry that does not parse; a server name that is not a plain TOML key; a variable name a
-shell cannot export; a forwarded name that any service in the registry keeps a key in; or a command or argument
-UTF-8 cannot carry (a lone surrogate).
+0.159.3, 2026-10-01). `install.sh` bakes them into codex-aify through the placeholder `SESSION_MCP_CODEX_B64`. The
+launcher decodes them to a file, refusing with 78 if they do not decode, and appends them to its app-server array
+with `while IFS= read -r -d '' w; do …+=("$w"); done`, so no registry value is ever parsed as shell. Empty when
+nothing opted in or there is no file. Exit 78 for a registry that does not parse; a server name that is not a plain
+TOML key; a variable name a shell cannot export; a forwarded name that any service in the registry keeps a key in;
+or a command or argument UTF-8 cannot carry (a lone surrogate). Those refusals are codex's own, so the installer
+asks for these words only when a codex launcher is among the clients it writes. The refusals every client shares
+come from the parse.
 
 Unlike Claude's env block, which binds each `endpointEnv` name to the entry's endpoint, codex's `env_vars`
 forwards whatever value the app-server inherited under that name. The launcher integration must test what an
