@@ -44,8 +44,8 @@ the launcher stale rather than leaving you to notice.
 | `<service>.endpoint` | yes | Where the service is reachable. |
 | `<service>.endpointEnv` | no | The environment variable names **this service's own code reads** to find its endpoint. |
 | `<service>.mcp` | no | MCP servers this service contributes to a runtime. Each needs `name` and `command`; `args` optional. |
-| `<service>.sessionInject` | no | `{ "mcp": true }` adds this service's `mcp` servers to every default-mode Claude session, beside the operator's own. See below. |
-| `<service>.advertise` | no | Read by aify-env, not by this package. `false` means aify-env sends this service no environment heartbeat; absent, or any other value, means it does. This parser accepts the field and leaves it out of what it returns. |
+| `<service>.sessionInject` | no | `{ "mcp": true }` adds this service's `mcp` servers to every default-mode Claude session and every codex session, beside the operator's own. See below. |
+| `<service>.advertise` | no | Read by aify-env, not by this package. `false` means aify-env sends this service no environment heartbeat; absent, or any other value, means it does. This parser accepts the field and leaves it out of what it returns. A service plugin aify-env runs for the entry still heartbeats on its own, carrying the host's machine id (aify-env 0.8). |
 
 ## Why `endpointEnv` exists, and why nothing is guessed
 

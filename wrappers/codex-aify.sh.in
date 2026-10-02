@@ -479,7 +479,8 @@ if [ "$HARNESS_CHECK" = true ]; then
   echo "  model     : $([ "$CODEX_HAS_MODEL" = true ] && echo "<given as an argument>" || echo "${CODEX_AIFY_MODEL:-<the runtime default>}")"
   echo "  effort    : $([ "$CODEX_HAS_EFFORT" = true ] && echo "<given as an argument>" || echo "${CODEX_AIFY_EFFORT:-<the runtime default>}")"
   echo "  cwd       : ${HARNESS_CWD:-<inherited>}"
-  echo "  mcp       : not used by this wrapper (codex mcp add runs at install time)"
+  echo "  mcp       : HARNESS_MCP_COMMAND not used by this wrapper (codex mcp add runs at install time)"
+  echo "  session   : $([ -n "@@SESSION_MCP_CODEX_B64@@" ] && echo "the registry's opted-in servers, baked in at install" || echo "<none opted in at install>")"
   echo "  registry  : $HARNESS_REGISTRY_FINGERPRINT"
   echo "OK — nothing was started."
   exit 0

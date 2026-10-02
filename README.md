@@ -165,7 +165,9 @@ that cleared it gets exit 78 rather than an agent quietly talking to a service n
 particular service keeps its bridge; with this it loads whatever the host names. Claude honours it.
 Codex, hermes and pi accept it and **report it as unused** through `--check`, because their MCP servers
 are registered at install time by the client's own tooling rather than by the launcher. A wrapper that
-silently swallowed the input would be claiming a job it does not do.
+silently swallowed the input would be claiming a job it does not do. Codex additionally takes the
+registry's opted-in session servers as `-c` words baked in at install ([docs/REGISTRY.md](docs/REGISTRY.md)),
+which its `--check` reports on a `session` line of its own.
 
 ### Exit codes
 

@@ -394,6 +394,21 @@ hermes_aify_defaults() {
   HERMES_AIFY_EFFORT=""
   if [ "$HERMES_HAS_MODEL" = false ]; then HERMES_AIFY_MODEL="${AIFY_MANAGED_MODEL:-$AIFY_DEF_MODEL}"; fi
   if [ "$HERMES_HAS_EFFORT" = false ]; then HERMES_AIFY_EFFORT="${AIFY_MANAGED_EFFORT:-$AIFY_DEF_EFFORT}"; fi
+  # A CONTROL CHARACTER IN THE SELECTED MODEL OR EFFORT REFUSES, as codex-aify's does. A definition's
+  # value is checked by name, as the reader reports it, because the value itself arrives with a NUL or
+  # CR already gone: starting on that altered value would look like honouring the definition (0.8
+  # whole-range review, R4). Only a value this launch selects counts.
+  local _hermes_def_picked="" _hermes_field _hermes_control=false
+  if [ "$HERMES_HAS_MODEL" = false ] && [ -z "${AIFY_MANAGED_MODEL:-}" ]; then _hermes_def_picked="model"; fi
+  if [ "$HERMES_HAS_EFFORT" = false ] && [ -z "${AIFY_MANAGED_EFFORT:-}" ]; then _hermes_def_picked="$_hermes_def_picked effort"; fi
+  for _hermes_field in $_hermes_def_picked; do
+    case " $AIFY_DEF_CONTROL " in *" $_hermes_field "*) _hermes_control=true ;; esac
+  done
+  case "$HERMES_AIFY_MODEL$HERMES_AIFY_EFFORT" in *[[:cntrl:]]*) _hermes_control=true ;; esac
+  if [ "$_hermes_control" = true ]; then
+    echo "[hermes-aify] the model or effort for '${HERMES_AIFY_AGENT_ID:-<no agent>}' holds a control character; refusing to start." >&2
+    exit 78
+  fi
 }
 
 # --check: report and start NOTHING. It exits here, above every reap and every spawn, which is the

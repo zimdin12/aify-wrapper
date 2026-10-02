@@ -416,6 +416,21 @@ claude_aify_defaults() {
   CLAUDE_AIFY_EFFORT=""
   if [ "$CLAUDE_HAS_MODEL" = false ]; then CLAUDE_AIFY_MODEL="${AIFY_MANAGED_MODEL:-$AIFY_DEF_MODEL}"; fi
   if [ "$CLAUDE_HAS_EFFORT" = false ]; then CLAUDE_AIFY_EFFORT="${AIFY_MANAGED_EFFORT:-$AIFY_DEF_EFFORT}"; fi
+  # A CONTROL CHARACTER IN THE SELECTED MODEL OR EFFORT REFUSES, as codex-aify's does. A definition's
+  # value is checked by name, as the reader reports it, because the value itself arrives with a NUL or
+  # CR already gone: starting on that altered value would look like honouring the definition (0.8
+  # whole-range review, R4). Only a value this launch selects counts.
+  local _claude_def_picked="" _claude_field _claude_control=false
+  if [ "$CLAUDE_HAS_MODEL" = false ] && [ -z "${AIFY_MANAGED_MODEL:-}" ]; then _claude_def_picked="model"; fi
+  if [ "$CLAUDE_HAS_EFFORT" = false ] && [ -z "${AIFY_MANAGED_EFFORT:-}" ]; then _claude_def_picked="$_claude_def_picked effort"; fi
+  for _claude_field in $_claude_def_picked; do
+    case " $AIFY_DEF_CONTROL " in *" $_claude_field "*) _claude_control=true ;; esac
+  done
+  case "$CLAUDE_AIFY_MODEL$CLAUDE_AIFY_EFFORT" in *[[:cntrl:]]*) _claude_control=true ;; esac
+  if [ "$_claude_control" = true ]; then
+    echo "[claude-aify] the model or effort for '${CLAUDE_AIFY_AGENT_ID:-<no agent>}' holds a control character; refusing to start." >&2
+    exit 78
+  fi
 }
 claude_aify_defaults
 
