@@ -171,6 +171,9 @@ STRICT_EXTRA_MCP_B64="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" strict-
 # Services that opted into every default-mode session ("sessionInject": {"mcp": true}), as a whole
 # --mcp-config document in base64. Empty unless a service asked, and then the launcher passes nothing.
 SESSION_MCP_B64="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" session-fragment-b64 "$(node_path "$REGISTRY")")" || exit "$EXIT_CONFIG"
+# The same services for codex, as NUL-terminated `-c` words in base64. Computed for every client, as comms'
+# installer does: a registry codex would refuse (a key kept in a variable codex forwards) is refused whole.
+SESSION_MCP_CODEX_B64="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" session-codex-b64 "$(node_path "$REGISTRY")")" || exit "$EXIT_CONFIG"
 
 # The launcher name follows the client name. pi is the one exception: it ships an alias, which is real
 # information and not derivable from a filename, so it is the only thing written down here.
@@ -210,6 +213,7 @@ install_one() {
         "REGISTRY_FINGERPRINT=$REGISTRY_FINGERPRINT" \
         "STRICT_EXTRA_MCP_B64=$STRICT_EXTRA_MCP_B64" \
         "SESSION_MCP_B64=$SESSION_MCP_B64" \
+        "SESSION_MCP_CODEX_B64=$SESSION_MCP_CODEX_B64" \
         "MCP_TRANSPORT=$MCP_TRANSPORT" \
         "SERVICE_NAME=$SERVICE_NAME" \
         "BRIDGE_DIR=$BRIDGE_DIR" \

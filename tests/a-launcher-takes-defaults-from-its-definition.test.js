@@ -33,7 +33,7 @@ function setUp(client) {
   execFileSync("bash", [path.join(ROOT, "render.sh"), `${client}-aify.sh.in`, out,
     `ENDPOINT=${NOWHERE}`, "REGISTRY_FINGERPRINT=test-fp", "SERVICE_NAME=aify-comms",
     `BRIDGE_DIR=${bridge.replace(/\\/g, "/")}`, "WRAPPER_VERSION=0.6.0", "SCRIPT_DIR=/nowhere", "NATIVE_BASE=/nowhere",
-    "MCP_TRANSPORT=stdio", "STRICT_EXTRA_MCP_B64=", "SESSION_MCP_B64=", "HERMES_PLUGIN_PATH=/nowhere", "HERMES_STDIO_DIR=/nowhere",
+    "MCP_TRANSPORT=stdio", "STRICT_EXTRA_MCP_B64=", "SESSION_MCP_B64=", "SESSION_MCP_CODEX_B64=", "HERMES_PLUGIN_PATH=/nowhere", "HERMES_STDIO_DIR=/nowhere",
     "HERMES_TUI_DIR=/nowhere"], { encoding: "utf8" });
   const defs = definitionsEnv(path.join(dir, "defs")).AIFY_AGENT_DEFINITIONS_DIR;
   fs.mkdirSync(path.join(dir, "home"));

@@ -639,6 +639,23 @@ CODEX_APP_SERVER_CONFIG=()
 # The agent's model and effort: a managed launch's, else its definition's (codex_aify_defaults).
 if [ -n "$CODEX_AIFY_MODEL" ]; then CODEX_APP_SERVER_CONFIG+=(-c "model=$(codex_toml_string "$CODEX_AIFY_MODEL")"); fi
 if [ -n "$CODEX_AIFY_EFFORT" ]; then CODEX_APP_SERVER_CONFIG+=(-c "model_reasoning_effort=$(codex_toml_string "$CODEX_AIFY_EFFORT")"); fi
+# The services opted into every session ("sessionInject": {"mcp": true}), as `-c mcp_servers.<name>.*` words
+# that `registry-cli.mjs session-codex-b64` built at install. Empty unless a service asked, and then nothing is
+# added. NUL-terminated, then base64: a word holding a space, a quote or a newline arrives as ONE word, which no
+# separator a word can contain would guarantee. A word cannot hold a NUL, because the TOML strings escape it.
+#
+# Decoded to a file and checked, rather than read from `< <(... | base64 -d)`: a process substitution's failure
+# is invisible, so a damaged value would start the agent quietly WITHOUT its servers.
+if [ -n "@@SESSION_MCP_CODEX_B64@@" ]; then
+  _session_words="$(mktemp)"
+  if ! printf '%s' "@@SESSION_MCP_CODEX_B64@@" | base64 -d >"$_session_words" 2>/dev/null; then
+    rm -f "$_session_words"
+    echo "codex-aify: this launcher's session MCP servers do not decode. Re-run the installer." >&2
+    exit 78
+  fi
+  while IFS= read -r -d '' _word; do CODEX_APP_SERVER_CONFIG+=("$_word"); done <"$_session_words"
+  rm -f "$_session_words"
+fi
 
 if command -v setsid >/dev/null 2>&1; then
   setsid codex "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_HERDR_HOOKS[@]}" "${CODEX_APP_SERVER_CONFIG[@]}" app-server --listen "$APP_SERVER_URL" </dev/null >>"$LOG_FILE" 2>&1 &

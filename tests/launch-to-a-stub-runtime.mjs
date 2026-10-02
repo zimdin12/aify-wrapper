@@ -50,7 +50,7 @@ function runtimeStub(node) {
   return [
     "#!/bin/bash",
     'for a in "$@"; do if [ "$a" = "app-server" ]; then',
-    '  printf "%s\\n" "$@" > "$STUB_RUNTIME_ENV.app-server"',
+    '  printf "%s\\0" "$@" > "$STUB_RUNTIME_ENV.app-server"',
     '  url=""; prev=""; for b in "$@"; do [ "$prev" = "--listen" ] && url="$b"; prev="$b"; done',
     `  exec "${node}" -e 'require("net").createServer(s => s.end()).listen(Number(process.argv[1].split(":").pop()), "127.0.0.1")' "$url"`,
     "fi; done",
@@ -62,7 +62,7 @@ function runtimeStub(node) {
 }
 
 /** Render one launcher with a stub bridge and a stub runtime, in a fresh directory. */
-function world(client, { reader }) {
+function world(client, { reader, registry }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `aify-launch-${client}-`));
   const [out, stubs, home, bridge] = ["out", "stubs", "home", "bridge"].map((d) => path.join(dir, d));
   for (const d of [out, stubs, home, bridge]) fs.mkdirSync(d, { recursive: true });
@@ -72,7 +72,12 @@ function world(client, { reader }) {
   fs.mkdirSync(path.join(home, ".claude", "projects", "p"), { recursive: true });
   for (const id of [KNOWN, UNKNOWN]) fs.writeFileSync(path.join(home, ".claude", "projects", "p", `${id}.jsonl`), "{}\n");
   fs.mkdirSync(path.join(home, ".codex", "sessions"), { recursive: true });
-  const rendered = spawnSync(BASH, [INSTALL, "--client", client, "--endpoint", NOWHERE,
+  // The run's own registry, empty unless a test gives one. Without --registry the installer reads
+  // ~/.aify/services.json of whoever runs the suite, and every launcher here was built against this
+  // machine's services.
+  const services = path.join(dir, "services.json");
+  fs.writeFileSync(services, registry === undefined ? "" : JSON.stringify(registry));
+  const rendered = spawnSync(BASH, [INSTALL, "--client", client, "--endpoint", NOWHERE, "--registry", services,
     "--render-only", out, "--bridge-dir", shellPath(bridge)], { encoding: "utf8", timeout: 120_000 });
   if (rendered.status !== 0) throw new Error(`render failed: ${rendered.stdout}\n${rendered.stderr}`);
   fs.writeFileSync(path.join(stubs, client), runtimeStub(shellPath(process.execPath)), { mode: 0o755 });
@@ -85,8 +90,10 @@ function world(client, { reader }) {
  *   the runtime's environment ({} when it never started); `args` its argv; `appServerArgs` codex's
  *   app-server argv.
  */
-export function launch(client, args, { rewriting = true, reader = true, definitions = {}, env: extraEnv = {} } = {}) {
-  const w = world(client, { reader });
+export function launch(client, args, { rewriting = true, reader = true, definitions = {}, env: extraEnv = {}, registry, edit } = {}) {
+  const w = world(client, { reader, registry });
+  // A test that needs a launcher the installer would never write edits the rendered text, never the template.
+  if (edit) fs.writeFileSync(w.launcher, edit(fs.readFileSync(w.launcher, "utf8")));
   const lookups = path.join(w.dir, "lookups");
   const runtimeEnv = path.join(w.dir, "runtime-env");
   const defs = definitionsEnv(path.join(w.dir, "defs"));
@@ -116,7 +123,7 @@ export function launch(client, args, { rewriting = true, reader = true, definiti
   const started = Object.fromEntries(lines(runtimeEnv).filter((l) => l.includes("="))
     .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
   const asked = lines(lookups).map((l) => JSON.parse(l));
-  const result = { run, started, asked, args: lines(`${runtimeEnv}.args`), appServerArgs: lines(`${runtimeEnv}.app-server`) };
+  const result = { run, started, asked, args: lines(`${runtimeEnv}.args`), appServerArgs: read(`${runtimeEnv}.app-server`).split("\0").filter(Boolean) };
   fs.rmSync(w.dir, { recursive: true, force: true });
   return result;
 }
