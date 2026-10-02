@@ -43,7 +43,12 @@ test("readDefinition: found, missing, and every refusal", () => {
 test("shellAssignments: quoted for bash, a quote inside a value included", () => {
   assert.deepEqual(shellAssignments({ outcome: "missing", file: "/d/x.json" }), ["AIFY_DEF_FILE=''"]);
   assert.deepEqual(shellAssignments({ outcome: "found", file: "/d/x.json", role: "r", model: "it's", effort: "" }),
-    ["AIFY_DEF_FILE='/d/x.json'", "AIFY_DEF_ROLE='r'", "AIFY_DEF_MODEL='it'\\''s'", "AIFY_DEF_EFFORT=''"]);
+    ["AIFY_DEF_FILE='/d/x.json'", "AIFY_DEF_ROLE='r'", "AIFY_DEF_MODEL='it'\\''s'", "AIFY_DEF_EFFORT=''", "AIFY_DEF_CONTROL=''"]);
+  // A control character cannot cross the shell (bash drops a NUL, Git Bash a CR), so its field is named.
+  assert.equal(shellAssignments({ outcome: "found", file: "f", role: "r", model: "a\u0000b", effort: "x\ry" }).at(-1),
+    "AIFY_DEF_CONTROL='model effort'");
+  assert.equal(shellAssignments({ outcome: "found", file: "f", role: "r", model: "m", effort: "a\u0085" }).at(-1),
+    "AIFY_DEF_CONTROL='effort'", "C1 controls count, as the schema counts them for a name");
   const evaluated = spawnSync("bash", ["-c", `${shellAssignments({ outcome: "found", file: "f", role: "r", model: "it's $(x)", effort: "" }).join("; ")}; printf %s "$AIFY_DEF_MODEL"`], { encoding: "utf8" });
   assert.equal(evaluated.stdout, "it's $(x)", "bash reads the value back exactly, nothing expanded");
 });

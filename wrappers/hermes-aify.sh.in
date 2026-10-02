@@ -212,6 +212,9 @@ AIFY_DEF_FILE=""
 AIFY_DEF_ROLE=""
 AIFY_DEF_MODEL=""
 AIFY_DEF_EFFORT=""
+# The defaults among model and effort that hold a control character: the reader names them, because the
+# value itself cannot cross this shell intact (bash drops a NUL, and Git Bash a CR).
+AIFY_DEF_CONTROL=""
 AIFY_IGNORE_DEFINITION=false
 for _aify_def_arg in "$@"; do
   if [ "$_aify_def_arg" = "--aify-ignore-definition" ]; then AIFY_IGNORE_DEFINITION=true; fi
@@ -373,7 +376,8 @@ HERMES_HAS_EFFORT=false
 if [ -n "${HERMES_INFERENCE_MODEL:-}${HERMES_MODEL:-}" ]; then HERMES_HAS_MODEL=true; fi
 for _hermes_arg in "${HERMES_ARGS[@]}"; do
   case "$_hermes_arg" in
-    -m|--model|--model=*) HERMES_HAS_MODEL=true ;;
+    # `-mVALUE` too: argparse takes a short option's value attached.
+    -m|-m?*|--model|--model=*) HERMES_HAS_MODEL=true ;;
     --reasoning|--reasoning=*) HERMES_HAS_EFFORT=true ;;
   esac
 done
@@ -504,11 +508,35 @@ export AIFY_HERMES_SESSION_EFFORT="$HERMES_AIFY_EFFORT"
 # A PLAIN `hermes chat` runs the classic CLI, past the gateway and the delivery loop, so neither of the
 # above reaches it (review of P6r, L1). It takes both as its own arguments (hermes 0.21.5
 # hermes_cli/_parser.py, the chat parser's `-m` and `--reasoning`), placed after the subcommand.
-if [ "${HERMES_ARGS[0]:-}" = "chat" ]; then
+#
+# WHERE THE SUBCOMMAND IS, by hermes' own rule: `command_argv` in hermes_cli/_parser.py skips top-level
+# flags, and the values of those that take one, up to the first other token (after `--`, the next). The
+# flags are its parser's value-taking ones, as hermes 0.21.5 snapshots them itself
+# (`_VALUE_FLAGS_FALLBACK`, `_OPTIONAL_VALUE_FLAGS_FALLBACK`, and `-p`/`--profile`). So `-m x chat` and
+# `--provider p chat` are chats, and `-m chat` is not (review of P6r2, L1).
+# ponytail: hermes' snapshot copied; a value flag hermes adds later reads as a boolean here, which can
+# only make a later token look like the subcommand. Ask hermes' own command_argv if that ever bites.
+hermes_command_index() {
+  local i=0 n=${#HERMES_ARGS[@]}
+  while [ "$i" -lt "$n" ]; do
+    case "${HERMES_ARGS[$i]}" in
+      --) echo $((i + 1)); return ;;
+      -*=*) i=$((i + 1)) ;;
+      -z|--oneshot|-m|--model|--provider|--reasoning|-t|--toolsets|-r|--resume|-s|--skills|--usage-file|--in|\
+      -c|--continue|-p|--profile) i=$((i + 2)) ;;
+      -*) i=$((i + 1)) ;;
+      *) echo "$i"; return ;;
+    esac
+  done
+  echo "$n"
+}
+HERMES_COMMAND_AT="$(hermes_command_index)"
+if [ "${HERMES_ARGS[$HERMES_COMMAND_AT]:-}" = "chat" ]; then
   HERMES_CHAT_DEFAULTS=()
   if [ -n "$HERMES_AIFY_MODEL" ]; then HERMES_CHAT_DEFAULTS+=(-m "$HERMES_AIFY_MODEL"); fi
   if [ -n "$HERMES_AIFY_EFFORT" ]; then HERMES_CHAT_DEFAULTS+=(--reasoning "$HERMES_AIFY_EFFORT"); fi
-  HERMES_ARGS=(chat "${HERMES_CHAT_DEFAULTS[@]}" "${HERMES_ARGS[@]:1}")
+  HERMES_ARGS=("${HERMES_ARGS[@]:0:$((HERMES_COMMAND_AT + 1))}" "${HERMES_CHAT_DEFAULTS[@]}" \
+    "${HERMES_ARGS[@]:$((HERMES_COMMAND_AT + 1))}")
 fi
 if [ -n "$HERMES_AIFY_AGENT_ID" ]; then
   export AIFY_AGENT_ID="$HERMES_AIFY_AGENT_ID"

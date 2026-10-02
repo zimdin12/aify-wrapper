@@ -205,6 +205,9 @@ AIFY_DEF_FILE=""
 AIFY_DEF_ROLE=""
 AIFY_DEF_MODEL=""
 AIFY_DEF_EFFORT=""
+# The defaults among model and effort that hold a control character: the reader names them, because the
+# value itself cannot cross this shell intact (bash drops a NUL, and Git Bash a CR).
+AIFY_DEF_CONTROL=""
 AIFY_IGNORE_DEFINITION=false
 for _aify_def_arg in "$@"; do
   if [ "$_aify_def_arg" = "--aify-ignore-definition" ]; then AIFY_IGNORE_DEFINITION=true; fi
@@ -444,9 +447,19 @@ codex_aify_defaults() {
   if [ "$CODEX_HAS_MODEL" = false ]; then CODEX_AIFY_MODEL="${AIFY_MANAGED_MODEL:-$AIFY_DEF_MODEL}"; fi
   if [ "$CODEX_HAS_EFFORT" = false ]; then CODEX_AIFY_EFFORT="${AIFY_MANAGED_EFFORT:-$AIFY_DEF_EFFORT}"; fi
   # codex takes both as TOML strings, and a control character such as a newline has no place in a model
-  # or an effort: written raw it made the app-server's configuration invalid (review of P6r, L2).
-  case "$CODEX_AIFY_MODEL$CODEX_AIFY_EFFORT" in
-    *[[:cntrl:]]*)
+  # or an effort: written raw it made the app-server's configuration invalid (review of P6r, L2). A
+  # DEFINITION's value is checked by name, as the reader reports it, because the value itself arrives
+  # with a NUL or CR already gone (review of P6r2, L2); only the one this launch selects counts.
+  local _codex_def_picked=""
+  if [ "$CODEX_HAS_MODEL" = false ] && [ -z "${AIFY_MANAGED_MODEL:-}" ]; then _codex_def_picked="model"; fi
+  if [ "$CODEX_HAS_EFFORT" = false ] && [ -z "${AIFY_MANAGED_EFFORT:-}" ]; then _codex_def_picked="$_codex_def_picked effort"; fi
+  local _codex_field _codex_control=false
+  for _codex_field in $_codex_def_picked; do
+    case " $AIFY_DEF_CONTROL " in *" $_codex_field "*) _codex_control=true ;; esac
+  done
+  case "$CODEX_AIFY_MODEL$CODEX_AIFY_EFFORT" in *[[:cntrl:]]*) _codex_control=true ;; esac
+  case "$_codex_control" in
+    true)
       echo "codex-aify: the model or effort for '${CODEX_AIFY_AGENT_ID:-<no agent>}' holds a control character, which codex's configuration cannot take; refusing to start." >&2
       exit 78 ;;
   esac

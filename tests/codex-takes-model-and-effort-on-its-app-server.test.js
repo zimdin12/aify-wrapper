@@ -77,3 +77,23 @@ test("A CONTROL CHARACTER in a model or effort refuses the launch before anythin
     assert.deepEqual([appServerArgs, started], [[], {}], `${label}: nothing may start`);
   }
 });
+
+test("A NUL OR CR in the definition's selected value refuses too, though the shell never sees it (review of P6r2, L2)", () => {
+  // bash drops a NUL and Git Bash a CR from what the reader prints, so the value arrived as "leftright".
+  for (const [label, over] of [["model NUL", { model: "left\u0000right" }], ["model CR", { model: "left\rright" }],
+    ["effort NUL", { effort: "left\u0000right" }], ["effort CR", { effort: "left\rright" }]]) {
+    const { run, appServerArgs, started } = launch("codex", ["--aify-agent", "lead"], { definitions: { lead: definition(over) } });
+    assert.equal(run.status, 78, `${label}: ${run.stdout}\n${run.stderr}`);
+    assert.deepEqual([appServerArgs, started], [[], {}], `${label}: nothing may start`);
+  }
+  // An override wins over the definition, so its unusable value is not selected and nothing is refused.
+  for (const [label, args, env, expected] of [
+    ["-m", ["-m", "flag-model"], {}, ['model_reasoning_effort="xhigh"']],
+    ["a managed model", [], { AIFY_MANAGED_MODEL: "gpt-m" }, ['model="gpt-m"', 'model_reasoning_effort="xhigh"']],
+  ]) {
+    const { run, appServerArgs } = launch("codex", ["--aify-agent", "lead", ...args],
+      { definitions: { lead: definition({ model: "left\rright" }) }, env });
+    assert.equal(run.status, 0, `${label}: ${run.stderr}`);
+    assert.deepEqual(configPairs(appServerArgs), expected, label);
+  }
+});

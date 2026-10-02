@@ -223,6 +223,9 @@ AIFY_DEF_FILE=""
 AIFY_DEF_ROLE=""
 AIFY_DEF_MODEL=""
 AIFY_DEF_EFFORT=""
+# The defaults among model and effort that hold a control character: the reader names them, because the
+# value itself cannot cross this shell intact (bash drops a NUL, and Git Bash a CR).
+AIFY_DEF_CONTROL=""
 AIFY_IGNORE_DEFINITION=false
 for _aify_def_arg in "$@"; do
   if [ "$_aify_def_arg" = "--aify-ignore-definition" ]; then AIFY_IGNORE_DEFINITION=true; fi

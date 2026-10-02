@@ -42,6 +42,22 @@ test("A PLAIN CHAT keeps its own arguments after the agent's, and a non-chat com
   assert.deepEqual(other.args, ["model", "list"]);
 });
 
+test("THE CHAT IS FOUND PAST HERMES' OWN TOP-LEVEL FLAGS, as its command_argv finds it (review of P6r2, L1)", () => {
+  const M = "anthropic/claude-sonnet-4.6";
+  for (const [given, expected] of [
+    [["-m", "own/model", "chat"], ["-m", "own/model", "chat", "--reasoning", "high"]],
+    [["--provider", "p", "chat"], ["--provider", "p", "chat", "-m", M, "--reasoning", "high"]],
+    [["-mown/model", "chat"], ["-mown/model", "chat", "--reasoning", "high"]],
+    [["--provider=p", "chat", "-q", "hi"], ["--provider=p", "chat", "-m", M, "--reasoning", "high", "-q", "hi"]],
+    // CONTROL: `chat` is the value of -m here, and there is no subcommand: nothing is added.
+    [["-m", "chat"], ["-m", "chat"]],
+  ]) {
+    const { run: r, args } = launch("hermes", ["--aify-agent", "lead", ...given], { definitions: { lead: definition() } });
+    assert.equal(r.status, 0, `${given.join(" ")}: ${r.stderr}`);
+    assert.deepEqual(args, expected, given.join(" "));
+  }
+});
+
 test("A MANAGED LAUNCH's values are used; it reads no file", () => {
   const { run: r, started } = run([], { definitions: { lead: "{ not json" },
     env: { AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_MANAGED_MODEL: "m-managed", AIFY_MANAGED_EFFORT: "low" } });
