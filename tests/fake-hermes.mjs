@@ -5,7 +5,8 @@
 //   get on an unparseable config: exit 0, the last good answer on stdout, the problem on stderr
 //
 // State is a JSON file of servers (FAKE_HERMES_STATE); every call is appended to FAKE_HERMES_LOG. FAKE_HERMES_MODE is
-// "broken" (the unparseable-config answer) or "fail" (every call exits 2). Values are dumped as hermes dumps them:
+// "broken" (the unparseable-config answer), "fail" (every call exits 2), or "warn-write" (set and unset do their work
+// and exit 0, with a warning on stderr). Values are dumped as hermes dumps them:
 // a key per line, nested two spaces in, lists as "- item".
 
 import fs from "node:fs";
@@ -45,10 +46,12 @@ if (verb === "get") {
 } else if (verb === "set") {
   servers[name] = JSON.parse(value);
   save();
+  if (mode === "warn-write") process.stderr.write("warning: something hermes wants you to know\n");
   process.stdout.write(`Set ${key}\n`);
 } else if (verb === "unset") {
   delete servers[name];
   save();
+  if (mode === "warn-write") process.stderr.write("warning: something hermes wants you to know\n");
   process.stdout.write(`Unset ${key}\n`);
 } else {
   process.exit(2);

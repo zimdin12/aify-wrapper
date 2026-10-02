@@ -11,7 +11,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { hermesRoots, installHermesEntries, pendingUpdateMarkers } from "../lib/hermes-config-install.mjs";
+import { hermesRoots, installHermesEntries, pendingUpdateMarkers, unexpandedHomeProblem } from "../lib/hermes-config-install.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.join(HERE, "..", "lib", "hermes-config-cli.mjs");
@@ -25,7 +25,7 @@ const DASHBOARD = {
 };
 const ENTRY = { command: "node", args: ["/d/bridge.mjs"], env: { AIFY_AGENT_ID: "${AIFY_AGENT_ID}" }, ...MARK };
 
-function install({ services = { "aify-dashboard": DASHBOARD }, servers = {}, mode = "", marker = false } = {}) {
+function install({ services = { "aify-dashboard": DASHBOARD }, servers = {}, mode = "", marker = false, hermesHome } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-hermes-step-"));
   const registry = path.join(dir, "services.json");
   fs.writeFileSync(registry, JSON.stringify({ version: 1, services }));
@@ -40,7 +40,7 @@ function install({ services = { "aify-dashboard": DASHBOARD }, servers = {}, mod
   }
   fs.mkdirSync(path.join(home, "installs", "another"), { recursive: true });
   const env = {
-    ...process.env, HERMES_HOME: home, LOCALAPPDATA: path.join(dir, "local"), HOME: dir, USERPROFILE: dir,
+    ...process.env, HERMES_HOME: hermesHome ?? home, LOCALAPPDATA: path.join(dir, "local"), HOME: dir, USERPROFILE: dir,
     HERMES_RUNTIME_COMMAND: FAKE, FAKE_HERMES_STATE: state, FAKE_HERMES_LOG: log, FAKE_HERMES_MODE: mode,
   };
   delete env.HERMES_DATA_DIR_SUFFIX;
@@ -176,4 +176,45 @@ test("every entry is read and decided before anything is written, so a refusal l
   assert.match(run.stderr, /failed at hermes config get mcp_servers\.zz-second/);
   assert.deepEqual(after, servers, "a refused install changed the config");
   assert.ok(!verbs(calls).some((call) => /^(set|unset)/.test(call)), verbs(calls).join(", "));
+});
+
+test("our mark is read inside its own entry only, never carried into the entry above it", () => {
+  // The bug this catches (the senior reviewer, dfb2521): a top-level name the reader did not recognise, such as
+  // `old.service:`, left the previous name current, so ITS mark was credited to the operator's entry above it, which
+  // was then removed. Valid YAML, from an older install or the operator.
+  const servers = { operator: { command: "theirs" }, "old.service": { command: "old", ...MARK } };
+  const { run, calls, after } = install({ services: {}, servers });
+  assert.equal(run.status, 0, run.stderr);
+  assert.ok(!verbs(calls).includes("unset mcp_servers.operator"), verbs(calls).join(", "));
+  assert.deepEqual(Object.keys(after).sort(), ["old.service", "operator"]);
+});
+
+test("a write that answers with a warning is not reported as written", () => {
+  // set and unset are held to the rule get is: exit 0 AND an empty stderr. What a warning means is unknown, so the
+  // step says it cannot vouch for that write rather than reporting it done.
+  for (const servers of [{}, { "old-service": { command: "old", ...MARK } }]) {
+    const { run } = install({ mode: "warn-write", servers, services: Object.keys(servers).length ? {} : undefined });
+    assert.equal(run.status, 78, `${run.stdout}${run.stderr}`);
+    assert.match(run.stderr, /failed at hermes config (set|unset) mcp_servers\./);
+    assert.match(run.stderr, /cannot say whether it was written|cannot say whether it was removed/);
+  }
+});
+
+test("a HERMES_HOME written with ~ or variable syntax refuses the update check rather than looking in the wrong place", () => {
+  // Hermes expands ~ and $VAR / %VAR% in HERMES_HOME (hermes_constants.py _expand_hermes_home); this reads the text as
+  // written, so it would look for markers under a directory hermes never uses. Refused, never expanded: a second
+  // expander is a second parser of hermes' rule.
+  for (const home of ["~/hermes", "$HOME/hermes", "%LOCALAPPDATA%\hermes", "C:/x/${H}"]) {
+    assert.match(unexpandedHomeProblem({ HERMES_HOME: home }) ?? "", /HERMES_HOME/, home);
+  }
+  // The controls: a plain path and no HERMES_HOME at all are not refused.
+  assert.equal(unexpandedHomeProblem({ HERMES_HOME: "C:/Users/me/AppData/Local/hermes" }), null);
+  assert.equal(unexpandedHomeProblem({}), null);
+});
+
+test("the installer refuses a HERMES_HOME it cannot read as written, before any hermes command", () => {
+  const { run, calls } = install({ hermesHome: "~/hermes" });
+  assert.equal(run.status, 78);
+  assert.match(run.stderr, /failed at hermes update check:\s+HERMES_HOME \(~\/hermes\)/);
+  assert.deepEqual(calls, [], "a hermes command was started");
 });
