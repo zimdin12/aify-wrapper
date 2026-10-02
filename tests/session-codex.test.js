@@ -120,10 +120,15 @@ test("a forwarded name that ANY service declares as a key is refused, so no cred
   // ⛔ The bug this catches (the senior reviewer's C1, 2026-10-01): the parse refusal is per service, so an opted-in
   // entry with no keyEnv of its own could list, in endpointEnv, the variable ANOTHER service keeps its key in. codex
   // forwards a variable's inherited VALUE, so the server would be handed that credential.
+  //
+  // REFUSED ONE LAYER EARLIER SINCE THE MERGE WITH dashboard-session-keys (0d4622f): the registry parse refuses an
+  // opted-in entry naming a neighbour's key variable, so this registry never reaches the verb. The verb still
+  // refuses what the parse lets through: the identity variable below, forwarded to every server.
   const keyed = { ...COMMS, keyEnv: ["SYNTHETIC_CREDENTIAL_VAR"] };
-  const result = sessionCodexWords(parsed({ "aify-comms": keyed, "aify-dashboard": { ...DASHBOARD, endpointEnv: ["SYNTHETIC_CREDENTIAL_VAR"] } }));
-  assert.equal(result.ok, false, "a key variable was forwarded");
-  assert.match(result.problems.join("\n"), /"SYNTHETIC_CREDENTIAL_VAR".*aify-comms/);
+  const refusedAtParse = parseRegistry(JSON.stringify(registryWith({ "aify-comms": keyed,
+    "aify-dashboard": { ...DASHBOARD, endpointEnv: ["SYNTHETIC_CREDENTIAL_VAR"] } })));
+  assert.equal(refusedAtParse.ok, false, "a key variable was forwarded");
+  assert.match(refusedAtParse.errors.join("\n"), /"SYNTHETIC_CREDENTIAL_VAR".*aify-comms/);
   // And the identity variable is no exception: forwarded to every server, so refused if any service keeps a key in it.
   const agentAsKey = sessionCodexWords(parsed({ "aify-comms": { ...COMMS, keyEnv: ["AIFY_AGENT_ID"] }, "aify-dashboard": DASHBOARD }));
   assert.equal(agentAsKey.ok, false);
