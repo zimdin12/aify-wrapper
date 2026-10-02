@@ -47,6 +47,10 @@ in a FINGERPRINT of what it was built from, so `aify-wrapper-check` can tell you
 has moved on and the launcher has not. Install with no registry and you get a launcher built from
 nothing, which is a valid state and reported as such rather than as an error.
 
+The entry schema every service's installer writes, and the rules this package refuses a registry by,
+are the contract in [docs/REGISTRY.md](docs/REGISTRY.md). Since 0.8 an entry with
+`"sessionInject": {"mcp": true}` puts its MCP servers into every claude (default mode) and codex session.
+
 Then, before you trust a launcher you just installed:
 
 ```bash
@@ -145,6 +149,14 @@ keeps working untouched.
 Precedence is **flag > `HARNESS_*` > legacy `AIFY_*` > the value baked in at install**. An explicit
 argument beats ambient environment because that is what typing it means.
 
+**Its agent's definition (0.8).** When the agent has a definition, `~/.aify/agent-definitions/<id>.json`
+written by aify-env, the launcher reads its role, model and effort as defaults: below a flag and the
+environment, above the built-in default. It reads the file and never writes it, for the id it resolved
+(a resume handle that names the agent counts). A missing file is the old behaviour. An invalid file, or
+one defining another harness, refuses the launch with 78 unless `--aify-ignore-definition`, because
+starting without the definition the operator wrote would look like honouring it. A managed start reads
+no file: aify-env hands it what it already checked.
+
 `HARNESS_ENDPOINT` uses `${HARNESS_ENDPOINT-...}`, not `${HARNESS_ENDPOINT:-...}`, and the difference
 is deliberate: an explicitly **emptied** endpoint is a configuration error, not an unset one. A host
 that cleared it gets exit 78 rather than an agent quietly talking to a service nobody named.
@@ -161,7 +173,7 @@ silently swallowed the input would be claiming a job it does not do.
 |---|---|
 | `0` | the runtime exited normally, or `--check` passed |
 | `75` | start refused: the agent already has a live instance on this host (see below) |
-| `78` | configuration invalid: a required input is missing or empty |
+| `78` | configuration invalid: a required input is missing or empty, or the agent's definition cannot be used |
 | `127` | the runtime CLI is not on PATH |
 
 Any other code is the runtime's own, passed through unchanged. A runtime can also exit with one of the
