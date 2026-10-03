@@ -34,8 +34,11 @@ if [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then
 else
   pane="${AIFY_HERDR_PANE_ID:-${HERDR_PANE_ID:-}}"
 fi
+# The grammar lib/herdr-pane.mjs checks: w<id>:p<id>, ids of letters or digits (Herdr's tenth
+# workspace is `wA`). A digits-only glob dropped every report from those panes, so they showed no dot.
 case "$pane" in
-  w[0-9]*:p[0-9]*) ;;
+  *[!0-9A-Za-z:]*|*:*:*) exit 0 ;;
+  w?*:p?*) ;;
   *) exit 0 ;;
 esac
 
