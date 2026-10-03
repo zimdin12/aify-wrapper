@@ -172,7 +172,14 @@ if [ -n "$HARNESS_EXTRA_ENV" ]; then
   while IFS= read -r _pair; do
     case "$_pair" in
       ""|"#"*) continue ;;
-      *=*) export "${_pair%%=*}=${_pair#*=}" ;;
+      *=*)
+        # AIFY_ AND HARNESS_ ARE AIFY'S OWN, in any case (Windows hands a child its environment without
+        # regard to case). This runs after the definition was read, so a line here could otherwise set the
+        # model, the mode or the launcher's own controls that a definition may not (external review of 0.8.1).
+        case "$(printf '%s' "${_pair%%=*}" | tr '[:lower:]' '[:upper:]')" in
+          AIFY_*|HARNESS_*) echo "${0##*/}: HARNESS_EXTRA_ENV may not set ${_pair%%=*}, which aify owns; skipped" >&2 ;;
+          *) export "${_pair%%=*}=${_pair#*=}" ;;
+        esac ;;
     esac
   done <<HARNESS_ENV_EOF
 $HARNESS_EXTRA_ENV
