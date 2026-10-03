@@ -260,6 +260,18 @@ fi
 # TOML key, a key kept in a variable codex forwards), so it stops a codex install and never a claude, hermes
 # or pi one; the refusals every client shares come from the parse above. Here, after the client set is known
 # and before the first launcher is written, so `--all` refuses before it writes anything.
+# A LAUNCHER WITHOUT ITS READER REFUSES EVERY NAMED START. Each one reads an agent's definition with the reader
+# in the bridge it points at, and refuses (78) when it cannot run it. So launchers written here before the
+# service's own install has put that bridge in place started nothing until that install ran (external review
+# of 0.8.1: the upgrade-order trap). Refused here, before anything is written, naming the install to run first.
+# --render-only writes nowhere a launch reads, so it is left to the caller.
+if [ -z "$RENDER_ONLY" ] && [ ! -f "$BRIDGE_DIR/node_modules/aify-wrapper/bin/aify-definition.mjs" ]; then
+  echo "install.sh: $BRIDGE_DIR has no definition reader (node_modules/aify-wrapper/bin/aify-definition.mjs)," >&2
+  echo "            so every launcher written now would refuse to start a named agent. Install the service's" >&2
+  echo "            bridge first (aify-comms: install.sh --client <name>), which writes these launchers too." >&2
+  exit "$EXIT_CONFIG"
+fi
+
 SESSION_MCP_CODEX_B64=""
 for _client in "${CLIENTS[@]}"; do
   if [ "$_client" = "codex" ]; then
