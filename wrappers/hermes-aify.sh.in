@@ -245,8 +245,10 @@ if [ -n "$HARNESS_EXTRA_ENV" ]; then
         # AIFY_ AND HARNESS_ ARE AIFY'S OWN, in any case (Windows hands a child its environment without
         # regard to case). This runs after the definition was read, so a line here could otherwise set the
         # model, the mode or the launcher's own controls that a definition may not (external review of 0.8.1).
-        case "$(printf '%s' "${_pair%%=*}" | tr '[:lower:]' '[:upper:]')" in
-          AIFY_*|HARNESS_*) echo "${0##*/}: HARNESS_EXTRA_ENV may not set ${_pair%%=*}, which aify owns; skipped" >&2 ;;
+        # MATCHED BY THE GLOB, NOT CONVERTED BY A COMMAND: `tr` missing from PATH made the conversion
+        # empty and the line was exported (review of 0.8.2). A glob needs nothing outside the shell.
+        case "${_pair%%=*}" in
+          [Aa][Ii][Ff][Yy]_*|[Hh][Aa][Rr][Nn][Ee][Ss][Ss]_*) echo "${0##*/}: HARNESS_EXTRA_ENV may not set ${_pair%%=*}, which aify owns; skipped" >&2 ;;
           *) export "${_pair%%=*}=${_pair#*=}" ;;
         esac ;;
     esac

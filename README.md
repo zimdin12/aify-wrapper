@@ -35,9 +35,10 @@ to have. Use `--client <name>` instead when you want exactly one.
 
 Either writes into `~/.local/bin` (override with `--dest`). Run `./install.sh --help` for the rest.
 
-Install the service's bridge first. Each launcher reads a named agent's definition with the reader in that
-bridge (`--bridge-dir`), so this installer refuses (78) to write launchers that point at a bridge without one,
-and names the install to run first.
+Install the service's bridge first. The claude, codex and hermes launchers read a named agent's definition
+with the reader in that bridge (`--bridge-dir`), so this installer refuses (78) to write them when the bridge has
+no reader file, and names the install to run first. It checks that the file is there, not that it runs; pi's
+launcher reads no definition and is not held.
 
 ### The registry
 
@@ -148,7 +149,7 @@ keeps working untouched.
 | `HARNESS_IDENTITY` | opaque id for this agent, exported to the runtime | no |
 | `HARNESS_ROLE` | opaque role string | no |
 | `HARNESS_CWD` | working directory the runtime starts in | no |
-| `HARNESS_EXTRA_ENV` | `KEY=VALUE` lines exported before launch, except `AIFY_` and `HARNESS_` names in any case, which are skipped with a line on stderr | no |
+| `HARNESS_EXTRA_ENV` | `KEY=VALUE` lines exported before launch, except names beginning `AIFY_` or `HARNESS_` in any letter case, which are skipped with a line on stderr | no |
 
 Precedence is **flag > `HARNESS_*` > legacy `AIFY_*` > the value baked in at install**. An explicit
 argument beats ambient environment because that is what typing it means.
