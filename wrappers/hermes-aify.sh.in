@@ -378,11 +378,13 @@ for ARG in "$@"; do
   HERMES_ARGS+=("$ARG")
   PREV_ARG="$ARG"
 done
-# A model or effort the operator gave hermes itself is theirs: `-m`/`--model` or HERMES_INFERENCE_MODEL /
-# HERMES_MODEL in the environment, and `--reasoning`.
+# A model or effort the operator gave hermes itself is theirs: `-m`/`--model` and `--reasoning` on this command
+# line. NOT a HERMES_INFERENCE_MODEL / HERMES_MODEL in the environment: a spawn's or a definition's variables
+# arrive there, and one beat the model the agent is configured with while agent info showed the configured one
+# (external review of 0.8.4, a leftover from the 0.8.1 review). The environment's model still applies when
+# neither the managed launch nor the definition names one.
 HERMES_HAS_MODEL=false
 HERMES_HAS_EFFORT=false
-if [ -n "${HERMES_INFERENCE_MODEL:-}${HERMES_MODEL:-}" ]; then HERMES_HAS_MODEL=true; fi
 for _hermes_arg in "${HERMES_ARGS[@]}"; do
   case "$_hermes_arg" in
     # `-mVALUE` too: argparse takes a short option's value attached.
@@ -431,7 +433,7 @@ if [ "$HARNESS_CHECK" = true ]; then
   echo "  identity  : ${HERMES_AIFY_AGENT_ID:-<none — this session would be anonymous>}"
   echo "  role      : $HERMES_AIFY_ROLE"
   echo "  definition: ${AIFY_DEF_FILE:-<none>}"
-  echo "  model     : $([ "$HERMES_HAS_MODEL" = true ] && echo "<given as an argument or by the environment>" || echo "${HERMES_AIFY_MODEL:-<the runtime default>}")"
+  echo "  model     : $([ "$HERMES_HAS_MODEL" = true ] && echo "<given as an argument>" || echo "${HERMES_AIFY_MODEL:-<the runtime default>}")"
   echo "  effort    : $([ "$HERMES_HAS_EFFORT" = true ] && echo "<given as an argument>" || echo "${HERMES_AIFY_EFFORT:-<the runtime default>}")"
   echo "  cwd       : ${HARNESS_CWD:-<inherited>}"
   echo "  mcp       : not used by this wrapper (hermes config is patched at install time)"
@@ -527,7 +529,8 @@ hermes_aify_defaults
 # docs/superpowers/plans/evidence/2026-10-01-p6/hermes-model-probe.mjs). A session that is resumed keeps
 # the model it was stored with, which is hermes' rule, and a gateway host that is already running keeps
 # the seed it was started with.
-if [ -n "$HERMES_AIFY_MODEL" ]; then export HERMES_INFERENCE_MODEL="$HERMES_AIFY_MODEL"; fi
+# Both names, so an inherited HERMES_MODEL cannot outrank the model chosen here.
+if [ -n "$HERMES_AIFY_MODEL" ]; then export HERMES_INFERENCE_MODEL="$HERMES_AIFY_MODEL" HERMES_MODEL="$HERMES_AIFY_MODEL"; fi
 # THE EFFORT has no launch-time lever on the gateway path; aify-comms' delivery loop sets it on each live
 # session (mcp/stdio/hermes-session-effort.mjs). Always written, so an inherited value never applies.
 export AIFY_HERMES_SESSION_EFFORT="$HERMES_AIFY_EFFORT"

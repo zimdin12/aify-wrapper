@@ -71,14 +71,25 @@ test("AIFY_MANAGED_* beats the definition on a launch that does read it", () => 
   assert.deepEqual([started.HERMES_INFERENCE_MODEL, started.AIFY_HERMES_SESSION_EFFORT], ["m-env", "low"]);
 });
 
-test("THE OPERATOR'S OWN model or effort is theirs: -m, HERMES_INFERENCE_MODEL, --reasoning", () => {
+test("THE OPERATOR'S OWN model or effort is theirs: -m and --reasoning on the command line", () => {
   const flagged = run(["-m", "flag/model", "--reasoning", "max"], { definitions: { lead: definition() } });
   assert.equal(flagged.run.status, 0, flagged.run.stderr);
   assert.deepEqual([flagged.started.HERMES_INFERENCE_MODEL, flagged.started.AIFY_HERMES_SESSION_EFFORT], [undefined, ""]);
   const own = launch("hermes", ["--aify-agent", "lead", "chat", "--reasoning", "max"], { definitions: { lead: definition() } });
   assert.deepEqual(own.args, ["chat", "-m", "anthropic/claude-sonnet-4.6", "--reasoning", "max"], "only the one not given is added");
-  const env = run([], { definitions: { lead: definition() }, env: { HERMES_INFERENCE_MODEL: "env/model" } });
-  assert.equal(env.started.HERMES_INFERENCE_MODEL, "env/model");
+});
+
+test("A MODEL IN THE ENVIRONMENT does not beat the configured one, and fills in only when none is configured", () => {
+  // A spawn's or a definition's variables arrive in the environment; HERMES_INFERENCE_MODEL there ran another
+  // model while agent info showed the configured one (external review of 0.8.4, leftover from 0.8.1).
+  for (const name of ["HERMES_INFERENCE_MODEL", "HERMES_MODEL"]) {
+    const env = run([], { definitions: { lead: definition() }, env: { [name]: "env/model" } });
+    assert.equal(env.run.status, 0, env.run.stderr);
+    assert.deepEqual([env.started.HERMES_INFERENCE_MODEL, env.started.HERMES_MODEL],
+      ["anthropic/claude-sonnet-4.6", "anthropic/claude-sonnet-4.6"], name);
+  }
+  const unset = run([], { definitions: { lead: definition({ model: "" }) }, env: { HERMES_INFERENCE_MODEL: "env/model" } });
+  assert.equal(unset.started.HERMES_INFERENCE_MODEL, "env/model", "control: with nothing configured the environment's applies");
 });
 
 test("CONTROL: no definition sets nothing, and an inherited effort never applies", () => {
