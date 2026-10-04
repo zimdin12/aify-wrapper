@@ -209,6 +209,21 @@ AIFY_DEF_EFFORT=""
 # value itself cannot cross this shell intact (bash drops a NUL, and Git Bash a CR).
 AIFY_DEF_CONTROL=""
 AIFY_IGNORE_DEFINITION=false
+# A MANAGED LAUNCH IS ADDRESSED TO ONE AGENT. The service writes AIFY_MANAGED_* beside AIFY_AGENT_ID for the
+# agent it launches, and every process that agent starts inherits them, so a *-aify started from inside its
+# session took them as its own: it skipped its own definition and ran the parent's model or effort (external
+# review of 0.8.4, a leftover from the 0.8.1 review). A launch named for another agent drops them.
+_aify_named_id=""
+_aify_prev=""
+for _aify_arg in "$@"; do
+  case "$_aify_prev" in --aify-agent|--agent-id) _aify_named_id="$_aify_arg" ;; esac
+  case "$_aify_arg" in --aify-agent=*|--agent-id=*) _aify_named_id="${_aify_arg#*=}" ;; esac
+  _aify_prev="$_aify_arg"
+done
+if [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ] && [ -n "$_aify_named_id" ] && [ -n "${AIFY_AGENT_ID:-}" ] \
+  && [ "$_aify_named_id" != "$AIFY_AGENT_ID" ]; then
+  unset AIFY_MANAGED_VIA_WRAPPER AIFY_MANAGED_MODEL AIFY_MANAGED_EFFORT AIFY_MANAGED_DISPATCH
+fi
 for _aify_def_arg in "$@"; do
   if [ "$_aify_def_arg" = "--aify-ignore-definition" ]; then AIFY_IGNORE_DEFINITION=true; fi
 done

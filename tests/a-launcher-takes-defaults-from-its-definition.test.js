@@ -171,3 +171,20 @@ for (const client of ["claude", "codex", "hermes"]) {
     assert.match(loop, /if \[ "\$ARG" = "--aify-ignore-definition" \]; then\s+continue\s+fi/);
   });
 }
+
+for (const client of ["claude", "codex", "hermes"]) {
+  test(`${client.toUpperCase()}: a launch inside another agent's managed session reads its own definition, not the parent's values`, () => withLauncher(client, (setup) => {
+    // Every process a managed agent starts inherits AIFY_MANAGED_* beside the parent's AIFY_AGENT_ID, so a *-aify
+    // started from inside that session skipped its own definition and ran the parent's model and effort (external
+    // review of 0.8.4, a leftover from the 0.8.1 review).
+    fs.writeFileSync(path.join(setup.defs, "lead.json"), JSON.stringify(definition({ harness: client })));
+    const parent = { AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_MANAGED_MODEL: "m-parent", AIFY_MANAGED_EFFORT: "e-parent" };
+    const nested = check(setup, { args: ["--aify-agent", "lead"], env: { ...parent, AIFY_AGENT_ID: "parent-agent" } });
+    assert.equal(nested.status, 0, nested.stderr);
+    assert.equal(line(nested.stdout, "definition"), path.join(setup.defs, "lead.json"));
+    assert.deepEqual([line(nested.stdout, "model"), line(nested.stdout, "effort")], ["opus", "high"]);
+    const own = check(setup, { args: ["--aify-agent", "lead"], env: { ...parent, AIFY_AGENT_ID: "lead" } });
+    assert.deepEqual([line(own.stdout, "definition"), line(own.stdout, "model"), line(own.stdout, "effort")],
+      ["<none>", "m-parent", "e-parent"], "control: the launch the service addressed to this agent is still managed");
+  }));
+}

@@ -339,6 +339,22 @@ export AIFY_SESSION_MODE="$PI_AIFY_SESSION_MODE"
 # Override with --standalone if you intentionally want a parallel session
 # on a different session-id (pass --resume <other-id> too).
 #
+# A MANAGED LAUNCH IS ADDRESSED TO ONE AGENT. The service writes AIFY_MANAGED_* beside AIFY_AGENT_ID for the
+# agent it launches, and every process that agent starts inherits them, so a *-aify started from inside its
+# session took them as its own: it skipped its own definition and ran the parent's model or effort (external
+# review of 0.8.4, a leftover from the 0.8.1 review). A launch named for another agent drops them.
+_aify_named_id=""
+_aify_prev=""
+for _aify_arg in "$@"; do
+  case "$_aify_prev" in --aify-agent|--agent-id) _aify_named_id="$_aify_arg" ;; esac
+  case "$_aify_arg" in --aify-agent=*|--agent-id=*) _aify_named_id="${_aify_arg#*=}" ;; esac
+  _aify_prev="$_aify_arg"
+done
+if [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ] && [ -n "$_aify_named_id" ] && [ -n "${AIFY_AGENT_ID:-}" ] \
+  && [ "$_aify_named_id" != "$AIFY_AGENT_ID" ]; then
+  unset AIFY_MANAGED_VIA_WRAPPER AIFY_MANAGED_MODEL AIFY_MANAGED_EFFORT AIFY_MANAGED_DISPATCH
+fi
+#
 # Plan 6 follow-up (2026-05-26): when the dashboard's TerminalProcessManager
 # spawns this wrapper as the managed backing (AIFY_MANAGED_VIA_WRAPPER=1),
 # the bridgeOwned=true response is the DASHBOARD itself. Skipping the
