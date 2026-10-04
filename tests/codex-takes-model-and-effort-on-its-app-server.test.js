@@ -30,14 +30,14 @@ test("THE DEFINITION'S model and effort reach the app-server as -c pairs, and ne
 
 test("A MANAGED LAUNCH's model and effort reach the app-server; it reads no file", () => {
   const { run, appServerArgs } = launch("codex", ["--aify-agent", "lead"], {
-    definitions: { lead: "{ not json" }, env: { AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_MANAGED_MODEL: "gpt-m", AIFY_MANAGED_EFFORT: "low" } });
+    definitions: { lead: "{ not json" }, env: { AIFY_AGENT_ID: "lead", AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_MANAGED_MODEL: "gpt-m", AIFY_MANAGED_EFFORT: "low" } });
   assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
   assert.deepEqual(configPairs(appServerArgs), ['model="gpt-m"', 'model_reasoning_effort="low"']);
 });
 
 test("AIFY_MANAGED_* beats the definition on a launch that does read it", () => {
   const { run, appServerArgs } = launch("codex", ["--aify-agent", "lead"], {
-    definitions: { lead: definition() }, env: { AIFY_MANAGED_MODEL: "gpt-env", AIFY_MANAGED_EFFORT: "low" } });
+    definitions: { lead: definition() }, env: { AIFY_AGENT_ID: "lead", AIFY_MANAGED_MODEL: "gpt-env", AIFY_MANAGED_EFFORT: "low" } });
   assert.equal(run.status, 0, run.stderr);
   assert.deepEqual(configPairs(appServerArgs), ['model="gpt-env"', 'model_reasoning_effort="low"']);
 });
@@ -69,7 +69,7 @@ test("A CONTROL CHARACTER in a model or effort refuses the launch before anythin
   // Written raw into `-c model="..."`, a newline made the app-server's configuration invalid TOML.
   for (const [label, opts] of [
     ["the definition's model", { definitions: { lead: definition({ model: "gpt\nx" }) } }],
-    ["a managed effort", { env: { AIFY_MANAGED_EFFORT: "high\tx" } }],
+    ["a managed effort", { env: { AIFY_AGENT_ID: "lead", AIFY_MANAGED_EFFORT: "high\tx" } }],
   ]) {
     const { run, appServerArgs, started } = launch("codex", ["--aify-agent", "lead"], opts);
     assert.equal(run.status, 78, `${label}: ${run.stdout}\n${run.stderr}`);
@@ -89,7 +89,7 @@ test("A NUL OR CR in the definition's selected value refuses too, though the she
   // An override wins over the definition, so its unusable value is not selected and nothing is refused.
   for (const [label, args, env, expected] of [
     ["-m", ["-m", "flag-model"], {}, ['model_reasoning_effort="xhigh"']],
-    ["a managed model", [], { AIFY_MANAGED_MODEL: "gpt-m" }, ['model="gpt-m"', 'model_reasoning_effort="xhigh"']],
+    ["a managed model", [], { AIFY_AGENT_ID: "lead", AIFY_MANAGED_MODEL: "gpt-m" }, ['model="gpt-m"', 'model_reasoning_effort="xhigh"']],
   ]) {
     const { run, appServerArgs } = launch("codex", ["--aify-agent", "lead", ...args],
       { definitions: { lead: definition({ model: "left\rright" }) }, env });

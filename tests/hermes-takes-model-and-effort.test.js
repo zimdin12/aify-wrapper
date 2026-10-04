@@ -60,13 +60,13 @@ test("THE CHAT IS FOUND PAST HERMES' OWN TOP-LEVEL FLAGS, as its command_argv fi
 
 test("A MANAGED LAUNCH's values are used; it reads no file", () => {
   const { run: r, started } = run([], { definitions: { lead: "{ not json" },
-    env: { AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_MANAGED_MODEL: "m-managed", AIFY_MANAGED_EFFORT: "low" } });
+    env: { AIFY_AGENT_ID: "lead", AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_MANAGED_MODEL: "m-managed", AIFY_MANAGED_EFFORT: "low" } });
   assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
   assert.deepEqual([started.HERMES_INFERENCE_MODEL, started.AIFY_HERMES_SESSION_EFFORT], ["m-managed", "low"]);
 });
 
 test("AIFY_MANAGED_* beats the definition on a launch that does read it", () => {
-  const { run: r, started } = run([], { definitions: { lead: definition() }, env: { AIFY_MANAGED_MODEL: "m-env", AIFY_MANAGED_EFFORT: "low" } });
+  const { run: r, started } = run([], { definitions: { lead: definition() }, env: { AIFY_AGENT_ID: "lead", AIFY_MANAGED_MODEL: "m-env", AIFY_MANAGED_EFFORT: "low" } });
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual([started.HERMES_INFERENCE_MODEL, started.AIFY_HERMES_SESSION_EFFORT], ["m-env", "low"]);
 });

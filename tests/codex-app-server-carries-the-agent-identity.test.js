@@ -122,7 +122,7 @@ test("an agent recovered from the service by thread handle reaches the app-serve
 });
 
 test("MANAGED RESUME still resumes, and the app-server has the identity", { skip: WIN }, () => {
-  const r = launch(["--managed", "--aify-agent", "probe-m", "--resume", "thread-1"], { env: { AIFY_MANAGED_VIA_WRAPPER: "1" } });
+  const r = launch(["--managed", "--aify-agent", "probe-m", "--resume", "thread-1"], { env: { AIFY_AGENT_ID: "probe-m", AIFY_MANAGED_VIA_WRAPPER: "1" } });
   assert.equal(r.run.status, 0, r.run.stderr);
   assert.match(r.server[0].argv.join(" "), /--disable apps .*app-server --listen ws:/);
   assert.match(r.tui[0].argv.join(" "), /--dangerously-bypass-hook-trust resume --include-non-interactive thread-1$/);

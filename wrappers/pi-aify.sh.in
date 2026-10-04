@@ -293,6 +293,20 @@ for ARG in "$@"; do
   PREV_ARG="$ARG"
 done
 
+# A MANAGED LAUNCH IS ADDRESSED TO ONE AGENT. The service writes AIFY_MANAGED_* beside AIFY_AGENT_ID for the
+# agent it launches, and every process that agent starts inherits them, so a *-aify started from inside its
+# session for ANOTHER agent took them as its own and ran the parent's model or effort (external review of
+# 0.8.4). A bare launch there takes the session's own id and keeps them; bin/aify-inherited-session.sh is what
+# separates that case, when a lease marks the session. They are kept
+# only when the id this launcher parsed above (so a repeated --aify-agent resolves as the launch resolves it)
+# equals a non-empty inherited AIFY_AGENT_ID. The marker is not part of that test: the service writes
+# AIFY_MANAGED_VIA_WRAPPER=0 on a codex or hermes console the operator routes natively, and that launch still
+# carries its agent's model. Anything else drops every AIFY_MANAGED_* name, found by prefix with bash's own
+# ${!prefix@} (review of b7e60a7), and every line that reads one of them comes after this. pi-aify itself
+# reads no AIFY_MANAGED_MODEL or _EFFORT; it reads the marker below, and drops the rest so its runtime inherits none.
+if ! { [ -n "${AIFY_AGENT_ID:-}" ] && [ "$PI_AIFY_AGENT_ID" = "$AIFY_AGENT_ID" ]; }; then
+  for _aify_managed_name in ${!AIFY_MANAGED_@}; do unset "$_aify_managed_name"; done
+fi
 export AIFY_RUNTIME="pi"
 if [ -n "$PI_AIFY_AGENT_ID" ]; then
   export AIFY_AGENT_ID="$PI_AIFY_AGENT_ID"
@@ -339,21 +353,6 @@ export AIFY_SESSION_MODE="$PI_AIFY_SESSION_MODE"
 # Override with --standalone if you intentionally want a parallel session
 # on a different session-id (pass --resume <other-id> too).
 #
-# A MANAGED LAUNCH IS ADDRESSED TO ONE AGENT. The service writes AIFY_MANAGED_* beside AIFY_AGENT_ID for the
-# agent it launches, and every process that agent starts inherits them, so a *-aify started from inside its
-# session took them as its own: it skipped its own definition and ran the parent's model or effort (external
-# review of 0.8.4, a leftover from the 0.8.1 review). A launch named for another agent drops them.
-_aify_named_id=""
-_aify_prev=""
-for _aify_arg in "$@"; do
-  case "$_aify_prev" in --aify-agent|--agent-id) _aify_named_id="$_aify_arg" ;; esac
-  case "$_aify_arg" in --aify-agent=*|--agent-id=*) _aify_named_id="${_aify_arg#*=}" ;; esac
-  _aify_prev="$_aify_arg"
-done
-if [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ] && [ -n "$_aify_named_id" ] && [ -n "${AIFY_AGENT_ID:-}" ] \
-  && [ "$_aify_named_id" != "$AIFY_AGENT_ID" ]; then
-  unset AIFY_MANAGED_VIA_WRAPPER AIFY_MANAGED_MODEL AIFY_MANAGED_EFFORT AIFY_MANAGED_DISPATCH
-fi
 #
 # Plan 6 follow-up (2026-05-26): when the dashboard's TerminalProcessManager
 # spawns this wrapper as the managed backing (AIFY_MANAGED_VIA_WRAPPER=1),
@@ -437,6 +436,8 @@ if [ "${HARNESS_CHECK:-false}" = true ]; then
   echo "  runtime   : $HARNESS_WRAPPER_RUNTIME ($(command -v "$PI_RUNTIME_COMMAND"))"
   echo "  endpoint  : $HARNESS_ENDPOINT"
   echo "  identity  : ${PI_AIFY_AGENT_ID:-<none — this session would be anonymous>}"
+  _aify_managed_kept="${!AIFY_MANAGED_@}"
+  echo "  managed   : ${_aify_managed_kept:-<not a managed launch>}"
   echo "  role      : $PI_AIFY_ROLE"
   echo "  cwd       : ${HARNESS_CWD:-<inherited>}"
   echo "  mcp       : not used by this wrapper"

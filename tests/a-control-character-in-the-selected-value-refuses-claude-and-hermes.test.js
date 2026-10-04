@@ -27,7 +27,7 @@ for (const client of ["claude", "hermes"]) {
   test(`${client}-aify CONTROL: a clean definition starts, and an override that wins is not refused`, () => {
     assert.equal(launch(client, argsFor(client), { definitions: { lead: definition(client) } }).run.status, 0);
     const managed = launch(client, argsFor(client), { definitions: { lead: definition(client, { model: "left\rright" }) },
-      env: { AIFY_MANAGED_MODEL: "m-managed" } });
+      env: { AIFY_AGENT_ID: "lead", AIFY_MANAGED_MODEL: "m-managed" } });
     assert.equal(managed.run.status, 0, `a managed model wins over the definition's: ${managed.run.stderr}`);
   });
 }

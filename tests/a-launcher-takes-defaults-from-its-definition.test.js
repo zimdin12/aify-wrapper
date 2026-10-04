@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 import { definitionsEnv, readerBridge } from "./definition-reader-bridge.mjs";
+import { launch } from "./launch-to-a-stub-runtime.mjs";
 import { RUNTIME_COMMANDS, sealedPath, withPath } from "./sealed-path.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -92,10 +93,13 @@ for (const client of ["claude", "codex", "hermes"]) {
   }));
 }
 
-test("CLAUDE PRECEDENCE: the environment, then a flag, each beats the definition's model and effort", () => withLauncher("claude", (setup) => {
+test("CLAUDE PRECEDENCE: the managed launch's values, then a flag, each beats the definition's model and effort", () => withLauncher("claude", (setup) => {
   fs.writeFileSync(path.join(setup.defs, "lead.json"), JSON.stringify(definition()));
-  const managedValues = check(setup, { args: ["--aify-agent", "lead"], env: { AIFY_MANAGED_MODEL: "m-env", AIFY_MANAGED_EFFORT: "e-env" } });
-  assert.deepEqual([line(managedValues.stdout, "model"), line(managedValues.stdout, "effort")], ["m-env", "e-env"], "the environment beats the definition");
+  // No marker, so the definition IS read and the managed values must beat it; the identity is the one the
+  // service writes beside them (without it they are a parent's, dropped: review of b7e60a7).
+  const managedValues = check(setup, { args: ["--aify-agent", "lead"], env: { AIFY_AGENT_ID: "lead", AIFY_MANAGED_MODEL: "m-env", AIFY_MANAGED_EFFORT: "e-env" } });
+  assert.equal(line(managedValues.stdout, "definition"), path.join(setup.defs, "lead.json"), "control: the definition was read");
+  assert.deepEqual([line(managedValues.stdout, "model"), line(managedValues.stdout, "effort")], ["m-env", "e-env"], "the managed launch beats the definition");
   const flagged = check(setup, { args: ["--aify-agent", "lead", "--model", "sonnet", "--effort=low"] });
   assert.deepEqual([line(flagged.stdout, "model"), line(flagged.stdout, "effort")], ["<given as an argument>", "<given as an argument>"]);
 }));
@@ -106,7 +110,7 @@ test("CLAUDE: missing is today's behaviour; a managed launch reads no file", () 
   assert.deepEqual([line(missing.stdout, "role"), line(missing.stdout, "definition"), line(missing.stdout, "model")],
     ["coder", "<none>", "<the runtime default>"]);
   fs.writeFileSync(path.join(setup.defs, "lead.json"), "{ not json");
-  const managed = check(setup, { args: ["--aify-agent", "lead"], env: { AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_MANAGED_MODEL: "m-managed" } });
+  const managed = check(setup, { args: ["--aify-agent", "lead"], env: { AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_MANAGED_MODEL: "m-managed", AIFY_AGENT_ID: "lead" } });
   assert.equal(managed.status, 0, managed.stderr);
   assert.deepEqual([line(managed.stdout, "definition"), line(managed.stdout, "model")], ["<none>", "m-managed"]);
 }));
@@ -137,7 +141,7 @@ for (const client of ["codex", "hermes"]) {
     assert.equal(line(found.stdout, "role"), "reviewer");
     assert.equal(line(found.stdout, "definition"), path.join(setup.defs, "lead.json"));
     assert.deepEqual([line(found.stdout, "model"), line(found.stdout, "effort")], ["opus", "high"], "the values the launch applies");
-    const managed = check(setup, { args: ["--aify-agent", "lead"], env: { AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_MANAGED_MODEL: "m", AIFY_MANAGED_EFFORT: "e" } });
+    const managed = check(setup, { args: ["--aify-agent", "lead"], env: { AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_MANAGED_MODEL: "m", AIFY_MANAGED_EFFORT: "e", AIFY_AGENT_ID: "lead" } });
     assert.deepEqual([line(managed.stdout, "model"), line(managed.stdout, "effort")], ["m", "e"]);
     const given = check(setup, { args: ["--aify-agent", "lead", client === "codex" ? "--model=x" : "-m", ...(client === "codex" ? [] : ["x"])] });
     assert.match(line(given.stdout, "model"), /^<given as an argument/);
@@ -156,7 +160,7 @@ for (const client of ["claude", "codex", "hermes"]) {
     assert.match(refused.stderr, /--aify-ignore-definition/);
     const ignored = check(setup, { args: ["--aify-agent", "lead", "--aify-ignore-definition"] });
     assert.equal(ignored.status, 0, ignored.stderr);
-    const managed = check(setup, { args: ["--aify-agent", "lead"], env: { AIFY_MANAGED_VIA_WRAPPER: "1" } });
+    const managed = check(setup, { args: ["--aify-agent", "lead"], env: { AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_AGENT_ID: "lead" } });
     assert.equal(managed.status, 0, managed.stderr);
     const anonymous = check(setup);
     assert.equal(anonymous.status, 0, `no id, nothing to read: ${anonymous.stderr}`);
@@ -188,3 +192,85 @@ for (const client of ["claude", "codex", "hermes"]) {
       ["<none>", "m-parent", "e-parent"], "control: the launch the service addressed to this agent is still managed");
   }));
 }
+
+// THE MANAGED VALUES ARE KEPT ONLY FOR THE LAUNCH THE SERVICE ADDRESSED (review of b7e60a7): the id the launcher
+// itself parsed equal to a non-empty inherited AIFY_AGENT_ID. Every other case drops every AIFY_MANAGED_* name by
+// prefix; `--check`'s `managed` line names what was kept.
+const managedOf = (stdout) => (line(stdout, "managed") || "").trim().split(/\s+/).filter((n) => n.startsWith("AIFY_MANAGED_")).sort();
+for (const client of ["claude", "codex", "hermes"]) {
+  test(`${client.toUpperCase()}: an empty, absent or other agent's identity, or no named agent, drops every managed value`, () => withLauncher(client, (setup) => {
+    fs.writeFileSync(path.join(setup.defs, "lead.json"), JSON.stringify(definition({ harness: client })));
+    const stray = { AIFY_MANAGED_MODEL: "m-stray", AIFY_MANAGED_EFFORT: "e-stray", AIFY_MANAGED_FOO: "x" };
+    const cases = [
+      ["identity empty", { ...stray, AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_AGENT_ID: "" }, ["--aify-agent", "lead"]],
+      ["identity absent", { ...stray, AIFY_MANAGED_VIA_WRAPPER: "1" }, ["--aify-agent", "lead"]],
+      // Another agent's session whose marker is 0 or absent: the guard does not wait for the marker to be 1.
+      ["another agent's, marker 0", { ...stray, AIFY_MANAGED_VIA_WRAPPER: "0", AIFY_AGENT_ID: "parent" }, ["--aify-agent", "lead"]],
+      ["another agent's, marker absent", { ...stray, AIFY_AGENT_ID: "parent" }, ["--aify-agent", "lead"]],
+    ];
+    for (const [label, env, args] of cases) {
+      const out = check(setup, { args, env });
+      assert.equal(out.status, 0, `${label}: ${out.stderr}`);
+      assert.deepEqual([line(out.stdout, "model"), line(out.stdout, "effort"), managedOf(out.stdout)], ["opus", "high", []], `${label}: ${out.stdout}`);
+    }
+    // THE MARKER DECIDES NOTHING HERE. The service writes AIFY_MANAGED_VIA_WRAPPER=0 on a codex or hermes console the
+    // operator routes natively (launch_env.py) and still sends the agent's model; absent, it is the same launch.
+    for (const [label, marker] of [["marker 0", { AIFY_MANAGED_VIA_WRAPPER: "0" }], ["marker absent", {}]]) {
+      const out = check(setup, { args: ["--aify-agent", "lead"], env: { ...stray, ...marker, AIFY_AGENT_ID: "lead" } });
+      assert.deepEqual([line(out.stdout, "model"), line(out.stdout, "effort")], ["m-stray", "e-stray"], `${label}: ${out.stdout}`);
+    }
+    // No agent named AND an empty identity: "" equals "", so only the non-empty check drops these.
+    const anonymous = check(setup, { env: { ...stray, AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_AGENT_ID: "" } });
+    assert.deepEqual([line(anonymous.stdout, "model"), managedOf(anonymous.stdout)], ["<the runtime default>", []], anonymous.stdout);
+    // CONTROL: with no agent named, the launcher's identity IS the inherited one (HARNESS_IDENTITY, then
+    // AIFY_AGENT_ID), so this is the same agent and its managed values stay.
+    const unnamed = check(setup, { env: { ...stray, AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_AGENT_ID: "lead" } });
+    assert.deepEqual([line(unnamed.stdout, "identity"), line(unnamed.stdout, "model")], ["lead", "m-stray"], unnamed.stdout);
+  }));
+
+  test(`${client.toUpperCase()}: a repeated --aify-agent is judged as the launcher parses it (the last one), and the kept set is the whole prefix`, () => withLauncher(client, (setup) => {
+    fs.writeFileSync(path.join(setup.defs, "lead.json"), JSON.stringify(definition({ harness: client })));
+    const managed = { AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_MANAGED_MODEL: "m-parent", AIFY_MANAGED_EFFORT: "e-parent", AIFY_MANAGED_FOO: "x", AIFY_AGENT_ID: "parent" };
+    const toLead = check(setup, { args: ["--aify-agent", "parent", "--aify-agent", "lead"], env: managed });
+    assert.deepEqual([line(toLead.stdout, "identity"), line(toLead.stdout, "model"), managedOf(toLead.stdout)], ["lead", "opus", []], toLead.stdout);
+    const toParent = check(setup, { args: ["--aify-agent=lead", "--aify-agent", "parent"], env: managed });
+    assert.deepEqual([line(toParent.stdout, "identity"), line(toParent.stdout, "model"), managedOf(toParent.stdout)],
+      ["parent", "m-parent", ["AIFY_MANAGED_EFFORT", "AIFY_MANAGED_FOO", "AIFY_MANAGED_MODEL", "AIFY_MANAGED_VIA_WRAPPER"]],
+      "control: the addressed launch keeps every managed name");
+    // Where a pre-scan and the parse disagree: `--aify-agent` here is --aify-role's VALUE, so no agent is named
+    // and the identity stays the inherited one. A scan for the flag read "lead" and dropped the values.
+    const asRole = check(setup, { args: ["--aify-role", "--aify-agent", "lead"], env: managed });
+    assert.deepEqual([line(asRole.stdout, "identity"), line(asRole.stdout, "model")], ["parent", "m-parent"], asRole.stdout);
+  }));
+}
+
+// WHAT THE LAUNCH DOES WITH THE MARKER is read below the guard too: above it, a launcher started inside another
+// agent's managed session took that agent's marker (review of the guard's first move). Executed to a stub runtime.
+const nestedIn = (parent) => ({ AIFY_AGENT_ID: parent, AIFY_MANAGED_VIA_WRAPPER: "1", HERMES_SESSION_ID: "parent-sess" });
+test("HERMES: a nested launch does not resume the session its parent's environment names", () => {
+  const nested = launch("hermes", ["--aify-agent", "lead", "chat"], { env: nestedIn("parent") });
+  assert.equal(nested.run.status, 0, nested.run.stderr);
+  assert.equal(nested.started.HERMES_SESSION_ID, undefined, "the parent's conversation was resumed");
+  const own = launch("hermes", ["--aify-agent", "lead", "chat"], { env: nestedIn("lead") });
+  assert.equal(own.started.HERMES_SESSION_ID, "parent-sess", "control: the launch the service addressed resumes its session");
+  // The command line's handle still beats the one the environment names, as it did above the guard.
+  const given = launch("hermes", ["--aify-agent", "lead", "--resume", "own-sess", "chat"], { env: nestedIn("lead") });
+  assert.equal(given.started.HERMES_SESSION_ID, "own-sess", "the inherited handle overrode the one the command line gave");
+});
+
+test("CODEX: a nested launch does not take its parent's --disable apps", () => {
+  const disables = (r) => r.appServerArgs.join(" ").includes("--disable apps");
+  const nested = launch("codex", ["--aify-agent", "lead"], { env: nestedIn("parent") });
+  assert.equal(nested.run.status, 0, nested.run.stderr);
+  assert.equal(disables(nested), false, nested.appServerArgs.join(" "));
+  assert.equal(disables(launch("codex", ["--aify-agent", "lead"], { env: nestedIn("lead") })), true, "control: the addressed launch disables apps");
+});
+
+test("PI: the inherited identity is compared before the launcher exports its own, so a nested pi-aify drops the managed values", () => withLauncher("pi", (setup) => {
+  const env = { AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_MANAGED_MODEL: "m-parent", AIFY_MANAGED_FOO: "x", AIFY_AGENT_ID: "parent" };
+  const nested = check(setup, { args: ["--aify-agent", "lead"], env });
+  assert.equal(nested.status, 0, nested.stderr);
+  assert.deepEqual([line(nested.stdout, "identity"), managedOf(nested.stdout)], ["lead", []], nested.stdout);
+  const own = check(setup, { args: ["--aify-agent", "parent"], env });
+  assert.deepEqual(managedOf(own.stdout), ["AIFY_MANAGED_FOO", "AIFY_MANAGED_MODEL", "AIFY_MANAGED_VIA_WRAPPER"], `control: ${own.stdout}`);
+}));

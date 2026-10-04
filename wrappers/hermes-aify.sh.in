@@ -216,21 +216,6 @@ AIFY_DEF_EFFORT=""
 # value itself cannot cross this shell intact (bash drops a NUL, and Git Bash a CR).
 AIFY_DEF_CONTROL=""
 AIFY_IGNORE_DEFINITION=false
-# A MANAGED LAUNCH IS ADDRESSED TO ONE AGENT. The service writes AIFY_MANAGED_* beside AIFY_AGENT_ID for the
-# agent it launches, and every process that agent starts inherits them, so a *-aify started from inside its
-# session took them as its own: it skipped its own definition and ran the parent's model or effort (external
-# review of 0.8.4, a leftover from the 0.8.1 review). A launch named for another agent drops them.
-_aify_named_id=""
-_aify_prev=""
-for _aify_arg in "$@"; do
-  case "$_aify_prev" in --aify-agent|--agent-id) _aify_named_id="$_aify_arg" ;; esac
-  case "$_aify_arg" in --aify-agent=*|--agent-id=*) _aify_named_id="${_aify_arg#*=}" ;; esac
-  _aify_prev="$_aify_arg"
-done
-if [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ] && [ -n "$_aify_named_id" ] && [ -n "${AIFY_AGENT_ID:-}" ] \
-  && [ "$_aify_named_id" != "$AIFY_AGENT_ID" ]; then
-  unset AIFY_MANAGED_VIA_WRAPPER AIFY_MANAGED_MODEL AIFY_MANAGED_EFFORT AIFY_MANAGED_DISPATCH
-fi
 for _aify_def_arg in "$@"; do
   if [ "$_aify_def_arg" = "--aify-ignore-definition" ]; then AIFY_IGNORE_DEFINITION=true; fi
 done
@@ -286,10 +271,6 @@ HERMES_AIFY_SESSION_MODE="${AIFY_SESSION_MODE:-}"
 HERMES_INHERITED_SESSION_HANDLE="${HERMES_SESSION_ID:-${HERMES_SESSION:-${AIFY_SESSION_HANDLE:-}}}"
 HERMES_SESSION_HANDLE=""
 HERMES_EXPLICIT_SESSION_HANDLE="false"
-if [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ] && [ -n "$HERMES_INHERITED_SESSION_HANDLE" ]; then
-  HERMES_SESSION_HANDLE="$HERMES_INHERITED_SESSION_HANDLE"
-  HERMES_EXPLICIT_SESSION_HANDLE="true"
-fi
 HERMES_RUNTIME_COMMAND="${AIFY_HERMES_COMMAND:-${HERMES_COMMAND:-hermes}}"
 # Symmetric with claude-aify (--auto -> --dangerously-skip-permissions) and
 # codex-aify (CODEX_AUTO -> --dangerously-bypass-approvals-and-sandbox). For
@@ -407,6 +388,26 @@ for _hermes_arg in "${HERMES_ARGS[@]}"; do
     --reasoning|--reasoning=*) HERMES_HAS_EFFORT=true ;;
   esac
 done
+# A MANAGED LAUNCH IS ADDRESSED TO ONE AGENT. The service writes AIFY_MANAGED_* beside AIFY_AGENT_ID for the
+# agent it launches, and every process that agent starts inherits them, so a *-aify started from inside its
+# session for ANOTHER agent took them as its own and ran the parent's model or effort (external review of
+# 0.8.4). A bare launch there takes the session's own id and keeps them; bin/aify-inherited-session.sh is what
+# separates that case, when a lease marks the session. They are kept
+# only when the id this launcher parsed above (so a repeated --aify-agent resolves as the launch resolves it)
+# equals a non-empty inherited AIFY_AGENT_ID. The marker is not part of that test: the service writes
+# AIFY_MANAGED_VIA_WRAPPER=0 on a codex or hermes console the operator routes natively, and that launch still
+# carries its agent's model. Anything else drops every AIFY_MANAGED_* name, found by prefix with bash's own
+# ${!prefix@} (review of b7e60a7), and every line that reads one of them comes after this.
+if ! { [ -n "${AIFY_AGENT_ID:-}" ] && [ "$HERMES_AIFY_AGENT_ID" = "$AIFY_AGENT_ID" ]; }; then
+  for _aify_managed_name in ${!AIFY_MANAGED_@}; do unset "$_aify_managed_name"; done
+fi
+# The session a managed launch resumes is the one the service named in its environment, unless the command
+# line names one. Judged below the guard, which drops the marker for a launch that names another agent: read
+# above it, as the guard's first move did, such a launch resumed the parent's conversation.
+if [ "$HERMES_EXPLICIT_SESSION_HANDLE" = "false" ] && [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ] && [ -n "$HERMES_INHERITED_SESSION_HANDLE" ]; then
+  HERMES_SESSION_HANDLE="$HERMES_INHERITED_SESSION_HANDLE"
+  HERMES_EXPLICIT_SESSION_HANDLE="true"
+fi
 # Role, model and effort for the id known now: a flag, then the environment (HARNESS_ROLE or
 # AIFY_AGENT_ROLE; a managed launch's AIFY_MANAGED_MODEL / AIFY_MANAGED_EFFORT), then the definition,
 # then the built-in default (hermes' own configuration, for model and effort). --check and the launch
@@ -448,6 +449,8 @@ if [ "$HARNESS_CHECK" = true ]; then
   echo "  identity  : ${HERMES_AIFY_AGENT_ID:-<none — this session would be anonymous>}"
   echo "  role      : $HERMES_AIFY_ROLE"
   echo "  definition: ${AIFY_DEF_FILE:-<none>}"
+  _aify_managed_kept="${!AIFY_MANAGED_@}"
+  echo "  managed   : ${_aify_managed_kept:-<not a managed launch>}"
   echo "  model     : $([ "$HERMES_HAS_MODEL" = true ] && echo "<given as an argument>" || echo "${HERMES_AIFY_MODEL:-<the runtime default>}")"
   echo "  effort    : $([ "$HERMES_HAS_EFFORT" = true ] && echo "<given as an argument>" || echo "${HERMES_AIFY_EFFORT:-<the runtime default>}")"
   echo "  cwd       : ${HARNESS_CWD:-<inherited>}"

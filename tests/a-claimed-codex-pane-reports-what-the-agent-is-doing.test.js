@@ -151,7 +151,7 @@ test("a hook fired without the agent variable reports nothing", { skip: WIN }, (
   assert.equal(reports().length, 2, "only the claim's and the launcher's exit reports should be there");
 });
 
-const MANAGED = (paneFile) => ({ AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_HERDR_PANE_FILE: paneFile });
+const MANAGED = (paneFile) => ({ AIFY_AGENT_ID: "probe-agent", AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_HERDR_PANE_FILE: paneFile });
 const paneFile = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), "aify-codex-dot-pane-")), "pane");
 
 test("A MANAGED CODEX WORKER reports to the pane aify-env names, and claims nothing", { skip: WIN }, () => {
