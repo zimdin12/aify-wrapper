@@ -442,7 +442,9 @@ fi
 
 export AIFY_RUNTIME="hermes"
 export AIFY_SERVER_URL="$HARNESS_ENDPOINT"
-export CLAUDE_MCP_SERVER_URL="${CLAUDE_MCP_SERVER_URL:-$AIFY_SERVER_URL}"
+# The launcher's one endpoint: the delivery loop reads this before AIFY_SERVER_URL, and an inherited value aimed
+# deliveries at another service (triage of the external review of 0.8.4).
+export CLAUDE_MCP_SERVER_URL="$AIFY_SERVER_URL"
 # Expose AIFY_COMMS_URL too so the pre_llm_call shell hook installed by
 # install_hermes_turn_hooks can POST /turn-start symmetrically with
 # claude-aify and codex-aify. The hook gates on \${AIFY_COMMS_URL:-} so
