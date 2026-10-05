@@ -230,8 +230,9 @@ test("the start lock: held, refused while its holder lives, taken over from a de
   assert.equal(first.ok, true);
   assert.deepEqual(claimStart(profileRoot, { pid: 222, alive: () => true }), { ok: false, holder: 111, file: lock });
   assert.equal(claimStart(profileRoot, { pid: 222, alive: pid => pid !== 111 }).ok, true, "a lock whose holder died blocks every later launch");
+  const taken = fs.readFileSync(lock, "utf8");
   first.release();
-  assert.equal(fs.readFileSync(lock, "utf8").trim(), "222", "a launch released a lock another launch now holds");
+  assert.equal(fs.readFileSync(lock, "utf8"), taken, "a launch released a lock another launch now holds");
   fs.writeFileSync(lock, "");
   assert.equal(claimStart(profileRoot, { pid: 333, alive: () => false }).ok, false, "a claim still being written was taken over");
   assert.equal(fs.existsSync(lock), true);
@@ -384,6 +385,30 @@ test("THE STOP'S WAIT IS FIVE SECONDS OF WALL TIME: each question is given only 
   assert.equal((await profileOwnerState(profileRoot)).invocation, invocation, "an unconfirmed instance was forgotten");
 });
 
+test("A SLEEP THAT WAKES LATE starts no question after the stop's deadline", async () => {
+  // Review of 38f3e20, R3-LATE: the time left was checked only before the sleep, so a 250 ms sleep that woke 5250 ms
+  // later was followed by a question at +5850 ms with 1 ms to run in.
+  const { profileRoot } = recorded();
+  const clock = fakeClock();
+  const late = { now: clock.now, sleep: async ms => clock.advance(ms + 5000) };
+  let stopAnswered = null;
+  const asked = [];
+  await stopRecorded({
+    profileRoot, env: SEALED_ENV, target: "env", clock: late,
+    cli: (argv, { timeoutMs }) => {
+      if (argv[0] === "server") {
+        stopAnswered = clock.now();
+        return { ok: true };
+      }
+      asked.push(clock.now() - stopAnswered);
+      clock.advance(Math.min(600, timeoutMs));
+      return { ok: false, error: "timed out" };
+    },
+  });
+  assert.ok(asked.length >= 1, "control: the server was asked at all");
+  assert.deepEqual(asked.filter(at => at >= 5000), [], `questions started at +${asked.join(", +")} ms`);
+});
+
 test("TWO LAUNCHES RECLAIMING ONE DEAD LOCK: the second's fresh lock survives the first's stale verdict", () => {
   // Review of e51b83e, R1: A read dead 111; B removed it and wrote live 222; A, acting on its cached verdict, removed
   // 222 and wrote 333 -- and both claims returned ok.
@@ -391,18 +416,52 @@ test("TWO LAUNCHES RECLAIMING ONE DEAD LOCK: the second's fresh lock survives th
   const lock = path.join(profileRoot, "env-starting.lock");
   fs.writeFileSync(lock, "111\n");
   let second = null;
+  let secondBytes = null;
   const first = claimStart(profileRoot, {
     pid: 333,
     alive: pid => {
       // B runs its whole claim between A's read of 111 and A's removal.
-      if (pid === 111 && !second) second = claimStart(profileRoot, { pid: 222, alive: p => p !== 111 });
+      if (pid === 111 && !second) {
+        second = claimStart(profileRoot, { pid: 222, alive: p => p !== 111 });
+        secondBytes = fs.readFileSync(lock, "utf8");
+      }
       return pid !== 111;
     },
   });
   assert.equal(second?.ok, true, "control: the second launch reclaimed the dead lock");
   assert.equal(first.ok, false, "both launches hold the start lock");
   assert.equal(first.holder, 222);
-  assert.equal(fs.readFileSync(lock, "utf8").trim(), "222", "the live holder's lock was removed");
+  assert.equal(fs.readFileSync(lock, "utf8"), secondBytes, "the live holder's lock was removed");
+});
+
+test("A REUSED PID: a live claim made under the dead holder's pid survives a reclaim judged on the dead one", () => {
+  // Review of 38f3e20, R1-ABA: A judged holder 111 dead; C reclaimed that lock and released it; a NEW live launch B,
+  // under the reused pid 111, then took the lock. A, matching on the number 111 alone, removed B's live claim.
+  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "aj-"));
+  const lock = path.join(profileRoot, "env-starting.lock");
+  fs.writeFileSync(lock, "111 the-dead-claim\n");
+  let b = null;
+  let bBytes = null;
+  let reborn = false;
+  const a = claimStart(profileRoot, {
+    pid: 333,
+    alive: pid => {
+      if (pid === 111 && !b) {
+        const c = claimStart(profileRoot, { pid: 222, alive: p => p !== 111 });
+        assert.equal(c.ok, true, "control: C reclaimed the dead claim");
+        c.release();
+        b = claimStart(profileRoot, { pid: 111, alive: () => true });
+        bBytes = fs.readFileSync(lock, "utf8");
+        // A's verdict was taken before B existed; asked again now, 111 is a live process.
+        reborn = true;
+        return false;
+      }
+      return pid === 111 ? reborn : true;
+    },
+  });
+  assert.equal(b?.ok, true, "control: B took the lock under the reused pid");
+  assert.equal(a.ok, false, "A removed a live claim made under a reused pid, and both hold the start lock");
+  assert.equal(fs.readFileSync(lock, "utf8"), bBytes, "B's live claim is gone");
 });
 
 test("a reclaim already in progress refuses, naming its file, and removes nothing", () => {

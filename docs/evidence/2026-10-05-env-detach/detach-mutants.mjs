@@ -68,8 +68,12 @@ const MUTANTS = [
     once('  }).catch(err => ({ ok: false, phase: "start", error: err?.message || String(err) }));', "  });"),
     "A START THAT THROWS"],
   // comms-senior-dev's review of e51b83e.
-  [OWNER, "R1 a reclaim acts on its cached verdict", once('    if (now !== deadHolder) return "changed";\n', ""),
+  [OWNER, "R1 a reclaim acts on its cached verdict", once('    if (now !== deadClaim) return "changed";\n', ""),
     "TWO LAUNCHES RECLAIMING ONE DEAD LOCK"],
+  [OWNER, "R1-ABA a reclaim matches the claim by its pid alone",
+    once('    if (now !== deadClaim) return "changed";',
+      '    if (Number(now.trim().split(" ")[0]) !== Number(deadClaim.trim().split(" ")[0])) return "changed";'),
+    "A REUSED PID"],
   [OWNER, "R1b a reclaim in progress is ignored", once('    if (err?.code === "EEXIST") return "busy";', '    if (err?.code === "EEXIST") return "removed";'),
     "a reclaim already in progress refuses"],
   [BIN, "R2 the teardown forgets an instance it could not confirm gone",
@@ -77,8 +81,11 @@ const MUTANTS = [
     "A TEARDOWN THAT CANNOT CONFIRM THE SERVER GONE"],
   [BIN, "R2b the teardown never forgets", once("    const gone = result?.confirmedGone === true;", "    const gone = false;"),
     "CONTROL: a teardown that confirms the server gone forgets it"],
-  [STOP, "R3 each question may take the CLI's full timeout", once("    answer = ask(Math.max(1, deadline - now()));", "    answer = ask(15000);"),
+  [STOP, "R3 each question may take the CLI's full timeout", once("    answer = ask(left);", "    answer = ask(15000);"),
     "THE STOP'S WAIT IS FIVE SECONDS OF WALL TIME"],
+  [STOP, "R3-LATE the time left is checked only before the sleep",
+    once("    if (left <= 0) break;\n    answer = ask(left);", "    answer = ask(Math.max(1, left));"),
+    "A SLEEP THAT WAKES LATE"],
 ];
 // --test-force-exit: a mutant that leaks a handle must still REPORT its named failure; without it the file hangs to
 // the timeout and node prints nothing for it.
