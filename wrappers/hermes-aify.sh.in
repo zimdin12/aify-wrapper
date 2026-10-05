@@ -600,7 +600,23 @@ fi
 if [ "${AIFY_HERMES_FRESH_CONTEXT:-}" = "1" ]; then
   HERMES_SESSION_HANDLE="$(date -u +%Y%m%d_%H%M%S)_$(od -An -N3 -tx1 /dev/urandom | tr -d ' \n')"
   HERMES_EXPLICIT_SESSION_HANDLE="true"
-  rm -f "${TEMP:-${TMP:-/tmp}}/aify-hermes-session-${HERMES_AIFY_AGENT_ID:-}" 2>/dev/null || true
+  # Clear this lifetime's markers before the triad starts, preserving the port allocation.
+  node - "@@HERMES_STDIO_DIR@@" "$HERMES_AIFY_AGENT_ID" <<'AIFY_FRESH_MARKERS'
+const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+const { pathToFileURL } = require('node:url');
+import(pathToFileURL(path.join(process.argv[2], 'hermes-endpoint.js'))).then(({ sanitizeAgentId }) => {
+  const id = sanitizeAgentId(process.argv[3]);
+  if (!id) return;
+  const dir = process.env.TEMP || process.env.TMP || os.tmpdir();
+  for (const [root, kind] of [[dir, 'session'], [dir, 'gateway'], [os.tmpdir(), 'loop-ready']]) {
+    fs.rmSync(path.join(root, `aify-hermes-${kind}-${id}`), { force: true });
+  }
+}).catch((err) => {
+  const reason = String(err?.message || err).replace(/[\r\n]+/g, ' ');
+  console.error(`[hermes-aify] WARN: could not clear ${process.argv[3]}'s markers: ${reason}`);
+  process.exit(0);
+});
+AIFY_FRESH_MARKERS
   echo "[hermes-aify] fresh context requested: starting a NEW hermes session '$HERMES_SESSION_HANDLE' for agent '${HERMES_AIFY_AGENT_ID:-}'." >&2
 fi
 if [ "$HERMES_EXPLICIT_SESSION_HANDLE" = "true" ] && [ -n "$HERMES_SESSION_HANDLE" ]; then
