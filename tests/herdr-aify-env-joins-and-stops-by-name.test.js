@@ -15,7 +15,7 @@ import { test } from "node:test";
 
 import { incumbentAction, run } from "../bin/herdr-aify.mjs";
 import { stopRecorded, stopTarget } from "../lib/herdr-stop.mjs";
-import { claimStart, profileOwnerState, writeProfileOwner } from "../lib/herdr-owner.mjs";
+import { claimStart, probeOwner, profileOwnerState, writeProfileOwner } from "../lib/herdr-owner.mjs";
 import { buildInstanceContext } from "../lib/herdr-instance.mjs";
 import { profilePaths, residentPaths } from "../lib/herdr-profile.mjs";
 
@@ -297,3 +297,54 @@ test("A SIGNAL ONCE IT IS UP DETACHES, as leaving the session does: nothing stop
   assert.deepEqual(events, ["start", "attach"], "a closed terminal ended the instance it was attached to");
   assert.equal((await profileOwnerState(profileRoot)).invocation, made[0], "the detached instance is no longer recorded");
 });
+
+test("A POINTER THAT CANNOT BE WRITTEN fails the launch and frees the start lock, rather than blocking every later one", async () => {
+  // Review of 0.8.6: the throw left the owner listening (so the launcher never exited) and the lock held, so every
+  // other `herdr-aify env` on the host was refused until that process was killed. This file finishing at all is the
+  // owner's half: an endpoint left listening keeps the test process alive.
+  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "aj-"));
+  fs.mkdirSync(path.join(profileRoot, "owner.json"));
+  const events = [];
+  const made = [];
+  await assert.rejects(run({
+    profileRoot, env: SEALED_ENV, attaching: false, withEnv: true, onSignal: () => {},
+    makeInstance: ({ invocation: id }) => (made.push(fakeFor(profileRoot, id, events)), made.at(-1)),
+    cli: () => ({ ok: false, code: "server_not_running" }),
+  }));
+  assert.deepEqual(events, [], "an instance was started with no pointer to find it by");
+  await assertOwnerClosed(made[0]);
+  const next = claimStart(profileRoot);
+  assert.equal(next.ok, true, "the failed launch still holds the start lock");
+  next.release();
+});
+
+test("A START THAT THROWS is torn down like a failed one: nothing left running, the lock free", async () => {
+  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "aj-"));
+  const events = [];
+  const code = await run({
+    profileRoot, env: SEALED_ENV, attaching: false, withEnv: true, onSignal: () => {},
+    makeInstance: ({ invocation: id }) => ({
+      ...fakeFor(profileRoot, id, events),
+      start: async () => {
+        events.push("start");
+        throw new Error("boom");
+      },
+    }),
+    cli: () => ({ ok: false, code: "server_not_running" }),
+  }).catch(err => `rejected: ${err.message}`);
+  assert.equal(code, 1, "a throwing start escaped the teardown");
+  assert.deepEqual(events, ["start", "stop"]);
+  const next = claimStart(profileRoot);
+  assert.equal(next.ok, true, "the failed launch still holds the start lock");
+  next.release();
+});
+
+/**
+ * The launcher's owner endpoint answers no more. Asked directly, because left open it only shows as a test file that
+ * never exits -- and a hang is reported as nothing at all.
+ */
+async function assertOwnerClosed(instance) {
+  const { invocation, ownerEndpoint } = instance.context;
+  const answers = await probeOwner(ownerEndpoint, { invocation, scope: `herdr-${invocation}` }, { timeoutMs: 500 });
+  assert.equal(answers, false, "the failed launch left its owner endpoint listening, so the launcher cannot exit");
+}

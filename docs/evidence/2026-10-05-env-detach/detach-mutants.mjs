@@ -60,8 +60,16 @@ const MUTANTS = [
     "A SIGNAL BETWEEN THE SPAWN"],
   [OWNER, "D2b a live holder's lock is taken over", once("holder <= 0 || alive(holder)) return", "holder <= 0) return"),
     "the start lock"],
+  // The verification round on 388cd55.
+  [BIN, "D4 a pointer that cannot be written keeps the lock", once("    await owner.close().catch(() => {});\n    claim.release();\n    throw err;", "    throw err;"),
+    "A POINTER THAT CANNOT BE WRITTEN"],
+  [BIN, "D5 a start that throws skips the teardown",
+    once('  }).catch(err => ({ ok: false, phase: "start", error: err?.message || String(err) }));', "  });"),
+    "A START THAT THROWS"],
 ];
-const run = () => spawnSync(process.execPath, ["--test", ...TESTS], {
+// --test-force-exit: a mutant that leaks a handle must still REPORT its named failure; without it the file hangs to
+// the timeout and node prints nothing for it.
+const run = () => spawnSync(process.execPath, ["--test", "--test-force-exit", ...TESTS], {
   cwd: ROOT, encoding: "utf8", timeout: 300_000,
   env: { ...process.env, AIFY_AGENT_ID: "", AIFY_AGENT_LEASE: "" },
 });

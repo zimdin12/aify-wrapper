@@ -3,7 +3,7 @@ KILLED   every stop is the env's: exit=1; not ok 9 - A BARE --stop IS THE RESIDE
 KILLED   only a live launcher counts as running (the old refusal): exit=1; not ok 8 - WHAT A SECOND `herdr-aify env` DOES is decided by the recorded instance's own socket | not ok 10 - A SECOND LAUNCH JOINS the instance that is still serving: it attaches, and starts and st | not ok 11 - headless, a second launch reports the running instance and changes nothing | not ok 15 - A FAILED `env --stop` KEEPS THE INSTANCE RECORDED, so the next launch joins it rather th | not ok 17 - TWO LAUNCHES AT ONCE on an empty profile start ONE instance; the other is refused, not s
 KILLED   leaving the session ends the instance: exit=1; not ok 5 - THE CALL SITE: a run with a terminal ATTACHES, and leaving the session DETACHES (0.8.6)
 KILLED   a headless start is ended at once: exit=1; not ok 7 - NEGATIVE CONTROL: with no terminal the same run starts no TUI, and leaves the instance ru | not ok 12 - CONTROL: a recorded instance herdr says is gone is replaced by a new one, as before | not ok 17 - TWO LAUNCHES AT ONCE on an empty profile start ONE instance; the other is refused, not s
-KILLED   M1 the env server is a plain child of the launcher: exit=1; not ok 34 - THE SERVER IS SPAWNED INDEPENDENT, so leaving the session (0.8.6) does not take it down 
+KILLED   M1 the env server is a plain child of the launcher: exit=1; not ok 36 - THE SERVER IS SPAWNED INDEPENDENT, so leaving the session (0.8.6) does not take it down 
 KILLED   M2 a second launch asks the operator's own herdr, not the recorded instance: exit=1; not ok 10 - A SECOND LAUNCH JOINS the instance that is still serving: it attaches, and starts and st
 KILLED   M3 a signal always detaches, even mid-start: exit=1; not ok 19 - A SIGNAL BEFORE THE INSTANCE IS UP takes the half-started instance down with the launche
 KILLED   M4 a signal always tears down (the old behaviour): exit=1; not ok 20 - A SIGNAL ONCE IT IS UP DETACHES, as leaving the session does: nothing stopped, the insta
@@ -11,7 +11,9 @@ KILLED   M5 detaching forgets the instance: exit=1; not ok 12 - CONTROL: a recor
 KILLED   M6 the stop asks once, straight after: exit=1; not ok 16 - A SERVER THAT TAKES A MOMENT TO EXIT is waited for: confirmed gone, and only then forgot
 KILLED   D1 a failed env --stop clears the pointer: exit=1; not ok 15 - A FAILED `env --stop` KEEPS THE INSTANCE RECORDED, so the next launch joins it rather th
 KILLED   D2 no start lock: exit=1; not ok 17 - TWO LAUNCHES AT ONCE on an empty profile start ONE instance; the other is refused, not s
-KILLED   D3 a stop in the spawn window stops nothing: exit=1; not ok 35 - A SIGNAL BETWEEN THE SPAWN AND ITS `spawn` EVENT still stops the server, which would oth
+KILLED   D3 a stop in the spawn window stops nothing: exit=1; not ok 37 - A SIGNAL BETWEEN THE SPAWN AND ITS `spawn` EVENT still stops the server, which would oth
 KILLED   D2b a live holder's lock is taken over: exit=1; not ok 17 - TWO LAUNCHES AT ONCE on an empty profile start ONE instance; the other is refused, not s | not ok 18 - the start lock: held, refused while its holder lives, taken over from a dead one, releas
-restored: exit=0 # pass 37 # fail 0
-all 15 mutants killed at their named test
+KILLED   D4 a pointer that cannot be written keeps the lock: exit=1; not ok 21 - A POINTER THAT CANNOT BE WRITTEN fails the launch and frees the start lock, rather than 
+KILLED   D5 a start that throws skips the teardown: exit=1; not ok 22 - A START THAT THROWS is torn down like a failed one: nothing left running, the lock free
+restored: exit=0 # pass 39 # fail 0
+all 17 mutants killed at their named test

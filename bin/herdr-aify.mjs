@@ -474,8 +474,16 @@ async function run({
   // something answers a fresh nonce on the private endpoint, so an owner started afterwards would be
   // a race this loses on a fast machine.
   const owner = new HerdrOwner(instance.context);
-  await owner.listen();
-  writeProfileOwner(profileRoot, { invocation, ownerEndpoint: instance.context.ownerEndpoint, pid: process.pid });
+  try {
+    await owner.listen();
+    writeProfileOwner(profileRoot, { invocation, ownerEndpoint: instance.context.ownerEndpoint, pid: process.pid });
+  } catch (err) {
+    // A THROW HERE LEFT THE OWNER LISTENING AND THE LOCK HELD: the launcher could not exit, and every other
+    // `herdr-aify env` on the host was refused until it was killed (review of 0.8.6). Nothing has started yet.
+    await owner.close().catch(() => {});
+    claim.release();
+    throw err;
+  }
 
   let closing = false;
   const shutdown = async code => {
@@ -517,7 +525,9 @@ async function run({
     } catch {
       // Nothing to release beyond this process, which is leaving anyway.
     }
-    process.stderr.write("herdr-aify: detached; aify-env and its agents are still running. `herdr-aify env --stop` ends them\n");
+    // NO CLAIM ABOUT WHAT IS STILL RUNNING: an attached launcher can reach here because `env --stop` ended the server
+    // elsewhere and its client exited first.
+    process.stderr.write(`herdr-aify: detached from instance ${invocation}; \`herdr-aify env\` attaches again, \`herdr-aify env --stop\` ends it\n`);
     return code;
   };
 
@@ -529,6 +539,7 @@ async function run({
       .catch(() => exit(1));
   });
 
+  // A THROW IS A FAILED START, torn down like one: thrown past here it left the owner listening and the lock held.
   const started = await instance.start({
     env,
     herdrBin: binary.bin,
@@ -536,7 +547,7 @@ async function run({
     // THE PLUGIN GOES INTO THIS PROFILE, not the operator's. Without it a `claude-aify` started in
     // here claims no pane and nothing restores it -- which is the whole point of the plain mode.
     pluginDir: fileURLToPath(new URL("../herdr-plugin/", import.meta.url)),
-  });
+  }).catch(err => ({ ok: false, phase: "start", error: err?.message || String(err) }));
   if (!started.ok) {
     process.stderr.write(`herdr-aify: could not start (${started.phase}): ${started.error}\n`);
     return await shutdown(1);
