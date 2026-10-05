@@ -34,7 +34,40 @@ const BASH = WIN
   : execFileSync("sh", ["-c", "command -v bash"], { encoding: "utf8" }).trim();
 const BASH_DIR = path.dirname(BASH);
 /** A path as the launcher's shell writes it: MSYS-style on Windows, which is what aify-comms bakes. */
-const shellPath = (p) => (WIN ? execFileSync(BASH, ["-c", 'cygpath -u "$1"', "_", p], { encoding: "utf8" }).trim() : p);
+const cygpath = (p) => execFileSync(BASH, ["-c", 'cygpath -u "$1"', "_", p], { encoding: "utf8" }).trim();
+// COMPUTED, NOT SPAWNED: one bash start costs about 0.5 s on a loaded Windows host (512 ms measured 2026-10-05),
+// and every launch needed two of these. The pure form is checked against cygpath once, on the temp directory
+// every world lives under; where they disagree, cygpath answers every call.
+const msysPath = (p) => p.replace(/^([A-Za-z]):[\\/]/, (_, d) => `/${d.toLowerCase()}/`).replace(/\\/g, "/");
+const PURE_SHELL_PATH = !WIN || msysPath(os.tmpdir()) === cygpath(os.tmpdir());
+const shellPath = (p) => (!WIN ? p : PURE_SHELL_PATH ? msysPath(p) : cygpath(p));
+
+// ONE RENDER PER LAUNCHER, NOT ONE PER LAUNCH. install.sh writes the bridge directory into the launcher
+// verbatim and nothing else that differs between worlds, so a launcher rendered once against a placeholder
+// becomes any world's launcher by replacing the placeholder. A render costs 2-5 s warm and 34 s cold on this
+// host (2026-10-05); this file's callers launched 78 times. `rendersLikeTheInstaller` in
+// a-cached-render-is-the-installers-render.test.js holds the equivalence.
+const BRIDGE_PLACEHOLDER = "/tmp/aify-test-bridge-placeholder";
+const renders = new Map();
+
+/** The text install.sh renders for `client` against `services` with `bridge` as its bridge directory. */
+export function renderLauncher(client, services, bridge) {
+  const registryText = fs.readFileSync(services, "utf8");
+  const key = `${client}\0${registryText}`;
+  if (!renders.has(key)) renders.set(key, installerRender(client, services, BRIDGE_PLACEHOLDER));
+  return renders.get(key).replaceAll(BRIDGE_PLACEHOLDER, bridge);
+}
+
+/** What install.sh itself writes for this client, registry and bridge directory, with no cache in between. */
+export function installerRender(client, services, bridge) {
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), `aify-render-${client}-`));
+  const rendered = spawnSync(BASH, [INSTALL, "--client", client, "--endpoint", NOWHERE, "--registry", services,
+    "--render-only", out, "--bridge-dir", bridge], { encoding: "utf8", timeout: 120_000 });
+  if (rendered.status !== 0) throw new Error(`render failed: ${rendered.stdout}\n${rendered.stderr}`);
+  const text = fs.readFileSync(path.join(out, `${client}-aify`), "utf8");
+  fs.rmSync(out, { recursive: true, force: true });
+  return text;
+}
 
 // STUB LOOKUP. Answers `<runtime>-recovered` for the known handle only, and says what it was asked.
 const LOOKUP = [
@@ -78,9 +111,7 @@ function world(client, { reader, registry, bridgeFiles = {} }) {
   // machine's services.
   const services = path.join(dir, "services.json");
   fs.writeFileSync(services, registry === undefined ? "" : JSON.stringify(registry));
-  const rendered = spawnSync(BASH, [INSTALL, "--client", client, "--endpoint", NOWHERE, "--registry", services,
-    "--render-only", out, "--bridge-dir", shellPath(bridge)], { encoding: "utf8", timeout: 120_000 });
-  if (rendered.status !== 0) throw new Error(`render failed: ${rendered.stdout}\n${rendered.stderr}`);
+  fs.writeFileSync(path.join(out, `${client}-aify`), renderLauncher(client, services, shellPath(bridge)), { mode: 0o755 });
   fs.writeFileSync(path.join(stubs, client), runtimeStub(shellPath(process.execPath)), { mode: 0o755 });
   return { dir, home, stubs, launcher: path.join(out, `${client}-aify`) };
 }
