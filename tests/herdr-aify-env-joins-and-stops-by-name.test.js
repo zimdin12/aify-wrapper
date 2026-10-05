@@ -21,6 +21,12 @@ import { profilePaths, residentPaths } from "../lib/herdr-profile.mjs";
 
 const SEALED_ENV = Object.freeze({ HERDR_BIN_PATH: "herdr-this-test-never-runs" });
 
+/** A clock whose time moves only when the code under test sleeps, or a fake CLI says a question took a while. */
+function fakeClock() {
+  let t = 1_000_000;
+  return { now: () => t, sleep: async ms => { t += ms; }, advance: ms => { t += ms; } };
+}
+
 test("WHAT A SECOND `herdr-aify env` DOES is decided by the recorded instance's own socket", () => {
   const stale = { owned: false, reason: "stale-pointer", invocation: "i" };
   const live = { owned: true, reason: "live-owner", invocation: "i" };
@@ -161,7 +167,7 @@ test("A FAILED `env --stop` KEEPS THE INSTANCE RECORDED, so the next launch join
   const { profileRoot, invocation } = recorded();
   const stillServing = () => ({ ok: true });
   const code = await stopRecorded({
-    profileRoot, env: SEALED_ENV, target: "env", sleep: async () => {},
+    profileRoot, env: SEALED_ENV, target: "env", clock: fakeClock(),
     cli: (argv) => (argv[0] === "server" ? { ok: false, error: "refused" } : stillServing()),
   });
   assert.equal(code, 1, "a stop that did not end the instance reported success");
@@ -182,7 +188,7 @@ test("A SERVER THAT TAKES A MOMENT TO EXIT is waited for: confirmed gone, and on
   const { profileRoot } = recorded();
   let asksAfterStop = 0;
   const code = await stopRecorded({
-    profileRoot, env: SEALED_ENV, target: "env", sleep: async () => {},
+    profileRoot, env: SEALED_ENV, target: "env", clock: fakeClock(),
     cli: (argv) => {
       if (argv[0] === "server") return { ok: true };
       asksAfterStop += 1;
@@ -348,3 +354,145 @@ async function assertOwnerClosed(instance) {
   const answers = await probeOwner(ownerEndpoint, { invocation, scope: `herdr-${invocation}` }, { timeoutMs: 500 });
   assert.equal(answers, false, "the failed launch left its owner endpoint listening, so the launcher cannot exit");
 }
+
+test("THE STOP'S WAIT IS FIVE SECONDS OF WALL TIME: each question is given only what is left of it", async () => {
+  // Review of e51b83e, R3: twenty tries of a question that may itself take the CLI's 15 s bounded nothing -- 600 ms
+  // per question made 16.75 s.
+  const { profileRoot, invocation } = recorded();
+  const clock = fakeClock();
+  let stopAnswered = null;
+  const asked = [];
+  const code = await stopRecorded({
+    profileRoot, env: SEALED_ENV, target: "env", clock,
+    cli: (argv, { timeoutMs }) => {
+      if (argv[0] === "server") {
+        clock.advance(600);
+        stopAnswered = clock.now();
+        return { ok: true };
+      }
+      asked.push({ at: clock.now(), timeoutMs });
+      clock.advance(Math.min(600, timeoutMs));
+      return { ok: false, error: "timed out" };
+    },
+  });
+  assert.equal(code, 1);
+  assert.ok(asked.length > 1, "control: the server was asked more than once");
+  for (const { at, timeoutMs } of asked) {
+    assert.ok(Number.isFinite(timeoutMs) && at + timeoutMs <= stopAnswered + 5000, `a question at +${at - stopAnswered} ms was allowed ${timeoutMs} ms`);
+  }
+  assert.ok(clock.now() - stopAnswered <= 5000, `waited ${clock.now() - stopAnswered} ms after the stop`);
+  assert.equal((await profileOwnerState(profileRoot)).invocation, invocation, "an unconfirmed instance was forgotten");
+});
+
+test("TWO LAUNCHES RECLAIMING ONE DEAD LOCK: the second's fresh lock survives the first's stale verdict", () => {
+  // Review of e51b83e, R1: A read dead 111; B removed it and wrote live 222; A, acting on its cached verdict, removed
+  // 222 and wrote 333 -- and both claims returned ok.
+  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "aj-"));
+  const lock = path.join(profileRoot, "env-starting.lock");
+  fs.writeFileSync(lock, "111\n");
+  let second = null;
+  const first = claimStart(profileRoot, {
+    pid: 333,
+    alive: pid => {
+      // B runs its whole claim between A's read of 111 and A's removal.
+      if (pid === 111 && !second) second = claimStart(profileRoot, { pid: 222, alive: p => p !== 111 });
+      return pid !== 111;
+    },
+  });
+  assert.equal(second?.ok, true, "control: the second launch reclaimed the dead lock");
+  assert.equal(first.ok, false, "both launches hold the start lock");
+  assert.equal(first.holder, 222);
+  assert.equal(fs.readFileSync(lock, "utf8").trim(), "222", "the live holder's lock was removed");
+});
+
+test("a reclaim already in progress refuses, naming its file, and removes nothing", () => {
+  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "aj-"));
+  const lock = path.join(profileRoot, "env-starting.lock");
+  fs.writeFileSync(lock, "111\n");
+  fs.writeFileSync(`${lock}.reclaim`, "444\n");
+  const claim = claimStart(profileRoot, { pid: 333, alive: pid => pid !== 111 });
+  assert.deepEqual(claim, { ok: false, holder: null, file: `${lock}.reclaim` });
+  assert.equal(fs.readFileSync(lock, "utf8").trim(), "111");
+});
+
+/** A run whose instance fails to start, then answers its teardown with `teardown` (a result, or an Error to throw). */
+function failingStart(profileRoot, events, made, teardown) {
+  return ({ invocation: id }) => (made.push(id), {
+    ...fakeFor(profileRoot, id, events),
+    start: async () => (events.push("start"), { ok: false, phase: "ready", error: "not ready" }),
+    stop: async () => {
+      events.push("stop");
+      if (teardown instanceof Error) throw teardown;
+      return teardown;
+    },
+  });
+}
+
+test("A TEARDOWN THAT CANNOT CONFIRM THE SERVER GONE keeps it recorded, so the next launch joins instead of starting", async () => {
+  // Review of e51b83e, R2: shutdown cleared the pointer whatever stop() answered, and the next run spawned a second
+  // server while the first still served.
+  for (const [label, teardown] of [
+    ["STILL ANSWERING", { everServed: true, confirmedGone: false }],
+    ["could not tell", { everServed: true, confirmedGone: false, goneUnknown: true }],
+    ["teardown threw", new Error("stop failed")],
+  ]) {
+    const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "aj-"));
+    const events = [];
+    const made = [];
+    const code = await run({
+      profileRoot, env: SEALED_ENV, attaching: false, withEnv: true, onSignal: () => {},
+      makeInstance: failingStart(profileRoot, events, made, teardown),
+      cli: () => ({ ok: false, code: "server_not_running" }),
+    });
+    assert.equal(code, 1, label);
+    assert.equal((await profileOwnerState(profileRoot)).invocation, made[0], `${label}: the unconfirmed instance was forgotten`);
+    const next = await run({
+      profileRoot, env: SEALED_ENV, attaching: false, withEnv: true, onSignal: () => {},
+      makeInstance: ({ invocation: id }) => (made.push(id), fakeFor(profileRoot, id, events)),
+      cli: () => ({ ok: true }),
+    });
+    assert.equal(next, 0, label);
+    assert.deepEqual(made, [made[0], made[0]], `${label}: the next launch did not join the instance still recorded`);
+    assert.deepEqual(events, ["start", "stop"], `${label}: a second instance was started`);
+  }
+});
+
+test("CONTROL: a teardown that confirms the server gone forgets it", async () => {
+  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "aj-"));
+  const made = [];
+  const code = await run({
+    profileRoot, env: SEALED_ENV, attaching: false, withEnv: true, onSignal: () => {},
+    makeInstance: failingStart(profileRoot, [], made, { everServed: true, confirmedGone: true }),
+    cli: () => ({ ok: false, code: "server_not_running" }),
+  });
+  assert.equal(code, 1);
+  assert.equal((await profileOwnerState(profileRoot)).invocation, undefined, "a confirmed-gone instance is still recorded");
+});
+
+test("A SIGNAL BEFORE THE INSTANCE IS UP whose teardown cannot confirm the server gone keeps it recorded", async () => {
+  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "aj-"));
+  const events = [];
+  const made = [];
+  let signal;
+  let exited;
+  const exitCode = new Promise(resolve => {
+    exited = resolve;
+  });
+  run({
+    profileRoot, env: SEALED_ENV, attaching: false, withEnv: true,
+    onSignal: handler => {
+      signal = handler;
+    },
+    exit: exited,
+    makeInstance: ({ invocation: id }) => (made.push(id), {
+      ...fakeFor(profileRoot, id, events),
+      start: () => (events.push("start"), new Promise(() => {})),
+      stop: async () => (events.push("stop"), { everServed: true, confirmedGone: false }),
+    }),
+    cli: () => ({ ok: false, code: "server_not_running" }),
+  });
+  await until(() => events.includes("start"));
+  signal();
+  assert.equal(await exitCode, 0);
+  assert.equal((await profileOwnerState(profileRoot)).invocation, made[0], "the half-started instance it could not confirm gone was forgotten");
+});

@@ -49,7 +49,8 @@ const MUTANTS = [
     "      await owner.close();\n    } catch {\n      // Nothing to release",
     "      await owner.close();\n      clearProfileOwner(profileRoot, invocation);\n    } catch {\n      // Nothing to release"),
     "CONTROL: a recorded instance herdr says is gone"],
-  [STOP, "M6 the stop asks once, straight after", once("tries = 20", "tries = 1"), "A SERVER THAT TAKES A MOMENT TO EXIT"],
+  [STOP, "M6 the stop asks once, straight after",
+    once('while (answer !== "not-running" && deadline - now() > everyMs) {', "while (false) {"), "A SERVER THAT TAKES A MOMENT TO EXIT"],
   [STOP, "D1 a failed env --stop clears the pointer",
     once('  if (after === "not-running") clearProfileOwner(profileRoot, state.invocation);', "  clearProfileOwner(profileRoot, state.invocation);"),
     "A FAILED `env --stop`"],
@@ -66,6 +67,18 @@ const MUTANTS = [
   [BIN, "D5 a start that throws skips the teardown",
     once('  }).catch(err => ({ ok: false, phase: "start", error: err?.message || String(err) }));', "  });"),
     "A START THAT THROWS"],
+  // comms-senior-dev's review of e51b83e.
+  [OWNER, "R1 a reclaim acts on its cached verdict", once('    if (now !== deadHolder) return "changed";\n', ""),
+    "TWO LAUNCHES RECLAIMING ONE DEAD LOCK"],
+  [OWNER, "R1b a reclaim in progress is ignored", once('    if (err?.code === "EEXIST") return "busy";', '    if (err?.code === "EEXIST") return "removed";'),
+    "a reclaim already in progress refuses"],
+  [BIN, "R2 the teardown forgets an instance it could not confirm gone",
+    once("      if (gone) clearProfileOwner(profileRoot, invocation);", "      clearProfileOwner(profileRoot, invocation);"),
+    "A TEARDOWN THAT CANNOT CONFIRM THE SERVER GONE"],
+  [BIN, "R2b the teardown never forgets", once("    const gone = result?.confirmedGone === true;", "    const gone = false;"),
+    "CONTROL: a teardown that confirms the server gone forgets it"],
+  [STOP, "R3 each question may take the CLI's full timeout", once("    answer = ask(Math.max(1, deadline - now()));", "    answer = ask(15000);"),
+    "THE STOP'S WAIT IS FIVE SECONDS OF WALL TIME"],
 ];
 // --test-force-exit: a mutant that leaks a handle must still REPORT its named failure; without it the file hangs to
 // the timeout and node prints nothing for it.

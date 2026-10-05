@@ -1,0 +1,4 @@
+# RAW CAPTURES ARE KEPT BYTE FOR BYTE. An evidence `.out` file is what a command printed, including PowerShell's CR
+# line ends and the trailing space a 100-character cut leaves; rewriting it to satisfy `git diff --check` would make
+# it something no command printed. So whitespace is not checked there, and only there.
+docs/evidence/**/*.out -whitespace

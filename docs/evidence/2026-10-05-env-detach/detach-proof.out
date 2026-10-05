@@ -1,33 +1,33 @@
-sealed HOME C:\Users\Administrator\AppData\Local\Temp\hd-lgMd
+sealed HOME C:\Users\Administrator\AppData\Local\Temp\hd-f9le
 == 0. CONTROL for the lock probe: a start lock still being written (no pid) must refuse, and be seen
 herdr-aify: another `herdr-aify env` (pid not yet written) is starting this host's instance; nothing was started.
-  Run `herdr-aify env` again once it is up to attach to it. A lock left by a crash is C:\Users\Administrator\AppData\Local\Temp\hd-lgMd\.aify\herdr\env-starting.lock
+  Run `herdr-aify env` again once it is up to attach to it. A lock left by a crash is C:\Users\Administrator\AppData\Local\Temp\hd-f9le\.aify\herdr\env-starting.lock
 exit=3 (3 = refused)
    start lock present: YES; invocations: 0
 == 1. herdr-aify env --no-attach (the launcher must return and leave the instance running)
-herdr-aify: invocation 4a425a9d-bea4-488f-992a-2194188b0b2e
-herdr-aify: herdr socket C:\Users\Administrator\AppData\Local\Temp\hd-lgMd\.aify\herdr\invocations\4a425a9d-bea4-488f-992a-2194188b0b2e\herdr-tui.sock
+herdr-aify: invocation 7ae64683-5929-4df1-9966-b6d1eee4be04
+herdr-aify: herdr socket C:\Users\Administrator\AppData\Local\Temp\hd-f9le\.aify\herdr\invocations\7ae64683-5929-4df1-9966-b6d1eee4be04\herdr-tui.sock
 herdr-aify: aify-env in w1:p1 — managed work runs here
 herdr-aify: no terminal to attach to; `herdr-aify env` in a terminal attaches to it
-herdr-aify: detached; aify-env and its agents are still running. `herdr-aify env --stop` ends them
-exit=0 after 5s
-   instance now: serving stale-pointer 4a425a9d-bea4-488f-992a-2194188b0b2e
+herdr-aify: detached from instance 7ae64683-5929-4df1-9966-b6d1eee4be04; `herdr-aify env` attaches again, `herdr-aify env --stop` ends it
+exit=0 after 12s
+   instance now: serving stale-pointer 7ae64683-5929-4df1-9966-b6d1eee4be04
    invocations: 1; daemon receipt ready.json: present
-   5 s after the launcher exited: serving stale-pointer 4a425a9d-bea4-488f-992a-2194188b0b2e
+   5 s after the launcher exited: serving stale-pointer 7ae64683-5929-4df1-9966-b6d1eee4be04
    POSITIVE CONTROL, processes this run started that are alive now:
-  95952 herdr.exe 03:39:41
-  80032 node.exe 03:39:43
+  97020 herdr.exe 05:18:58
+  111360 node.exe 05:19:08
 == 2. a second herdr-aify env --no-attach (must join, start nothing)
-herdr-aify: instance 4a425a9d-bea4-488f-992a-2194188b0b2e is already running; `herdr-aify env` in a terminal attaches, `herdr-aify env --stop` ends it
+herdr-aify: instance 7ae64683-5929-4df1-9966-b6d1eee4be04 is already running; `herdr-aify env` in a terminal attaches, `herdr-aify env --stop` ends it
 exit=0
    invocations: 1; start lock left behind: none
 == 3. a bare herdr-aify --stop (must leave the env instance alone)
-herdr-aify: the herdr-aify env instance 4a425a9d-bea4-488f-992a-2194188b0b2e keeps running; `herdr-aify env --stop` ends it
+herdr-aify: the herdr-aify env instance 7ae64683-5929-4df1-9966-b6d1eee4be04 keeps running; `herdr-aify env --stop` ends it
 herdr-aify: this host's herdr is not running; nothing stopped
 exit=0
-   instance now: serving stale-pointer 4a425a9d-bea4-488f-992a-2194188b0b2e
+   instance now: serving stale-pointer 7ae64683-5929-4df1-9966-b6d1eee4be04
 == 4. herdr-aify env --stop (must end it)
-herdr-aify: invocation 4a425a9d-bea4-488f-992a-2194188b0b2e — stop accepted, confirmed gone
+herdr-aify: invocation 7ae64683-5929-4df1-9966-b6d1eee4be04 — stop accepted, confirmed gone
 exit=0
    instance now: no-instance-recorded
 == processes started since this proof began (herdr or aify-env), after the stop:

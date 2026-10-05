@@ -492,14 +492,21 @@ async function run({
     // TEARDOWN MUST NOT DIE HALFWAY. A rejection anywhere in here used to surface as an unhandled
     // rejection that killed the process mid-shutdown, leaving whatever `stop()` had not yet reached.
     let line = "herdr-aify: stopped";
+    let result = null;
     try {
-      line = teardownLine(await instance.stop({ env, herdrBin: resolveHerdrBinary({ env }).bin }));
+      result = await instance.stop({ env, herdrBin: resolveHerdrBinary({ env }).bin });
+      line = teardownLine(result);
     } catch (err) {
       line = `herdr-aify: teardown failed: ${err?.message || err}`;
     }
+    // THE POINTER GOES ONLY WITH THE INSTANCE, as in `env --stop`. Cleared after a teardown that could not confirm the
+    // server gone, the next launch read "nothing recorded" and started a second instance beside one still serving,
+    // which now outlives this launcher (review of e51b83e, R2).
+    const gone = result?.confirmedGone === true;
+    if (!gone) line += `\nherdr-aify: instance ${invocation} is still recorded; \`herdr-aify env --stop\` can try again`;
     try {
       await owner.close();
-      clearProfileOwner(profileRoot, invocation);
+      if (gone) clearProfileOwner(profileRoot, invocation);
     } catch {
       // The owner pointer is a courtesy to the next launch; failing to clear it must not stop exit.
     }
