@@ -4,7 +4,7 @@
 //
 // THE INCIDENT, 2026-09-15: a Herdr server started from inside comms-tech-lead's Claude Code session gave every
 // pane that agent's id and conversation. A bare `claude-aify` typed into one started as comms-tech-lead and
-// replaced the live one. The launchers' end of it is in a-launcher-holds-the-agent-lease.test.js; this holds
+// replaced the live one. The launchers' end of it is in a-launcher-holds-the-agent-lease.release.test.js; this holds
 // the helper and its two lists, and the pane claim that the same day's launches were all refused.
 
 import assert from "node:assert/strict";

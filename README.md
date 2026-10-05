@@ -318,14 +318,17 @@ This is not a performance nicety.
 ## Tests
 
 ```bash
-npm test
+npm test                # the fast tier, on every change: under a minute
+npm run test:release    # everything, before a tag: 25-40 min on a loaded Windows host
 ```
 
-`npm test` runs the suite through `tests/run-in-a-temp-root.mjs`, which gives it one temporary root and
-deletes it afterwards.
+Both run through `tests/run-in-a-temp-root.mjs`, which gives the run one temporary root, deletes it afterwards,
+and prints the ten slowest files.
 
-They render each launcher and run it, rather than reading the templates. A wrapper's failure mode is
-silence, so a test that only reads text cannot see it.
+The release tier is every `*.release.test.js`: tests that render a launcher and run it, or start real processes.
+A wrapper's failure mode is silence, so a test that only reads text cannot see it; those tests are the proof, and
+they are also where nine tenths of the time goes. A new test that renders or starts a process is a release test.
+When you change a template, run the release files that cover it by name (`node --test tests/<file>`).
 
 ## Herdr
 

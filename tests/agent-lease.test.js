@@ -3,7 +3,7 @@
 //
 // What is faked is ONLY the probe: which pids are alive, when each started, and what a kill does. The
 // record, its lock and its file are real, in a temp directory. The same decisions against real
-// processes are in an-agent-runs-once-per-host.test.js.
+// processes are in an-agent-runs-once-per-host.release.test.js.
 
 import assert from "node:assert/strict";
 import fs from "node:fs";

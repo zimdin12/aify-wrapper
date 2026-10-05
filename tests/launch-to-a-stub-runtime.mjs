@@ -46,7 +46,7 @@ const shellPath = (p) => (!WIN ? p : PURE_SHELL_PATH ? msysPath(p) : cygpath(p))
 // verbatim and nothing else that differs between worlds, so a launcher rendered once against a placeholder
 // becomes any world's launcher by replacing the placeholder. A render costs 2-5 s warm and 34 s cold on this
 // host (2026-10-05); this file's callers launched 78 times. `rendersLikeTheInstaller` in
-// a-cached-render-is-the-installers-render.test.js holds the equivalence.
+// a-cached-render-is-the-installers-render.release.test.js holds the equivalence.
 const BRIDGE_PLACEHOLDER = "/tmp/aify-test-bridge-placeholder";
 const renders = new Map();
 

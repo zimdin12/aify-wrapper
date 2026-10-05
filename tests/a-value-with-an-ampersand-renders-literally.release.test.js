@@ -48,7 +48,7 @@ function render(value) {
   const name = "probe-aify.sh.in";
   fs.writeFileSync(path.join(wrappers, name), [
     "#!/bin/bash",
-    "#| throwaway template for a-value-with-an-ampersand-renders-literally.test.js",
+    "#| throwaway template for a-value-with-an-ampersand-renders-literally.release.test.js",
     'ENDPOINT="@@ENDPOINT@@"',
     "",
   ].join(LF));

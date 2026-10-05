@@ -107,7 +107,7 @@ const IN_A_PANE = { HERDR_ENV: "1", HERDR_PANE_ID: "w1:p2", HERDR_WORKSPACE_ID: 
 test("A CLAIMED PANE FOLLOWS THE AGENT: working, blocked, working again, idle", { skip: WIN }, () => {
   const { config, fire, reports } = launch({ env: IN_A_PANE });
   // Two idle reports before any hook: the claim's own at launch, and the launcher's when the stub
-  // claude exited (a-launcher-reports-its-runtimes-exit.test.js).
+  // claude exited (a-launcher-reports-its-runtimes-exit.release.test.js).
   const IDLE = "pane report-agent w1:p2 --source herdr:aify --agent claude-aify --state idle";
   assert.deepEqual(reports(), [IDLE, IDLE]);
 

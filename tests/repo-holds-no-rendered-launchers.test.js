@@ -46,11 +46,11 @@ export function isRenderedLauncher(text) {
 
 test("the predicates say no to what belongs here", () => {
   assert.equal(looksLikeAnEscapedAbsolutePath("wrappers/claude-aify.sh.in"), false);
-  assert.equal(looksLikeAnEscapedAbsolutePath("tests/render.test.js"), false);
+  assert.equal(looksLikeAnEscapedAbsolutePath("tests/render.release.test.js"), false);
   const template = fs.readFileSync(path.join(ROOT, "wrappers", "claude-aify.sh.in"), "utf8");
   assert.equal(isRenderedLauncher(template), false, "a template must not read as a render");
-  for (const name of ["staleness.test.js", "wrapper-check-cli.test.js",
-    "rendered-launchers-are-executable-by-aify-env.test.js"]) {
+  for (const name of ["staleness.test.js", "wrapper-check-cli.release.test.js",
+    "rendered-launchers-are-executable-by-aify-env.release.test.js"]) {
     const source = fs.readFileSync(path.join(ROOT, "tests", name), "utf8");
     assert.equal(isRenderedLauncher(source), false,
       `${name} asserts on the marker; that is not a render`);

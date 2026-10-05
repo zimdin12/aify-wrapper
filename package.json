@@ -21,6 +21,7 @@
     "README.md"
   ],
   "scripts": {
-    "test": "node tests/run-in-a-temp-root.mjs"
+    "test": "node tests/run-in-a-temp-root.mjs",
+    "test:release": "node tests/run-in-a-temp-root.mjs --release"
   }
 }

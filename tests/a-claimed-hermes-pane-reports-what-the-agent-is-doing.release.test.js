@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // A Herdr pane running hermes-aify must show whether the agent is working.
 //
-// Same defect as claude-aify (a-claimed-pane-reports-what-the-agent-is-doing.test.js). Hermes runs
+// Same defect as claude-aify (a-claimed-pane-reports-what-the-agent-is-doing.release.test.js). Hermes runs
 // hooks only for plugins listed in `plugins.enabled`, so the hooks ride on the aify-comms plugin
 // hermes-aify already enables: the launcher names lib/hermes-herdr-state.py in
 // AIFY_HERDR_HERMES_PLUGIN, and that plugin's loader hands it the PluginContext (tested in

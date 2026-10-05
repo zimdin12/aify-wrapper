@@ -4,7 +4,7 @@
 // Rendered launchers, a stub runtime that hangs until killed, and a sealed lease directory. The
 // assertions are what the operator asked for: a second automatic start of the same agent does not run
 // a second runtime, an explicit start replaces the first, and a clean exit gives the lease back.
-// agent-lease.test.js and an-agent-runs-once-per-host.test.js prove the decisions; this proves every
+// agent-lease.test.js and an-agent-runs-once-per-host.release.test.js prove the decisions; this proves every
 // launcher actually asks, on the path it really runs.
 
 import assert from "node:assert/strict";

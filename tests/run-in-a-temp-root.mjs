@@ -64,9 +64,17 @@ const inherited = withoutAgentSession(process.env);
 for (const name of Object.keys(inherited)) if (name.toUpperCase().startsWith('HERDR_')) delete inherited[name];
 const env = { ...inherited, TMPDIR: root, TEMP: root, TMP: root };
 
-const files = fs.readdirSync('tests').filter((f) => f.endsWith('.test.js')).map((f) => path.join('tests', f));
+// TWO TIERS. `npm test` runs the fast tier on every change; `npm run test:release` adds the files that render a
+// launcher or start real processes (`*.release.test.js`) and runs before a tag. On 2026-10-05 those 44 files held
+// about nine tenths of the suite's time, and a full run took 23-38 min on a loaded host.
+const release = process.argv.includes('--release');
+const files = fs.readdirSync('tests')
+  .filter((f) => f.endsWith('.test.js') && (release || !f.endsWith('.release.test.js')))
+  .map((f) => path.join('tests', f));
 
-const child = spawn(process.execPath, ['--test', ...files], { env, stdio: 'inherit' });
+const reporters = ['--test-reporter=tap', '--test-reporter-destination=stdout',
+  `--test-reporter=${new URL('./slowest-files-reporter.mjs', import.meta.url)}`, '--test-reporter-destination=stdout'];
+const child = spawn(process.execPath, ['--test', ...reporters, ...files], { env, stdio: 'inherit' });
 
 child.on('exit', (code, signal) => {
   try {

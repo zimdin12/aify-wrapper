@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // A Herdr pane running codex-aify must show whether the agent is working.
 //
-// Same defect as claude-aify (a-claimed-pane-reports-what-the-agent-is-doing.test.js): the claim
+// Same defect as claude-aify (a-claimed-pane-reports-what-the-agent-is-doing.release.test.js): the claim
 // reports under `herdr:aify`, Herdr shows that report instead of its own screen detection, and the
 // claim said `idle` once. codex-aify runs the agent inside a `codex app-server` it starts itself, so
 // the hooks go on that process's command line as `-c hooks.<Event>=...`.
@@ -117,7 +117,7 @@ const states = (lines) => lines.map(line => line.split(" --state ")[1]);
 test("A CLAIMED CODEX PANE FOLLOWS THE AGENT: working, blocked, working, idle, and idle after an interrupt", { skip: WIN }, () => {
   const { argv, hooks, fire, reports } = launch({ env: IN_A_PANE });
   // The claim's idle at launch, and the launcher's when the stub TUI exited
-  // (a-launcher-reports-its-runtimes-exit.test.js).
+  // (a-launcher-reports-its-runtimes-exit.release.test.js).
   const IDLE = "pane report-agent w1:p2 --source herdr:aify --agent codex-aify --state idle";
   assert.deepEqual(reports(), [IDLE, IDLE]);
   assert.deepEqual(Object.keys(hooks).sort(), ["Interrupt", "PermissionRequest", "PostToolUse", "Stop", "UserPromptSubmit"]);
