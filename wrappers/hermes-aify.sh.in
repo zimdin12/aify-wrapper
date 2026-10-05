@@ -936,11 +936,15 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
   fi
   # Parse the JSON line (mirror the pi-session-state grep/sed extraction above).
   HERMES_TUI_WS_URL="$(printf '%s' "$HERMES_HOST_JSON" | sed -E 's/.*"wsUrl"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+  # THE BEARER TOKEN NEVER REACHES A PRINTED LINE: this stderr is a managed worker's console, which console_tail
+  # and the dashboard serve, and the answer carries the token twice, as `token` and in the wsUrl's `?token=`
+  # (2026-10-05). The answer itself stays whole: the TUI needs the URL.
+  _hermes_host_shown="$(printf '%s' "$HERMES_HOST_JSON" | sed -E 's/("token"[[:space:]]*:[[:space:]]*")[^"]*"/\1<redacted>"/g; s/([?&]token=)[^&"[:space:]]*/\1<redacted>/g')"
   if [ -z "$HERMES_TUI_WS_URL" ] || [ "$HERMES_TUI_WS_URL" = "$HERMES_HOST_JSON" ]; then
-    echo "[hermes-aify] FATAL: could not parse wsUrl from gateway-host output: $HERMES_HOST_JSON" >&2
+    echo "[hermes-aify] FATAL: could not parse wsUrl from gateway-host output: $_hermes_host_shown" >&2
     exit 1
   fi
-  echo "[hermes-aify] managed gateway host ready: $HERMES_HOST_JSON" >&2
+  echo "[hermes-aify] managed gateway host ready: $_hermes_host_shown" >&2
   # Resolve the agent's REAL native hermes session id from the agent-keyed marker
   # `aify-hermes-session-<agentId>` (written by the bridge on register/bind via
   # hermes-endpoint.js writeSessionIdMarker). If present we resume that SAME real

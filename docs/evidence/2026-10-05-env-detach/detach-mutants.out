@@ -21,6 +21,9 @@ KILLED   R1b a reclaim in progress is ignored: exit=1; not ok 27 - a reclaim alr
 KILLED   R2 the teardown forgets an instance it could not confirm gone: exit=1; not ok 28 - A TEARDOWN THAT CANNOT CONFIRM THE SERVER GONE keeps it recorded, so the next launch joi | not ok 30 - A SIGNAL BEFORE THE INSTANCE IS UP whose teardown cannot confirm the server gone keeps i
 KILLED   R2b the teardown never forgets: exit=1; not ok 19 - A SIGNAL BEFORE THE INSTANCE IS UP takes the half-started instance down with the launche | not ok 29 - CONTROL: a teardown that confirms the server gone forgets it
 KILLED   R3 each question may take the CLI's full timeout: exit=1; not ok 23 - THE STOP'S WAIT IS FIVE SECONDS OF WALL TIME: each question is given only what is left o
+KILLED   T1 the success line prints the host's whole answer: exit=1; not ok 48 - THE SUCCESS LINE names the gateway without its token, and the TUI still gets the URL tha
+KILLED   T2 the parse-failure line prints the host's whole answer: exit=1; not ok 49 - THE PARSE-FAILURE LINE names what came back without its token
+KILLED   T3 the wsUrl's ?token= is left in: exit=1; not ok 48 - THE SUCCESS LINE names the gateway without its token, and the TUI still gets the URL tha | not ok 49 - THE PARSE-FAILURE LINE names what came back without its token
 KILLED   R3-LATE the time left is checked only before the sleep: exit=1; not ok 24 - A SLEEP THAT WAKES LATE starts no question after the stop's deadline
-restored: exit=0 # pass 47 # fail 0
-all 24 mutants killed at their named test
+restored: exit=0 # pass 49 # fail 0
+all 27 mutants killed at their named test

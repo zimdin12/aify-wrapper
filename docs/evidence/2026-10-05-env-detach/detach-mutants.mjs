@@ -11,11 +11,13 @@ const TESTS = [
   "tests/herdr-aify-env-joins-and-stops-by-name.test.js",
   "tests/herdr-aify-attaches-a-tui.test.js",
   "tests/herdr-supervisor.test.js",
+  "tests/the-gateway-token-is-never-printed.test.js",
 ];
 const BIN = "bin/herdr-aify.mjs";
 const STOP = "lib/herdr-stop.mjs";
 const SUP = "lib/herdr-supervisor.mjs";
 const OWNER = "lib/herdr-owner.mjs";
+const HERMES = "wrappers/hermes-aify.sh.in";
 const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
 const once = (from, to) => (s) => {
   if (s.split(from).length !== 2) throw new Error(`site not unique: ${from.slice(0, 60)}`);
@@ -83,6 +85,15 @@ const MUTANTS = [
     "CONTROL: a teardown that confirms the server gone forgets it"],
   [STOP, "R3 each question may take the CLI's full timeout", once("    answer = ask(left);", "    answer = ask(15000);"),
     "THE STOP'S WAIT IS FIVE SECONDS OF WALL TIME"],
+  // The gateway token in a managed hermes console (graph-tech-lead's spawn test, 2026-10-05).
+  [HERMES, "T1 the success line prints the host's whole answer",
+    once('  echo "[hermes-aify] managed gateway host ready: $_hermes_host_shown" >&2', '  echo "[hermes-aify] managed gateway host ready: $HERMES_HOST_JSON" >&2'),
+    "THE SUCCESS LINE names the gateway without its token"],
+  [HERMES, "T2 the parse-failure line prints the host's whole answer",
+    once('gateway-host output: $_hermes_host_shown" >&2', 'gateway-host output: $HERMES_HOST_JSON" >&2'),
+    "THE PARSE-FAILURE LINE names what came back without its token"],
+  [HERMES, "T3 the wsUrl's ?token= is left in", once("; s/([?&]token=)[^&\"[:space:]]*/\\1<redacted>/g'", "'"),
+    "THE SUCCESS LINE names the gateway without its token"],
   [STOP, "R3-LATE the time left is checked only before the sleep",
     once("    if (left <= 0) break;\n    answer = ask(left);", "    answer = ask(Math.max(1, left));"),
     "A SLEEP THAT WAKES LATE"],

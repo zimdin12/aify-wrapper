@@ -62,12 +62,13 @@ function runtimeStub(node) {
 }
 
 /** Render one launcher with a stub bridge and a stub runtime, in a fresh directory. */
-function world(client, { reader, registry }) {
+function world(client, { reader, registry, bridgeFiles = {} }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `aify-launch-${client}-`));
   const [out, stubs, home, bridge] = ["out", "stubs", "home", "bridge"].map((d) => path.join(dir, d));
   for (const d of [out, stubs, home, bridge]) fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(bridge, "agent-for-handle.mjs"), LOOKUP);
   if (reader) readerBridge(bridge);
+  for (const [name, text] of Object.entries(bridgeFiles)) fs.writeFileSync(path.join(bridge, name), text);
   // claude-aify keeps a `--resume` only for a session it can find on disk; codex-aify reads CODEX_HOME.
   fs.mkdirSync(path.join(home, ".claude", "projects", "p"), { recursive: true });
   for (const id of [KNOWN, UNKNOWN]) fs.writeFileSync(path.join(home, ".claude", "projects", "p", `${id}.jsonl`), "{}\n");
@@ -90,8 +91,8 @@ function world(client, { reader, registry }) {
  *   the runtime's environment ({} when it never started); `args` its argv; `appServerArgs` codex's
  *   app-server argv.
  */
-export function launch(client, args, { rewriting = true, reader = true, definitions = {}, env: extraEnv = {}, registry, edit } = {}) {
-  const w = world(client, { reader, registry });
+export function launch(client, args, { rewriting = true, reader = true, definitions = {}, env: extraEnv = {}, registry, edit, bridgeFiles } = {}) {
+  const w = world(client, { reader, registry, bridgeFiles });
   // A test that needs a launcher the installer would never write edits the rendered text, never the template.
   if (edit) fs.writeFileSync(w.launcher, edit(fs.readFileSync(w.launcher, "utf8")));
   const lookups = path.join(w.dir, "lookups");
