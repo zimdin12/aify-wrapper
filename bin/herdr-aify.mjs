@@ -4,18 +4,22 @@
 //   herdr-aify            THE ONE THIS HOST KEEPS. Wrapper support, no daemon, for RESIDENT sessions:
 //                         leaving it DETACHES and the next launch comes back to the same spaces and
 //                         the same agents, exactly as an ordinary Herdr does.
-//   herdr-aify env        A FRESH INVOCATION THAT DIES WITH THE COMMAND, plus a dedicated aify-env in
-//                         the first space, for MANAGED work. A new one never adopts an old one's
-//                         workers -- that is what the invocation machinery is for, and it is why the
-//                         two modes do not share a profile.
+//   herdr-aify env        A dedicated Herdr with its own aify-env in the first space, for MANAGED work.
+//                         Leaving it DETACHES too (0.8.6), and a second `herdr-aify env` joins the
+//                         running one; `herdr-aify env --stop` ends it. A NEW one, started once the old
+//                         one has ended, never adopts the old one's workers -- that is what the
+//                         invocation machinery is for, and why the two modes do not share a profile.
 //   herdr-aify --status   what this host's invocations left behind
-//   herdr-aify --stop     end the recorded instance, even if its launcher was killed without a signal
+//   herdr-aify --stop     end this host's resident herdr; `herdr-aify env --stop` ends the env instance, even if
+//                         its launcher was killed without a signal
 //   herdr-aify --prune    delete what dead invocations left behind
 //   herdr-aify --no-attach  run headless instead of taking this terminal over with the Herdr TUI
 //
 // WHAT IT IS FOR, in the operator's words: "a dedicated Herdr instance with the actual aify-env
 // process in its own space. Ending herdr-aify ends that Herdr instance, its env, and its workers. A
 // new invocation starts without resurrecting the previous workers. Ordinary Herdr remains separate."
+// AND THEN, 2026-10-05: closing a terminal should not end managed work; "make them work in same manner",
+// so leaving detaches and only `herdr-aify env --stop` ends that Herdr, its env and its workers.
 //
 // THE SPLIT IT IMPLEMENTS. Launch and process lifetime belong to aify-wrapper, which is this file.
 // Worker and PTY authority stay in aify-env, which is why this starts exactly one thing -- the
@@ -38,7 +42,8 @@ import { herdr, serverAnswer } from "../lib/herdr-cli.mjs";
 import { resolveHerdrBinary } from "../lib/herdr-binary.mjs";
 import { herdrServerEnv, profilePaths, residentPaths } from "../lib/herdr-profile.mjs";
 import { ensureResident, serverEnvFor } from "../lib/herdr-resident.mjs";
-import { HerdrOwner, clearProfileOwner, profileOwnerState, writeProfileOwner } from "../lib/herdr-owner.mjs";
+import { HerdrOwner, claimStart, clearProfileOwner, profileOwnerState, writeProfileOwner } from "../lib/herdr-owner.mjs";
+import { stopRecorded, stopTarget } from "../lib/herdr-stop.mjs";
 import { HerdrAifyInstance } from "../lib/herdr-supervisor.mjs";
 
 /** Every invocation of every herdr-aify on this host lives under here. */
@@ -54,10 +59,9 @@ const processes = {
     // time — the documented last resort could never once have fired. On Windows the group concept
     // does not apply and `taskkill /T` walks the tree instead.
     //
-    // `independent` IS THE RESIDENT'S, and it is the difference between the two lifetimes rather
-    // than a tuning knob. A dedicated instance's server must die with the command, so it stays a
-    // ref'd child this process waits on and kills. The resident must OUTLIVE the command — the
-    // launcher tells the operator "your agents keep running" as it exits — and a plain child makes
+    // `independent` IS FOR A SERVER THAT OUTLIVES THE COMMAND, which both modes' servers do since 0.8.6
+    // (leaving the session detaches). The launcher tells the operator "your agents keep running" as it
+    // exits, and a plain child makes
     // that a lie twice over: MEASURED on Windows, the launcher could not exit at all after the TUI
     // closed (a ref'd child handle holds the event loop open, and `main` sets `exitCode` rather than
     // calling `exit`), and the server shared the launcher's console, so closing the terminal tab
@@ -255,68 +259,19 @@ export function alreadyRunning(state) {
 }
 
 /**
- * End the instance this host has recorded, whether or not its launcher is still around.
+ * What `herdr-aify env` does about the instance this profile records: "start" a new one, "join" the running one, or
+ * "refuse". PURE, so the decision is a test rather than a launch.
  *
- * WHY THIS EXISTS. Teardown normally runs from the launcher's signal handlers, and on Windows those
- * only fire for a real console Ctrl-C or a window close. `taskkill`, End Task, a dying parent, or an
- * SSH session going away deliver nothing — measured: a launcher killed that way left its dedicated
- * Herdr, its aify-env and their panes running, with an owner pointer nobody would ever clear.
- *
- * The instance is still perfectly addressable in that state: the owner pointer names the invocation,
- * and the invocation names a socket. So this is not a workaround, it is the direct route.
+ * THE RECORDED INSTANCE'S OWN SOCKET DECIDES, not its launcher. Leaving the session detaches, so the launcher that
+ * wrote the pointer is normally gone while its instance runs on; reading "no live owner" as "free" would start a
+ * second aify-env on top of it. `answer` is `serverAnswer` of that socket. A socket that cannot tell refuses, and
+ * so does a live launcher whose server is not serving (it is starting or stopping).
  */
-async function stopRecorded({ profileRoot = defaultProfileRoot(), env = process.env } = {}) {
-  const state = await profileOwnerState(profileRoot);
-  if (!state?.invocation) {
-    // THE RESIDENT IS THE OTHER THING THIS COMMAND CAN HOLD, and it outlives every launcher — so
-    // "nothing recorded" is not the same as "nothing running". Detaching from it is the ordinary
-    // way to leave; this is how an operator ends it on purpose.
-    const bin = resolveHerdrBinary({ env }).bin;
-    const paths = residentPaths({ profileRoot });
-    const resident = serverEnvFor(env, paths);
-    const before = herdr(["pane", "list"], { bin, env: resident });
-    const running = serverAnswer(before);
-    if (running === "serving") {
-      const stopped = herdr(["server", "stop"], { bin, env: resident });
-      const after = serverAnswer(herdr(["pane", "list"], { bin, env: resident }));
-      process.stderr.write(
-        `herdr-aify: this host's herdr — ${stopped.ok ? "stop accepted" : `stop refused (${stopped.error})`}, ` +
-          `${goneWords(after)}\n`,
-      );
-      return after === "not-running" ? 0 : 1;
-    }
-    // "COULD NOT ASK" WAS REPORTED AS "NOTHING IS RUNNING", which is false in exactly the case where
-    // the operator most needs the truth: a resident that is up but slow to answer.
-    if (running === "unknown") {
-      process.stderr.write(`herdr-aify: could not tell whether this host's herdr is running (${before.error}); nothing was stopped\n`);
-      return 1;
-    }
-    process.stderr.write("herdr-aify: nothing is running here to stop\n");
-    return 0;
-  }
-  const paths = profilePaths({ profileRoot, invocation: state.invocation });
-  const serverEnv = herdrServerEnv(env, paths);
-  const bin = resolveHerdrBinary({ env }).bin;
-
-  const stopped = herdr(["server", "stop"], { bin, env: serverEnv });
-  // ASKED AGAIN, because "the request was accepted" is not "the server is gone", and this command's
-  // entire job is the second one.
-  const after = serverAnswer(herdr(["pane", "list"], { bin, env: serverEnv }));
-  clearProfileOwner(profileRoot, state.invocation);
-
-  process.stderr.write(
-    `herdr-aify: invocation ${state.invocation} — ` +
-      `${stopped.ok ? "stop accepted" : `stop refused (${stopped.error})`}, ` +
-      `${goneWords(after)}\n`,
-  );
-  return after === "not-running" ? 0 : 1;
-}
-
-/** What a post-stop read says, in words. Three answers, because "could not tell" is not "still up". */
-function goneWords(answer) {
-  if (answer === "not-running") return "confirmed gone";
-  if (answer === "serving") return "STILL ANSWERING";
-  return "could not confirm it is gone";
+export function incumbentAction(state, answer) {
+  if (!state?.invocation) return "start";
+  if (answer === "serving") return "join";
+  if (answer === "not-running" && !alreadyRunning(state)) return "start";
+  return "refuse";
 }
 
 /**
@@ -374,6 +329,20 @@ export function shouldAttach({ argv = [], io = process } = {}) {
  * which is exactly the question that went unasked while the command shipped with no TUI at all.
  */
 const realInstance = ({ profileRoot, invocation }) => new HerdrAifyInstance({ profileRoot, invocation, processes, clock });
+
+/**
+ * SIGBREAK IS THE WINDOWS ONE AND WAS MISSING. Node never emits SIGTERM on Windows, so a console
+ * Ctrl-Break — and several of the ways a terminal ends a command — reached no handler at all.
+ */
+function installSignalHandler(handler) {
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"]) {
+    try {
+      process.on(signal, handler);
+    } catch {
+      // A platform that does not know a signal name is not a reason to fail the launch.
+    }
+  }
+}
 
 /**
  * Plain `herdr-aify`: attach to the ONE Herdr this host keeps, starting it only if nothing answers.
@@ -434,6 +403,12 @@ async function run({
   // Herdr, so any test calling `run()` without naming a mode started one. Three were left running by
   // the suite before this was sealed.
   resident = runResident,
+  // The herdr CLI that asks a recorded instance whether it is still serving; injected for the same reason.
+  cli = herdr,
+  // Where a signal's handler is installed, and how it ends the process: injected so what a signal does before and
+  // after the instance is up is a test, not a Ctrl-C.
+  onSignal = installSignalHandler,
+  exit = code => process.exit(code),
 } = {}) {
   // THE BINARY FIRST, because both modes need it and a missing one must name every place it looked
   // rather than surfacing as ENOENT from whichever call happened to be first.
@@ -445,21 +420,49 @@ async function run({
     }
     return resident({ profileRoot, env, attaching, bin: binary.bin });
   }
-  // A SECOND LAUNCH REPORTS AND STOPS. Without this the incumbent's owner pointer is simply
-  // overwritten: two dedicated Herdrs and two dedicated aify-envs run with no refusal anywhere, and
-  // when the SECOND one exits it clears the pointer, leaving the first unowned. `profileOwnerState`
-  // existed for exactly this question and nothing asked it.
-  // `owned`, NOT `live`. This read `incumbent?.live` — a field `profileOwnerState` has never
-  // returned — so it was always undefined and the refusal never fired once: a second `herdr-aify`
-  // started a second Herdr and a second dedicated aify-env, and clobbered the first one's owner
-  // pointer on the way. Caught by running two of them, not by a test, which is why there is now a
-  // test that drives this function's REAL return shape.
-  const incumbent = await profileOwnerState(profileRoot);
-  if (alreadyRunning(incumbent)) {
+  // RESOLVED BEFORE ANYTHING IS SPAWNED, and refused with the search path when it is missing. The
+  // first real run of this command died on `spawn herdr ENOENT` against a host where Herdr was
+  // installed and working: its directory is on neither the user nor the system PATH, so the bare
+  // name resolves only for shells Herdr itself started. `ENOENT` told the operator nothing.
+  const binary = resolveHerdrBinary({ env });
+  if (!binary.ok) {
+    process.stderr.write(`herdr-aify: ${binary.why}\n`);
+    return 1;
+  }
+
+  // A SECOND LAUNCH NEVER STARTS A SECOND INSTANCE. Two dedicated Herdrs mean two dedicated aify-envs, and the
+  // later one supersedes the earlier and reaps its workers. The recorded instance is asked through its OWN
+  // socket, because its launcher is gone once the operator has detached (see `incumbentAction`). Decided and
+  // started under the profile's start lock, so two launches at once cannot both read "nothing recorded".
+  const claim = claimStart(profileRoot);
+  if (!claim.ok) {
     process.stderr.write(
-      `herdr-aify: an instance is already running here (invocation ${incumbent.invocation}${
-        incumbent.pid ? `, pid ${incumbent.pid}` : ""
-      }).\n  Close it first, or run --status to see what this host holds.\n`,
+      `herdr-aify: another \`herdr-aify env\` (pid ${claim.holder > 0 ? claim.holder : "not yet written"}) is starting this host's instance; nothing was started.\n`
+        + `  Run \`herdr-aify env\` again once it is up to attach to it. A lock left by a crash is ${claim.file}\n`,
+    );
+    return 3;
+  }
+  const incumbent = await profileOwnerState(profileRoot);
+  let answer = null;
+  if (incumbent?.invocation) {
+    const recorded = profilePaths({ profileRoot, invocation: incumbent.invocation });
+    answer = serverAnswer(cli(["pane", "list"], { bin: binary.bin, env: herdrServerEnv(env, recorded) }));
+  }
+  const action = incumbentAction(incumbent, answer);
+  if (action !== "start") claim.release();
+  if (action === "join") {
+    return joinRunning({
+      instance: makeInstance({ profileRoot, invocation: incumbent.invocation }),
+      invocation: incumbent.invocation, env, attaching, bin: binary.bin,
+    });
+  }
+  if (action === "refuse") {
+    process.stderr.write(
+      answer === "unknown"
+        ? `herdr-aify: could not tell whether instance ${incumbent.invocation} is running; nothing was started.\n`
+          + "  Try again, or `herdr-aify env --stop` to end it.\n"
+        : `herdr-aify: instance ${incumbent.invocation} has a live launcher and is not serving yet (starting or stopping); `
+          + "nothing was started. Try again in a moment.\n",
     );
     return 3;
   }
@@ -492,6 +495,7 @@ async function run({
     } catch {
       // The owner pointer is a courtesy to the next launch; failing to clear it must not stop exit.
     }
+    claim.release();
     process.stderr.write(`${line}\n`);
     // RETURNS THE CODE RATHER THAN EXITING, and the exit is the entry point's job. Calling
     // `process.exit` here ended whatever process was hosting this run: under `node --test` it killed
@@ -501,31 +505,29 @@ async function run({
     return code;
   };
 
-  // SIGBREAK IS THE WINDOWS ONE AND WAS MISSING. Node never emits SIGTERM on Windows, so a console
-  // Ctrl-Break — and several of the ways a terminal ends a command — reached no handler at all.
-  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"]) {
+  // LEAVING A RUNNING INSTANCE: this launcher goes, the instance stays. The owner endpoint closes with it,
+  // which aify-env does not need after its start; the pointer stays, naming the invocation a later
+  // `herdr-aify env` joins and `herdr-aify env --stop` ends.
+  let up = false;
+  const detach = async code => {
+    if (closing) return code;
+    closing = true;
     try {
-      process.on(signal, () => {
-        // A SIGNAL STILL ENDS THE PROCESS, because nothing is waiting on this path to return: the
-        // operator asked for it to stop. The teardown runs first, then the exit.
-        shutdown(0)
-          .then(code => process.exit(code))
-          .catch(() => process.exit(1));
-      });
+      await owner.close();
     } catch {
-      // A platform that does not know a signal name is not a reason to fail the launch.
+      // Nothing to release beyond this process, which is leaving anyway.
     }
-  }
+    process.stderr.write("herdr-aify: detached; aify-env and its agents are still running. `herdr-aify env --stop` ends them\n");
+    return code;
+  };
 
-  // RESOLVED BEFORE ANYTHING IS SPAWNED, and refused with the search path when it is missing. The
-  // first real run of this command died on `spawn herdr ENOENT` against a host where Herdr was
-  // installed and working: its directory is on neither the user nor the system PATH, so the bare
-  // name resolves only for shells Herdr itself started. `ENOENT` told the operator nothing.
-  const binary = resolveHerdrBinary({ env });
-  if (!binary.ok) {
-    process.stderr.write(`herdr-aify: ${binary.why}\n`);
-    return await shutdown(1);
-  }
+  // A SIGNAL ENDS THIS PROCESS. Before the instance is up it takes the half-started instance with it; once it is
+  // up, a closed terminal or Ctrl-Break DETACHES, as leaving the session does.
+  onSignal(() => {
+    (up ? detach(0) : shutdown(0))
+      .then(code => exit(code))
+      .catch(() => exit(1));
+  });
 
   const started = await instance.start({
     env,
@@ -539,6 +541,9 @@ async function run({
     process.stderr.write(`herdr-aify: could not start (${started.phase}): ${started.error}\n`);
     return await shutdown(1);
   }
+  up = true;
+  // Recorded and serving: a launch from here on joins it, so the lock has done its job.
+  claim.release();
 
   process.stderr.write(`herdr-aify: invocation ${invocation}\n`);
   process.stderr.write(`herdr-aify: herdr socket ${instance.profile.socketPath}\n`);
@@ -557,12 +562,15 @@ async function run({
   // `herdr` is the client that draws it. Without this the command printed these three lines in front
   // of a terminal where nothing opened and Ctrl-C did nothing, because the launcher owned a console
   // it was not using and the TUI that should have owned it was never started.
+  // LEAVING DETACHES, as it does for the resident (operator, 2026-10-05: "make them work in same manner";
+  // `--stop` is the only end). It used to end the instance, so closing a terminal ended aify-env and every
+  // managed worker. Only the server going away, a `herdr-aify env --stop` from another shell or a crash,
+  // still ends this run as a teardown.
   if (attaching) {
-    process.stderr.write("herdr-aify: attaching — leaving the Herdr session ends this instance\n");
+    process.stderr.write("herdr-aify: attaching — leaving the Herdr session DETACHES; `herdr-aify env --stop` ends it\n");
     const client = instance.attachTui({ env, herdrBin: binary.bin });
-    // EITHER END CAN GO FIRST. Leaving the session is the ordinary exit; the server going away (a
-    // `--stop` from another shell, a crash) must not leave a client drawing a dead session.
-    await Promise.race([client.exited, instance.whenServerExits()]);
+    const ended = await Promise.race([client.exited.then(() => "left"), instance.whenServerExits().then(() => "server-gone")]);
+    if (ended === "left") return await detach(0);
     try {
       client.kill();
     } catch {
@@ -571,13 +579,28 @@ async function run({
     return await shutdown(0);
   }
 
-  // NO TERMINAL TO ATTACH TO, so this stays headless and says so. THE COMMAND'S LIFETIME IS STILL THE
-  // INSTANCE'S LIFETIME, in both directions: waiting on a promise that never resolves held only one
-  // of them, and stopping the server from elsewhere left this process alive in front of nothing.
-  process.stderr.write("herdr-aify: no terminal to attach to; running headless. Close this command to end all of it\n");
-  await instance.whenServerExits();
-  process.stderr.write("herdr-aify: the dedicated herdr exited" + String.fromCharCode(10));
-  return await shutdown(0);
+  // NO TERMINAL TO ATTACH TO: started, and left running, as the resident is.
+  process.stderr.write("herdr-aify: no terminal to attach to; `herdr-aify env` in a terminal attaches to it\n");
+  return await detach(0);
+}
+
+/**
+ * A second `herdr-aify env` while one is running JOINS it. Starting another would start a second aify-env, which
+ * supersedes the one serving this machine and reaps its workers; refusing was right while leaving ended the instance,
+ * and is wrong now that leaving detaches.
+ */
+async function joinRunning({ instance, invocation, env, attaching, bin }) {
+  if (!attaching) {
+    process.stderr.write(`herdr-aify: instance ${invocation} is already running; \`herdr-aify env\` in a terminal attaches, \`herdr-aify env --stop\` ends it\n`);
+    return 0;
+  }
+  process.stderr.write(`herdr-aify: attaching to the running instance ${invocation} — leaving DETACHES; \`herdr-aify env --stop\` ends it\n`);
+  const client = instance.attachTui({ env, herdrBin: bin });
+  await client.exited;
+  // WHAT THIS LAUNCH KNOWS, and no more: it joined a herdr that was serving, and left it. Whether aify-env is still
+  // up in w1:p1 is that pane's to show; nor can it tell its own leaving from an `env --stop` elsewhere.
+  process.stderr.write(`herdr-aify: left instance ${invocation}; \`herdr-aify env\` attaches again, \`herdr-aify env --stop\` ends it\n`);
+  return 0;
 }
 
 const USAGE = [
@@ -586,9 +609,9 @@ const USAGE = [
   "",
   "  herdr-aify        this host's herdr, for RESIDENT sessions. claude-aify panes claim themselves",
   "                    here and come back after a restart. Leaving it DETACHES; agents keep running.",
-  "  herdr-aify env    a fresh instance with a dedicated aify-env, for MANAGED work. Dies with the",
-  "                    command, and never adopts a previous instance's workers.",
-  "  --stop            end whichever of the two this host is running. `herdr server stop` cannot:",
+  "  herdr-aify env    a dedicated Herdr with its own aify-env, for MANAGED work. Leaving it DETACHES;",
+  "                    a second `herdr-aify env` attaches to it. A new one never adopts an ended one's workers.",
+  "  --stop            end this host's herdr; `herdr-aify env --stop` ends the env instance. `herdr server stop` cannot:",
   "                    this profile keeps its own socket, which is what isolates it from your herdr.",
 ].join(String.fromCharCode(10)) + String.fromCharCode(10);
 
@@ -600,7 +623,7 @@ async function main(argv) {
     process.stdout.write(`${JSON.stringify(invocationsOnDisk(), null, 1)}\n`);
     return 0;
   }
-  if (argv.includes("--stop")) return stopRecorded();
+  if (argv.includes("--stop")) return stopRecorded({ profileRoot: defaultProfileRoot(), target: stopTarget(argv) });
   if (argv.includes("--prune")) return pruneInvocations();
   if (argv.includes("--help") || argv.includes("-h")) {
     process.stdout.write(USAGE);
@@ -616,7 +639,7 @@ async function main(argv) {
   return run({ withEnv: mode.withEnv });
 }
 
-export { run, processes, stopRecorded };
+export { run, processes };
 
 if (isMainModule(import.meta.url)) {
   // A THROW FROM `run()` USED TO SURFACE AS A RAW UNHANDLED REJECTION. The reachable window is real:

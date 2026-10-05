@@ -353,14 +353,17 @@ launch, and its diagnostics go to `~/.aify/herdr/claim.log` rather than to nowhe
 herdr-aify                       # this host's persistent Herdr: resident sessions, no aify-env
 herdr-aify env                   # an isolated instance with a dedicated aify-env in its first space
 herdr-aify --status              # what previous invocations left on this host
-herdr-aify --stop                # end the recorded instance -- or the resident -- from any shell
+herdr-aify --stop                # end this host's resident herdr, from any shell
+herdr-aify env --stop            # end the env instance: its herdr, aify-env and every managed worker
 ```
 
 `env` is the isolated one: its own socket and config roots, a dedicated `aify-env` in its first
-space, and closing the command ends that Herdr, the env and its workers -- a later invocation cannot
-adopt the previous one's processes. Plain `herdr-aify` is the opposite and is meant to be: ONE
-persistent Herdr with wrapper support, where leaving the session DETACHES and the next launch comes
-back to the same spaces and the same agents. `--stop` is how you end that one.
+space. Since 0.8.6 leaving it DETACHES, as the plain one does: the env and its workers keep running, a
+second `herdr-aify env` attaches to the same instance, and `herdr-aify env --stop` ends that Herdr, the
+env and its workers. A new invocation, once the old one has ended, cannot adopt its processes. Plain
+`herdr-aify` is ONE persistent Herdr with wrapper support, where leaving the session DETACHES and the
+next launch comes back to the same spaces and the same agents. `herdr-aify --stop` ends that one, and
+only that one.
 
 It does not touch an ordinary Herdr on the same machine, and it does not need the plugin. It also
 does not need `herdr` on your PATH — Herdr only puts itself on the PATH of the shells it starts, so

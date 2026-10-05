@@ -58,7 +58,7 @@ function fakeProcesses({
     calls,
     handle,
     spawn(command, argv, options) {
-      calls.push({ op: "spawn", command, argv, env: options.env });
+      calls.push({ op: "spawn", command, argv, env: options.env, independent: options.independent });
       return handle;
     },
     run(command, argv, options) {
@@ -277,6 +277,31 @@ test("a server that will not stop IS killed, because the workers are downstream 
   assert.equal(stopped.serverStopped, false);
   assert.equal(stopped.killed, true, "a Herdr that would not stop was left running with its workers");
   assert.deepEqual(processes.calls.filter(call => call.op === "kill").map(call => call.pid), [4242]);
+});
+
+test("THE SERVER IS SPAWNED INDEPENDENT, so leaving the session (0.8.6) does not take it down with the launcher", async () => {
+  const processes = fakeProcesses();
+  await instanceIn(processes).start({ io: fakeIo() });
+  const spawned = processes.calls.filter(call => call.op === "spawn");
+  assert.equal(spawned.length, 1);
+  assert.equal(spawned[0].independent, true, "a plain child shares the launcher's console and dies with its terminal");
+});
+
+test("A SIGNAL BETWEEN THE SPAWN AND ITS `spawn` EVENT still stops the server, which would otherwise outlive the launcher", async () => {
+  const processes = fakeProcesses();
+  let spawnSettles;
+  processes.handle.started = new Promise(resolve => {
+    spawnSettles = resolve;
+  });
+  const instance = instanceIn(processes);
+  const starting = instance.start({ io: fakeIo() });
+  assert.ok(processes.calls.some(call => call.op === "spawn"), "control: the server was spawned before the stop");
+  const stopping = instance.stop({});
+  spawnSettles();
+  const stopped = await stopping;
+  assert.equal(stopped.everServed, true, "a server that did start was reported as never started, and left running");
+  assert.ok(processes.calls.some(call => call.op === "run" && call.argv.join(" ") === "server stop"), "the server was never asked to stop");
+  await starting;
 });
 
 test("teardown is idempotent, so a signal and an exit do not both reach for processes", async () => {

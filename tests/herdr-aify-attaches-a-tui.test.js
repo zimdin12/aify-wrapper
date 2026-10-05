@@ -92,7 +92,7 @@ test("a client that cannot start resolves rather than hanging the command for ev
   assert.equal(await client.exited, null, "a failed attach left the launcher waiting on nothing");
 });
 
-test("THE CALL SITE: a run with a terminal ATTACHES, and ends when the session is left", { timeout: 15000 }, async () => {
+test("THE CALL SITE: a run with a terminal ATTACHES, and leaving the session DETACHES (0.8.6)", { timeout: 15000 }, async () => {
   // THE TEST THAT WAS MISSING, and its absence is the whole incident. `attachTui` proven in
   // isolation says nothing about whether `run` ever calls it -- and it did not, for the feature's
   // entire life, while every phase reported ok and the suite was green.
@@ -134,11 +134,38 @@ test("THE CALL SITE: a run with a terminal ATTACHES, and ends when the session i
   assert.deepEqual(events, ["start", "attach"], "the run never attached a TUI");
 
   endSession(0);                       // the operator leaves the Herdr session
-  await Promise.race([finished, new Promise(r => setTimeout(r, 3000))]);
-  assert.ok(events.includes("stop"), "leaving the session did not end the instance");
+  const code = await Promise.race([finished, new Promise(r => setTimeout(() => r("still running"), 3000))]);
+  assert.equal(code, 0, "the run did not return once the session was left");
+  // LEAVING DETACHES: the operator ruled that closing a terminal must not end managed work (2026-10-05).
+  assert.ok(!events.includes("stop"), "leaving the session ended the instance");
 });
 
-test("NEGATIVE CONTROL: with no terminal the same run stays headless", { timeout: 15000 }, async () => {
+test("THE SERVER GOING AWAY still ends an attached run with a teardown", { timeout: 15000 }, async () => {
+  const { run } = await import("../bin/herdr-aify.mjs");
+  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ah-"));
+  const invocation = randomUUID();
+  const events = [];
+  let serverGone = null;
+  const fake = {
+    context: buildInstanceContext({ profileRoot, invocation, profileRef: "integrated", platform: process.platform }),
+    profile: { socketPath: path.join(profileRoot, "s.sock") },
+    start: async () => ({ ok: true, paneId: "w1:p1" }),
+    attachTui: () => ({ exited: new Promise(() => {}), kill: () => events.push("client killed") }),
+    whenServerExits: () => new Promise(resolve => (serverGone = resolve)),
+    stop: async () => {
+      events.push("stop");
+      return { everServed: true, alreadyGone: true, confirmedGone: true };
+    },
+  };
+  const finished = run({ profileRoot, env: SEALED_ENV, attaching: true, withEnv: true, makeInstance: () => fake });
+  finished.catch(() => {});
+  for (let i = 0; i < 200 && !serverGone; i += 1) await new Promise(r => setTimeout(r, 10));
+  serverGone();                        // `herdr-aify env --stop` from another shell, or a crash
+  await Promise.race([finished, new Promise(r => setTimeout(r, 3000))]);
+  assert.deepEqual(events, ["client killed", "stop"], "a run whose server went away did not tear down");
+});
+
+test("NEGATIVE CONTROL: with no terminal the same run starts no TUI, and leaves the instance running", { timeout: 15000 }, async () => {
   // Without this, a run that attached unconditionally would pass the test above -- and would spray a
   // TUI into whatever pipe a scripted caller was reading.
   const { run } = await import("../bin/herdr-aify.mjs");
@@ -161,10 +188,15 @@ test("NEGATIVE CONTROL: with no terminal the same run stays headless", { timeout
     stop: async () => ({ everServed: true, serverStopped: true, killed: false, confirmedGone: true }),
   };
 
-  const finished = run({ profileRoot, env: SEALED_ENV, attaching: false, withEnv: true, makeInstance: () => fake });
-  finished.catch(() => {});
-  for (let i = 0; i < 200 && !stopServer; i += 1) await new Promise(r => setTimeout(r, 10));
-  assert.deepEqual(events, [], "a headless run started a TUI into a pipe");
-  stopServer();
-  await Promise.race([finished, new Promise(r => setTimeout(r, 3000))]);
+  fake.stop = async () => {
+    events.push("stop");
+    return { everServed: true, confirmedGone: true };
+  };
+  const code = await Promise.race([
+    run({ profileRoot, env: SEALED_ENV, attaching: false, withEnv: true, makeInstance: () => fake }),
+    new Promise(r => setTimeout(() => r("still running"), 3000)),
+  ]);
+  assert.equal(code, 0, "a headless run waited on its instance instead of returning");
+  assert.deepEqual(events, [], "a headless run started a TUI into a pipe, or ended the instance it started");
+  assert.equal(stopServer, null, "a headless run waited on the server");
 });

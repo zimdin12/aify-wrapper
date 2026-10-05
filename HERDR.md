@@ -43,15 +43,16 @@ hand -- the resident links it into its own profile:
 herdr-aify                       # this host's persistent Herdr: residents only, no aify-env
 herdr-aify env                   # an isolated Herdr with a dedicated aify-env in its first space
 herdr-aify --status              # what previous invocations left on this host
-herdr-aify --stop                # end the recorded instance -- or the resident -- from any shell
+herdr-aify --stop                # end this host's resident Herdr, from any shell
+herdr-aify env --stop            # end the env instance: its Herdr, its aify-env and their workers
 herdr-aify --prune               # delete what dead invocations left behind
 ```
 
-**The argument decides the LIFETIME, which is the whole difference between them.** The operator:
+**The argument decides the PROFILE.** Both modes detach when you leave them (since 0.8.6), and each has its own `--stop`. The operator:
 "ordinary herdr-aify should remember previous instance agents like ordinary herdr does, that
 herdr-aify env is the one that really acts differently. herdr-aify is like ordinary, but supports our
--aify stuff so they could be saved etc." So `env` mints a fresh invocation that dies with the
-command, and plain `herdr-aify` uses ONE stable profile under `~/.aify/herdr/resident/` and starts a
+-aify stuff so they could be saved etc." So `env` mints a fresh invocation (which, since 0.8.6, a
+later `herdr-aify env` joins rather than replaces), and plain `herdr-aify` uses ONE stable profile under `~/.aify/herdr/resident/` and starts a
 server only when nothing answers on its socket.
 
 **Leaving the plain one DETACHES.** Its `herdr server` is started independent -- detached from the
@@ -74,7 +75,9 @@ close delivers a signal a Node process can handle; a launcher ended any other wa
 its dedicated aify-env and their panes running, with an owner pointer nobody will clear. `--stop`
 reads that pointer, addresses the instance it names and reports whether the server is actually gone.
 It is not a workaround for a missing Job object: the pointer names the invocation and the invocation
-names the socket, so it can only ever reach the instance this host recorded.
+names the socket, so it can only ever reach the instance this host recorded. Since 0.8.6 it is the ONLY
+way an env instance ends on purpose, so the pointer is kept when the stop cannot confirm the server is
+gone, and `herdr-aify env --stop` can try again. A bare `--stop` never touches the env instance.
 
 **You do not need `herdr` on your PATH**, and on Windows you probably do not have it: Herdr puts itself
 on the PATH of the shells IT starts, which is why the bare name resolves inside a Herdr pane and fails at an
@@ -83,7 +86,8 @@ platform puts it -- on Windows `~/.herdr/packages/standalone/current` (or `HERDR
 release directory and the visible bin; on Linux and macOS `~/.local/bin` -- with `HERDR_INSTALL_DIR`
 replacing the default bin directory on both, then PATH. A refusal names every place it looked.
 
-Closing `herdr-aify env` ends that Herdr, its dedicated env and its workers. A new invocation gets a
+Leaving `herdr-aify env` detaches (0.8.6); `herdr-aify env --stop` ends that Herdr, its dedicated env
+and its workers, and a bare `herdr-aify --stop` never touches it. A new invocation gets a
 fresh UUID and the daemon refuses a context whose receipts already exist, so it cannot resurrect the
 previous invocation's agents. Your ordinary Herdr is untouched by it: different socket, different
 config and state roots.
