@@ -48,6 +48,8 @@ else
   aify_lease_claim() { return 0; }
   aify_lease_attach() { :; }
   aify_lease_release() { :; }
+  aify_lifetime_start() { :; }
+  aify_lifetime_release() { :; }
 fi
 # `--aify-start-intent=start|replace` is the lease's, never the runtime's: a Herdr restore passes it.
 aify_lease_take_intent "$@"
@@ -869,7 +871,7 @@ _aify_runtime_exited() {
   if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then _aify_exit_herdr=herdr; fi
   sh "@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-runtime-exited.sh" "@@BRIDGE_DIR@@" "$_aify_exit_herdr" </dev/null >/dev/null 2>&1 || true
 }
-trap 'rm -f "$AIFY_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null; _aify_runtime_exited; aify_lease_release' EXIT
+trap 'rm -f "$AIFY_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null; _aify_runtime_exited; aify_lifetime_release; aify_lease_release' EXIT
 
 # The lease is claimed by the run that starts claude: not by a `--shared` launch, which hands the start
 # to the host, whose own run of this launcher claims. 75 is a refused start. BEFORE THE REAP BELOW: that
@@ -938,6 +940,7 @@ if [ "$CLAUDE_AIFY_SHARED" = true ]; then
   exec aify-env run     --service "@@SERVICE_NAME@@"     --launcher "$0"     --label "${CLAUDE_AIFY_AGENT_ID:-}"     -- "${CLAUDE_AIFY_PASSTHRU[@]}"
 fi
 
+aify_lifetime_start "$AIFY_BRIDGE_DIR_FWD" "${CLAUDE_AIFY_AGENT_ID:-}" claude "$AIFY_SESSION_MODE" || exit $?
 AIFY_RUNTIME_RUNNING=1
 claude --dangerously-load-development-channels server:@@SERVICE_NAME@@-channel "${CLAUDE_MCP_FLAGS[@]}" "${CLAUDE_PERMISSION_FLAGS[@]}" "${CLAUDE_ARGS[@]}"
 STATUS=$?

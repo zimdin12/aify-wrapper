@@ -40,6 +40,8 @@ else
   aify_lease_claim() { return 0; }
   aify_lease_attach() { :; }
   aify_lease_release() { :; }
+  aify_lifetime_start() { :; }
+  aify_lifetime_release() { :; }
 fi
 # `--aify-start-intent=start|replace` is the lease's, never the runtime's: a Herdr restore passes it.
 aify_lease_take_intent "$@"
@@ -924,6 +926,8 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
   # Claimed before the gateway host and the delivery loop exist. It stops what a dead instance of this
   # agent left behind, including a gateway still holding hermes' session lease.
   aify_lease_claim "@@BRIDGE_DIR@@" "$HERMES_AIFY_AGENT_ID" hermes "${AIFY_SESSION_MODE:-}" || exit $?
+  aify_lifetime_start "$AIFY_BRIDGE_DIR_FWD" "$HERMES_AIFY_AGENT_ID" hermes "$AIFY_SESSION_MODE" || exit $?
+  trap 'aify_lifetime_release; aify_lease_release' EXIT
   aify_hermes_kill_prior "$HERMES_AIFY_AGENT_ID"
   export AIFY_AGENT_ID="$HERMES_AIFY_AGENT_ID"
   # Hermes launches its MCP server as a short-lived child of individual turns.
@@ -1006,11 +1010,12 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
   _aify_hermes_on_exit() {
     kill "$HERMES_LOOP_PID" >/dev/null 2>&1 || true
     aify_lease_release
-    [ "$AIFY_RUNTIME_RUNNING" = 1 ] || return 0
+    if [ "$AIFY_RUNTIME_RUNNING" != 1 ]; then aify_lifetime_release; return 0; fi
     AIFY_RUNTIME_RUNNING=0
     _aify_exit_herdr=""
     if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then _aify_exit_herdr=herdr; fi
     sh "@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-runtime-exited.sh" "@@BRIDGE_DIR@@" "$_aify_exit_herdr" </dev/null >/dev/null 2>&1 || true
+    aify_lifetime_release
   }
   trap _aify_hermes_on_exit EXIT INT TERM
   # NOTE (2026-06-02 hotfix/restore-hermes-tui): the former "(3a) HEALTH-GATE"
@@ -1188,4 +1193,6 @@ if [ "$HERMES_AIFY_SHARED" = true ]; then
   exec aify-env run --service "@@SERVICE_NAME@@" --launcher "$0" --label "${HERMES_AIFY_AGENT_ID:-}" -- "${HERMES_AIFY_PASSTHRU[@]}"
 fi
 
+# Plain sessions and subcommands own no resident lifetime, and borrow none from a parent.
+aify_lifetime_start "$AIFY_BRIDGE_DIR_FWD" "" hermes "" || exit $?
 aify_hermes_exec_plain_or_tui

@@ -27,6 +27,13 @@
 #
 # THE ARGUMENT IS KEPT APART FROM `AIFY_START_INTENT`, which a shell inside a running session can carry and
 # bin/aify-inherited-session.sh therefore drops: a restore typed into such a pane must keep its `start`.
+# Older installed bridges may lack the C4 helper, as they may lack the lease helper.
+aify_lifetime_start() { :; }
+aify_lifetime_release() { :; }
+if [ -r "${BASH_SOURCE[0]%/*}/aify-lifetime.sh" ]; then
+  . "${BASH_SOURCE[0]%/*}/aify-lifetime.sh"
+fi
+
 aify_lease_take_intent() {
   AIFY_LEASE_ARGS=()
   AIFY_LEASE_IDENTITY="recovered"

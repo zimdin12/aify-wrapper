@@ -51,12 +51,17 @@ function runtimeStub(node) {
     "#!/bin/bash",
     'for a in "$@"; do if [ "$a" = "app-server" ]; then',
     '  printf "%s\\0" "$@" > "$STUB_RUNTIME_ENV.app-server"',
+    '  env > "$STUB_RUNTIME_ENV.app-server-env"',
     '  url=""; prev=""; for b in "$@"; do [ "$prev" = "--listen" ] && url="$b"; prev="$b"; done',
     `  exec "${node}" -e 'require("net").createServer(s => s.end()).listen(Number(process.argv[1].split(":").pop()), "127.0.0.1")' "$url"`,
     "fi; done",
     'env > "$STUB_RUNTIME_ENV"',
     'printf "%s\\n" "$@" > "$STUB_RUNTIME_ENV.args"',
-    "exit 0",
+    'if [ "${STUB_LIFETIME_PROBE:-}" = "1" ]; then',
+    '  parent="$PPID"; [ ! -r "/proc/$PPID/winpid" ] || read -r parent < "/proc/$PPID/winpid"',
+    `  "${node}" -e 'const fs=require("fs"),p=require("path"); const d=p.join(process.env.HOME,".aify/residents"); const names=fs.existsSync(d)?fs.readdirSync(d):[]; fs.writeFileSync(process.env.STUB_RUNTIME_ENV+".residents", JSON.stringify({parent:Number(process.argv[1]),records:names.map(n=>({name:n,record:JSON.parse(fs.readFileSync(p.join(d,n)))}))})); if(process.env.AIFY_LIFETIME && names.length) { const old=JSON.parse(fs.readFileSync(p.join(d,names[0]))); const lifetime="8ecc46f8-9e99-4703-9df9-e34cc50faaba"; fs.writeFileSync(p.join(d,old.agentId+"."+lifetime+".json"),JSON.stringify({...old,lifetime})); }' "$parent"`,
+    'fi',
+    'exit "${STUB_EXIT:-0}"',
     "",
   ].join("\n");
 }
@@ -91,8 +96,17 @@ function world(client, { reader, registry, bridgeFiles = {} }) {
  *   the runtime's environment ({} when it never started); `args` its argv; `appServerArgs` codex's
  *   app-server argv.
  */
-export function launch(client, args, { rewriting = true, reader = true, definitions = {}, env: extraEnv = {}, registry, edit, bridgeFiles } = {}) {
+export function launch(client, args, { rewriting = true, reader = true, definitions = {}, env: extraEnv = {}, registry, edit, bridgeFiles, lifetimes = false } = {}) {
   const w = world(client, { reader, registry, bridgeFiles });
+  if (lifetimes) {
+    for (const file of ["bin/aify-lease.sh", "bin/aify-inherited-session.sh", "bin/aify-lifetime.sh", "bin/aify-resident-record.mjs", "bin/aify-runtime-exited.sh"]) {
+      const from = path.join(ROOT, file);
+      if (!fs.existsSync(from)) continue; // RED runs before the new helpers exist.
+      const to = path.join(w.dir, "bridge/node_modules/aify-wrapper", file);
+      fs.mkdirSync(path.dirname(to), { recursive: true });
+      fs.copyFileSync(from, to);
+    }
+  }
   // A test that needs a launcher the installer would never write edits the rendered text, never the template.
   if (edit) fs.writeFileSync(w.launcher, edit(fs.readFileSync(w.launcher, "utf8")));
   const lookups = path.join(w.dir, "lookups");
@@ -107,6 +121,8 @@ export function launch(client, args, { rewriting = true, reader = true, definiti
     PATH: [w.stubs, path.dirname(process.execPath), BASH_DIR].join(WIN ? ";" : ":"),
     HOME: w.home,
     USERPROFILE: w.home,
+    APPDATA: path.join(w.home, "AppData/Roaming"),
+    LOCALAPPDATA: path.join(w.home, "AppData/Local"),
     CODEX_HOME: path.join(w.home, ".codex"),
     TMPDIR: w.dir,
     TEMP: w.dir,
@@ -124,7 +140,12 @@ export function launch(client, args, { rewriting = true, reader = true, definiti
   const started = Object.fromEntries(lines(runtimeEnv).filter((l) => l.includes("="))
     .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
   const asked = lines(lookups).map((l) => JSON.parse(l));
-  const result = { run, started, asked, args: lines(`${runtimeEnv}.args`), appServerArgs: read(`${runtimeEnv}.app-server`).split("\0").filter(Boolean) };
+  const residents = path.join(w.home, ".aify/residents");
+  const result = { run, started, asked, args: lines(`${runtimeEnv}.args`), appServerArgs: read(`${runtimeEnv}.app-server`).split("\0").filter(Boolean),
+    appServerEnv: Object.fromEntries(lines(`${runtimeEnv}.app-server-env`).map(l => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)])),
+    lifetimeProbe: read(`${runtimeEnv}.residents`) ? JSON.parse(read(`${runtimeEnv}.residents`)) : null,
+    remainingResidents: fs.existsSync(residents) ? fs.readdirSync(residents) : [], launcher: w.launcher,
+    exitReport: read(`${runtimeEnv}.exit`) ? JSON.parse(read(`${runtimeEnv}.exit`)) : null };
   fs.rmSync(w.dir, { recursive: true, force: true });
   return result;
 }

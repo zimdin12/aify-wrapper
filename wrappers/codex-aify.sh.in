@@ -36,6 +36,8 @@ else
   aify_lease_claim() { return 0; }
   aify_lease_attach() { :; }
   aify_lease_release() { :; }
+  aify_lifetime_start() { :; }
+  aify_lifetime_release() { :; }
 fi
 # `--aify-start-intent=start|replace` is the lease's, never the runtime's: a Herdr restore passes it.
 aify_lease_take_intent "$@"
@@ -683,6 +685,10 @@ if [ -n "@@SESSION_MCP_CODEX_B64@@" ]; then
   rm -f "$_session_words"
 fi
 
+if [ "$CODEX_AIFY_SHARED" != true ]; then
+  aify_lifetime_start "$AIFY_BRIDGE_DIR_FWD" "${CODEX_AIFY_AGENT_ID:-}" codex "$AIFY_SESSION_MODE" || exit $?
+  trap 'aify_lifetime_release; aify_lease_release' EXIT
+fi
 if command -v setsid >/dev/null 2>&1; then
   setsid codex "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_HERDR_HOOKS[@]}" "${CODEX_APP_SERVER_CONFIG[@]}" app-server --listen "$APP_SERVER_URL" </dev/null >>"$LOG_FILE" 2>&1 &
 else
@@ -723,6 +729,7 @@ cleanup() {
     wait "$APP_SERVER_PID" 2>/dev/null || true
   fi
   _aify_runtime_exited
+  aify_lifetime_release
   aify_lease_release
 }
 trap cleanup EXIT INT TERM HUP
