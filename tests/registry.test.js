@@ -340,6 +340,78 @@ test("what this package WRITES is what it declares it reads", () => {
   assert.equal(parsed.registry.version, REGISTRY_VERSION);
 });
 
+test("agentState is an optional validated path with its own credential basename", () => {
+  // parseRegistry must carry this opt-in to the sender, without inventing a second service URL.
+  const entry = { endpoint: "https://service.example:8443/base", credentialRef: "service.key", mcp: [] };
+  const parse = (agentState) => parseRegistry(json({ version: 1, services: { svc: {
+    ...entry, ...(agentState === undefined ? {} : { agentState }),
+  } } }));
+  const absent = parse(undefined);
+  assert.equal(absent.ok, true);
+  assert.equal(Object.hasOwn(absent.registry.services.svc, "agentState"), false);
+  for (const option of [
+    { path: "/" },
+    { path: "/api/v1/agent-state" },
+    { path: "/api/v1/agent-state", credentialRef: "state.b-c_1.key" },
+    { path: "/api/v1/agent-state", credentialRef: "service.key" },
+  ]) {
+    const parsed = parse(option);
+    assert.equal(parsed.ok, true, json(parsed.errors));
+    assert.deepEqual(parsed.registry.services.svc.agentState, option);
+    assert.equal(parsed.registry.services.svc.endpoint, entry.endpoint);
+    assert.equal(parsed.registry.services.svc.credentialRef, entry.credentialRef);
+    assert.deepEqual(mcpEntriesFor(parsed.registry), []);
+    assert.equal(parseRegistry(json(parsed.registry)).ok, true, "normalized output must parse again");
+    assert.notEqual(fingerprint(parsed.registry), fingerprint(absent.registry), "the opt-in must survive fingerprinting");
+  }
+  for (const option of [
+    null, [], "true", {}, { path: 1 }, { path: "api/state" },
+    { path: "https://other.example/api/state" }, { path: "//other.example/api/state" },
+    { path: "/\\other.example/api/state" }, { path: "/\t/other.example/api/state" },
+    { path: "/api/state", endpoint: "https://other.example" },
+    ...[null, "", " state.key", "../state.key", "a/b", "a\\b", ".hidden", "x".repeat(65)]
+      .map((credentialRef) => ({ path: "/api/state", credentialRef })),
+  ]) {
+    const refused = parse(option);
+    assert.equal(refused.ok, false, `accepted ${json(option)}`);
+    assert.equal(refused.registry, undefined, "refusal must not expose a partial registry");
+    assert.match(refused.errors.join(" "), /services\.svc\.agentState/);
+  }
+  // State-feed credentials obey ownership even when the first service's name is empty.
+  for (const { services, ok, message } of [
+    ...[{ credentialRef: "state.key" }, { agentState: { path: "/state", credentialRef: "STATE.KEY" } }]
+      .map((neighbor) => ({ services: {
+        svc: { ...entry, agentState: { path: "/state", credentialRef: "state.key" } },
+        neighbor: { endpoint: "https://neighbor.example", ...neighbor },
+      }, ok: false, message: "two services shared the state-feed credential" })),
+    { services: {
+      "": { endpoint: "https://blank.example", agentState: { path: "/state", credentialRef: "State.key" } },
+      b: { endpoint: "https://b.example", agentState: { path: "/state", credentialRef: "other.key" } },
+    }, ok: true, message: "empty-name service and neighbor may use distinct credential references" },
+    { services: {
+      "": { endpoint: "https://blank.example", credentialRef: "State.key",
+        agentState: { path: "/state", credentialRef: "state.key" } },
+    }, ok: true, message: "empty-name service may reuse its own case-folded credential reference" },
+    { services: {
+      "": { endpoint: "https://blank.example", agentState: { path: "/state", credentialRef: "State.key" } },
+      b: { endpoint: "https://b.example", agentState: { path: "/state", credentialRef: "state.key" } },
+    }, ok: false, message: "empty service name must not bypass credential ownership" },
+  ]) {
+    const parsed = parseRegistry(json({ version: 1, services }));
+    assert.equal(parsed.ok, ok, message);
+    if (!ok) {
+      assert.equal(Object.hasOwn(parsed, "registry"), false);
+      assert.match(parsed.errors.join(" "), /claimed by both/);
+    } else {
+      assert.deepEqual(parsed.errors, []);
+      for (const [name, service] of Object.entries(services)) {
+        assert.deepEqual(parsed.registry.services[name].agentState, service.agentState);
+        assert.equal(parsed.registry.services[name].credentialRef, service.credentialRef ?? "");
+      }
+    }
+  }
+});
+
 test("credentialRef is CARRIED, not silently dropped", () => {
   // It was dropped until 2026-08-31, which meant this parser -- the one aify-comms calls
   // authoritative before writing its own entry -- validated none of the grammar below. A field a
