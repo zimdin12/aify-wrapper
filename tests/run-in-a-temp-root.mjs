@@ -61,7 +61,9 @@ const root = fs.mkdtempSync(path.join(parent, PREFIX));
 // 120 claim attempts from test runs against the operator's own pane (2026-09-12 to 2026-09-15), stopped only
 // by a refusal that the same change removes, and a launcher that sees another session's lease forgets the identity a test gave it.
 const inherited = withoutAgentSession(process.env);
-for (const name of Object.keys(inherited)) if (name.toUpperCase().startsWith('HERDR_')) delete inherited[name];
+// AIFY_HERDR_* TOO: the launchers' own Herdr wiring (the ledger, the invocation, the isolated marker) leaked
+// through a HERDR_-only filter (found 2026-10-11 running files from an agent pane).
+for (const name of Object.keys(inherited)) if (/^(AIFY_)?HERDR_/i.test(name)) delete inherited[name];
 const env = { ...inherited, TMPDIR: root, TEMP: root, TMP: root };
 
 const files = fs.readdirSync('tests').filter((f) => f.endsWith('.test.js')).map((f) => path.join('tests', f));
