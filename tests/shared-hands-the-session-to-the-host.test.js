@@ -136,8 +136,9 @@ test("the shared branch names no runtime of its own", () => {
   // The other three wrappers get this same wiring, and it must be copyable without edits: the
   // template's own substitutions carry the service, and `$0` carries the launcher.
   const claude = renderClaude();
+  // To the branch's own closing `fi`: the launch path below it names claude, and that is not the branch.
   const start = claude.indexOf("CLAUDE_AIFY_SHARED\" = true");
-  const branch = claude.slice(start, claude.indexOf("\nclaude --dangerously", start));
+  const branch = claude.slice(start, claude.indexOf("\nfi\n", start));
   assert.ok(!/\bclaude\b/.test(code(branch)),
     "the shared branch names claude, so it cannot be copied to the other three wrappers as-is");
 });
@@ -284,16 +285,18 @@ test("THE SHARED BRANCH SITS BELOW EVERYTHING, IN EVERY TEMPLATE", () => {
   // is kept is position: an ordinary run reaches the launch line having executed not one instruction
   // of the branch. Checked for claude alone until now.
   //
-  // Measured 2026-09-04: 6 to 8 code lines follow it — the runtime launch, a status capture and an
-  // exit. The bound is 12 so an honest extra line does not fail this, while a branch that drifts up
-  // above real work does.
+  // COUNTED FROM THE BRANCH'S CLOSING `fi`, so the branch's own body is not charged to what follows
+  // it. Measured 2026-10-12: 2 to 5 code lines follow -- a lifetime or lease start, the runtime
+  // launch, a status capture and an exit. The bound is 6 so an honest extra line does not fail this,
+  // while a branch that drifts up above real work does.
   for (const name of LAUNCHERS) {
     const lines = fs.readFileSync(path.join(ROOT, "wrappers", `${name}.sh.in`), "utf8").split("\n");
     const at = lines.findIndex((l) => /_AIFY_SHARED" = true/.test(l));
     assert.ok(at > 0, `${name}.sh.in: no shared branch to place`);
-    const after = lines.slice(at + 1)
-      .filter((l) => l.trim() && !/^\s*#/.test(l) && !/^\s*(fi|else|then)\s*$/.test(l.trim()));
-    assert.ok(after.length <= 12,
+    const end = lines.findIndex((l, i) => i > at && /^fi\s*$/.test(l));
+    assert.ok(end > at, `${name}.sh.in: the shared branch has no closing fi at column 0`);
+    const after = lines.slice(end + 1).filter((l) => l.trim() && !/^\s*#/.test(l));
+    assert.ok(after.length <= 6,
       `${name}.sh.in: ${after.length} code lines run after the shared branch — it is no longer last, `
       + "so an ordinary run now executes part of it");
   }
