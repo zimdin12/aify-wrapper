@@ -599,6 +599,18 @@ if [ -z "$CLAUDE_AIFY_AGENT_ID" ]; then
 fi
 # An id the resume handle named is read now, so it gets its definition and its refusal (P6 R3).
 if [ "$CLAUDE_AIFY_AGENT_ID" != "$CLAUDE_AIFY_DEFAULTS_FOR" ]; then claude_aify_defaults; fi
+# A RESUME FOLLOWS THE CONFIGURED DEFAULT (0.9.1). Claude restores a resumed session's saved model unless the
+# launch names one, so a resume that selects no model passes the one Claude's settings give a new session
+# (lib/claude-default-model.mjs). ANTHROPIC_MODEL already wins inside Claude, so it is left to do that.
+if [ "$CLAUDE_HAS_MODEL" = false ] && [ -z "$CLAUDE_AIFY_MODEL" ] && [ -n "${CLAUDE_RESUME_ID:-}" ] \
+   && [ -z "${ANTHROPIC_MODEL:-}" ]; then
+  _claude_default_reader="$AIFY_BRIDGE_DIR_FWD/node_modules/aify-wrapper/bin/aify-claude-default-model.mjs"
+  if [ -f "$_claude_default_reader" ]; then
+    # `pwd -W` is Git Bash's native form of the directory, which a native node can open with path
+    # rewriting off; elsewhere it fails, and the POSIX path is native already.
+    CLAUDE_AIFY_MODEL="$(node "$_claude_default_reader" "$(pwd -W 2>/dev/null || pwd)" 2>/dev/null)" || CLAUDE_AIFY_MODEL=""
+  fi
+fi
 if [ -n "$CLAUDE_AIFY_MODEL" ]; then CLAUDE_ARGS+=(--model "$CLAUDE_AIFY_MODEL"); fi
 if [ -n "$CLAUDE_AIFY_EFFORT" ]; then CLAUDE_ARGS+=(--effort "$CLAUDE_AIFY_EFFORT"); fi
 export AIFY_RUNTIME="claude-code"

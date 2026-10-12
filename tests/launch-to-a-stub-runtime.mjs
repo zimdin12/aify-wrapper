@@ -96,7 +96,7 @@ function world(client, { reader, registry, bridgeFiles = {} }) {
  *   the runtime's environment ({} when it never started); `args` its argv; `appServerArgs` codex's
  *   app-server argv.
  */
-export function launch(client, args, { rewriting = true, reader = true, definitions = {}, env: extraEnv = {}, registry, edit, bridgeFiles, lifetimes = false } = {}) {
+export function launch(client, args, { rewriting = true, reader = true, definitions = {}, env: extraEnv = {}, registry, edit, bridgeFiles, lifetimes = false, cwd, files = {} } = {}) {
   const w = world(client, { reader, registry, bridgeFiles });
   if (lifetimes) {
     for (const file of ["bin/aify-lease.sh", "bin/aify-inherited-session.sh", "bin/aify-lifetime.sh", "bin/aify-resident-record.mjs", "bin/aify-runtime-exited.sh"]) {
@@ -134,7 +134,16 @@ export function launch(client, args, { rewriting = true, reader = true, definiti
     ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
     ...(rewriting ? {} : { MSYS_NO_PATHCONV: "1", MSYS2_ARG_CONV_EXCL: "*" }),
   };
-  const run = spawnSync(BASH, [w.launcher, ...args], { encoding: "utf8", env, timeout: 60_000 });
+  // `files` are written under the run's own directory before it starts, `<home>` naming its HOME; `cwd` is
+  // where the launcher runs, relative to that directory.
+  for (const [rel, text] of Object.entries(files)) {
+    const to = path.join(w.dir, rel.replace(/^<home>/, path.relative(w.dir, w.home)));
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.writeFileSync(to, text);
+  }
+  const workdir = cwd === undefined ? undefined : path.join(w.dir, cwd);
+  if (workdir) fs.mkdirSync(workdir, { recursive: true });
+  const run = spawnSync(BASH, [w.launcher, ...args], { encoding: "utf8", env, timeout: 60_000, cwd: workdir });
   const read = (file) => (fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "");
   const lines = (file) => read(file).split(/\r?\n/).filter(Boolean);
   const started = Object.fromEntries(lines(runtimeEnv).filter((l) => l.includes("="))

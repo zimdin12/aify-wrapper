@@ -17,9 +17,10 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-/** The reader and what it imports, as installed under `<bridge>/node_modules/aify-wrapper`. */
+/** The reader, claude-aify's settings reader, and what they import, as installed under `<bridge>/node_modules/aify-wrapper`. */
 export const READER_FILES = Object.freeze([
   "bin/aify-definition.mjs", "lib/agent-definition-defaults.mjs", "lib/agent-definition-schema.mjs", "lib/main-module.mjs",
+  "bin/aify-claude-default-model.mjs", "lib/claude-default-model.mjs",
 ]);
 
 /** Copy the reader into `bridge` (created if missing) and return it. */
