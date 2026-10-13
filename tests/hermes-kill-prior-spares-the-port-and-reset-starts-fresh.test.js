@@ -29,8 +29,8 @@ test("the port-kill line filters the port's holders down to hermes gateway proce
   assert.doesNotMatch(line, /lsof -ti tcp:"\$host_port" 2>\/dev\/null \| xargs kill/, "the unfiltered kill is gone");
 });
 
-test("the delivery-loop kill is anchored to the whole agent id", () => {
-  assert.match(TEMPLATE, /pkill -f "hermes-managed-host\.js run \$agent_id\$"/, "`run lc-coder` must not match `run lc-coder-2`");
+test("the delivery-loop kill goes through the node reap, whose id match is whole (tests/hermes-prior-runs.test.js)", () => {
+  assert.match(TEMPLATE, /aify-hermes-reap-prior\.mjs" --agent "\$agent_id"/, "`run lc-coder` must not match `run lc-coder-2`");
 });
 
 test("a fresh-context launch mints a new session id before the handle is exported, and drops the marker", () => {

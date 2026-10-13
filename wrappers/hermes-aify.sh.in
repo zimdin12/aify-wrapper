@@ -820,56 +820,28 @@ aify_hermes_kill_prior() {
   # spawn (the pre-spawn call has nothing of ours to protect).
   local exclude_pid="${2:-}"
   [ -n "$agent_id" ] || return 0
-  # Reap a prior delivery loop carrying this agentId. pkill -f matches the full
-  # command line; the AIFY_AGENT_ID marker is the most specific token.
-  # Best-effort: no pkill / nothing matched is fine. (The retired
-  # hermes-channel.js api_server sidecar is no longer spawned, so it is no longer
-  # matched here — the live delivery process is the gateway loop below.)
-  if command -v pkill >/dev/null 2>&1; then
-    # Managed visible-TUI model: reap a prior background delivery loop
-    # (`hermes-managed-host.js run <agent>`) for this agent. Its SIGTERM
-    # teardown then kills the hidden gateway host it owns. EXCLUDE the
-    # just-spawned loop PID so we never kill our own fresh loop.
-    if [ -n "$exclude_pid" ] && command -v pgrep >/dev/null 2>&1; then
-      # Enumerate matching loops and kill all EXCEPT the excluded PID.
-      local _pid
-      for _pid in $(pgrep -f "hermes-managed-host.js run $agent_id" 2>/dev/null || true); do
-        [ "$_pid" = "$exclude_pid" ] && continue
-        kill "$_pid" >/dev/null 2>&1 || true
-      done
-    else
-      pkill -f "hermes-managed-host.js run $agent_id$" >/dev/null 2>&1 || true
-    fi
-    # Best-effort: reap any orphaned gateway host left listening on this agent's
-    # dashboard/api port (a prior SIGKILL bypasses the loop's teardown handler).
-    # GATED to the PRE-spawn call ONLY (exclude_pid empty). The POST-spawn call
-    # runs AFTER ensure-host started the CURRENT gateway on this port, so port-
-    # killing here would kill the live gateway the TUI is about to attach to —
-    # the 2026-06-02 "gateway websocket connection failed" root cause.
-    if [ -z "$exclude_pid" ] && command -v lsof >/dev/null 2>&1; then
-      local host_port
-      host_port="$(node -e 'import("'"$AIFY_HERMES_STDIO_DIR"'/hermes-endpoint.js").then(m=>process.stdout.write(String(m.agentPort(process.argv[1]))))' "$agent_id" 2>/dev/null || true)"
-      if [ -n "$host_port" ]; then
-        lsof -ti tcp:"$host_port" 2>/dev/null | xargs -r ps -o pid=,args= -p 2>/dev/null | awk '/hermes dashboard --port/ {print $1}' | xargs -r kill >/dev/null 2>&1 || true
-      fi
-    fi
-    # Managed visible-TUI leak fix (MC3, 2026-06-06): reap a prior
-    # `hermes --tui --resume <id>` visible TUI for THIS agent. The launch now resumes
-    # the agent's REAL native session id (timestamp), NOT the retired synthetic
-    # `aify-<agent>` key — so the old matcher matched nothing (dead matcher) and could
-    # leak a duplicate resume-TUI per relaunch. Match the REAL resume id from the per-agent
-    # session marker (the id the prior TUI was launched with). AGENT-SCOPED: the timestamp
-    # id is unique per session, so this can never hit another agent's TUI. PRE-spawn ONLY
-    # (exclude_pid empty): the new TUI does not exist yet, so the only match is the prior
-    # one; the post-spawn call must NOT run this. (The lsof/port reap above already catches
-    # the prior TUI as a gateway-port client on platforms with lsof; this is the
-    # cross-platform, cmdline-based backstop.)
-    if [ -z "$exclude_pid" ] && command -v pkill >/dev/null 2>&1; then
-      local _prior_id
-      _prior_id="$(node -e 'import("'"$AIFY_HERMES_STDIO_DIR"'/hermes-endpoint.js").then(m=>process.stdout.write(String(m.readSessionIdMarker(process.argv[1])||"")))' "$agent_id" 2>/dev/null || true)"
-      if [ -n "$_prior_id" ]; then
-        pkill -f -- "--tui --resume $_prior_id" >/dev/null 2>&1 || true
-      fi
+  # ONE NODE REAP ON EVERY PLATFORM (lib/hermes-prior-runs.mjs). This was pkill/pgrep behind `command -v pkill`, and
+  # Git for Windows has neither, so on Windows a relaunch kept the previous delivery loop running and the agent read
+  # online. It ends this agent's prior `hermes-managed-host.js run <agent>` loop, whole id only, whose teardown ends
+  # the gateway host it owns, never this launch's own: `exclude_pid` is the loop just started, converted to its
+  # Windows pid where Git Bash has one. The prior visible TUI (`--tui --resume <id>`, MC3 2026-06-06) is ended on the
+  # PRE-spawn call only, before this launch's TUI exists.
+  local _exclude="" _prior_id=""
+  if [ -n "$exclude_pid" ]; then
+    _exclude="$exclude_pid"
+    [ -r "/proc/$exclude_pid/winpid" ] && _exclude="$(cat "/proc/$exclude_pid/winpid")"
+  else
+    _prior_id="$(node -e 'import("'"$AIFY_HERMES_STDIO_DIR"'/hermes-endpoint.js").then(m=>process.stdout.write(String(m.readSessionIdMarker(process.argv[1])||"")))' "$agent_id" 2>/dev/null || true)"
+  fi
+  node "$AIFY_BRIDGE_DIR_FWD/node_modules/aify-wrapper/bin/aify-hermes-reap-prior.mjs" --agent "$agent_id" \
+    ${_exclude:+--exclude "$_exclude"} ${_prior_id:+--resume-id "$_prior_id"} </dev/null >/dev/null 2>&1 || true
+  # POSIX only (lsof): reap a gateway host left listening on this agent's port by a SIGKILLed loop. On Windows
+  # `hermes-daemon-cli stop` below reaps gateway hosts by their own records.
+  if [ -z "$exclude_pid" ] && command -v lsof >/dev/null 2>&1; then
+    local host_port
+    host_port="$(node -e 'import("'"$AIFY_HERMES_STDIO_DIR"'/hermes-endpoint.js").then(m=>process.stdout.write(String(m.agentPort(process.argv[1]))))' "$agent_id" 2>/dev/null || true)"
+    if [ -n "$host_port" ]; then
+      lsof -ti tcp:"$host_port" 2>/dev/null | xargs -r ps -o pid=,args= -p 2>/dev/null | awk '/hermes dashboard --port/ {print $1}' | xargs -r kill >/dev/null 2>&1 || true
     fi
   fi
   # Also reap the prior per-agent DAEMON for this agentId — PRE-spawn call only
