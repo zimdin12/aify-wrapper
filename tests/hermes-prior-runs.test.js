@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { parseCommandTable, processTable } from "../lib/process-identity.mjs";
@@ -138,6 +138,30 @@ test("THE LAUNCHER CALLS THE NODE REAP with no pkill gate, its own loop excluded
   assert.doesNotMatch(code, /command -v pkill|pgrep|pkill /, "a pkill gate skips the whole reap on Git for Windows");
   assert.match(body, /aify-hermes-reap-prior\.mjs" --agent "\$agent_id"/);
   assert.match(body, /\/proc\/\$exclude_pid\/winpid/, "Git Bash's \$! is not the Windows pid the table lists");
+});
+
+test("ONLY THE LEASE HOLDER REAPS: a launch whose claim failed starts, but ends nothing", async () => {
+  // Whole-diff review of 0.9.2: a failed claim clears AIFY_LEASE_AGENT and returns 0 (bin/aify-lease.sh), and the reap
+  // then ran anyway and could end the holder's live loop. Run the launcher's own function with the reap stubbed.
+  const start = TEMPLATE.indexOf("aify_hermes_kill_prior() {");
+  const fn = TEMPLATE.slice(start, TEMPLATE.indexOf("\n}\n", start) + 3);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-hermes-gate-"));
+  const reap = path.join(dir, "node_modules", "aify-wrapper", "bin");
+  fs.mkdirSync(reap, { recursive: true });
+  const marker = path.join(dir, "reaped").replace(/\\/g, "/");
+  fs.writeFileSync(path.join(reap, "aify-hermes-reap-prior.mjs"), `import fs from "node:fs";\nfs.writeFileSync(${JSON.stringify(marker)}, "x");\n`);
+  const run = (lease) => spawnSync("bash", ["-c", `${fn}\naify_hermes_kill_prior pc 2`], {
+    env: { ...process.env, AIFY_BRIDGE_DIR_FWD: dir.replace(/\\/g, "/"), AIFY_LEASE_AGENT: lease }, encoding: "utf8" });
+  try {
+    run("");
+    assert.equal(fs.existsSync(marker), false, "a launch holding no lease reaped");
+    run("pc-manager");
+    assert.equal(fs.existsSync(marker), false, "a lease for another agent reaped this one");
+    run("pc");
+    assert.equal(fs.existsSync(marker), true, "CONTROL: the holder's reap ran");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("A REAL LOOP LEFT RUNNING is found in the live table and ended; nothing else is", async () => {

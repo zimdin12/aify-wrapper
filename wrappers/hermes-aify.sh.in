@@ -831,8 +831,12 @@ aify_hermes_kill_prior() {
     _exclude="$exclude_pid"
     [ -r "/proc/$exclude_pid/winpid" ] && _exclude="$(cat "/proc/$exclude_pid/winpid")"
   fi
-  node "$AIFY_BRIDGE_DIR_FWD/node_modules/aify-wrapper/bin/aify-hermes-reap-prior.mjs" --agent "$agent_id" \
-    ${_exclude:+--exclude "$_exclude"} </dev/null >/dev/null 2>&1 || true
+  # ONLY THE LEASE HOLDER REAPS. A failed claim lets the start through without acting as the holder (bin/aify-lease.sh),
+  # and a reap then could end the live loop of the very launch that does hold this agent (whole-diff review of 0.9.2).
+  if [ "${AIFY_LEASE_AGENT:-}" = "$agent_id" ]; then
+    node "$AIFY_BRIDGE_DIR_FWD/node_modules/aify-wrapper/bin/aify-hermes-reap-prior.mjs" --agent "$agent_id" \
+      ${_exclude:+--exclude "$_exclude"} </dev/null >/dev/null 2>&1 || true
+  fi
   # POSIX only (lsof): reap a gateway host left listening on this agent's port by a SIGKILLed loop. On Windows
   # `hermes-daemon-cli stop` below reaps gateway hosts by their own records.
   if [ -z "$exclude_pid" ] && command -v lsof >/dev/null 2>&1; then
