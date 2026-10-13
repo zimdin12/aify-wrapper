@@ -54,6 +54,8 @@ test("WHAT A PROCESS RUNS IS MATCHED, NOT WHAT IT MENTIONS: an observer of the l
     row(41, 40, 110, `node ${LOOP} pc-manager`),
     row(42, 1, 100, `grep -- "--tui --resume 20261013_old" log.txt`),
     row(43, 1, 100, `node --max-old-space-size=512 ${LOOP} pc`), // the loop, with a node option
+    row(44, 1, 100, "node C:/tools/observer.js hermes --tui --resume 20261013_old"), // "hermes" as an argument
+    row(45, 44, 110, "node child.js"),
   ]);
   assert.deepEqual(priorHermesRuns(table, { agentId: "pc", resumeId: "20261013_old", self: 1 }), [43]);
 });
