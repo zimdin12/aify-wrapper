@@ -21,7 +21,7 @@ const TEMPLATE = fs.readFileSync(path.join(ROOT, "wrappers", "hermes-aify.sh.in"
 const row = (pid, ppid, startedAtMs, commandLine) => [pid, { pid, ppid, startedAtMs, commandLine }];
 const LOOP = "C:\\Users\\a\\.aify-comms\\mcp\\stdio/hermes-managed-host.js run";
 
-test("THE AGENT ID IS MATCHED WHOLE, the nohup parent stands for its child, and nothing else is taken", () => {
+test("THE AGENT ID IS MATCHED WHOLE, the nohup parent stands for its child, and no TUI is taken", () => {
   const table = new Map([
     row(1, 0, 0, "init"),
     row(10, 1, 100, `"C:\\Program Files\\Git\\usr\\bin\\nohup.exe" node ${LOOP} pc`),
@@ -31,7 +31,7 @@ test("THE AGENT ID IS MATCHED WHOLE, the nohup parent stands for its child, and 
     row(31, 1, 100, "hermes --tui --resume 20261013_older"),
   ]);
   assert.deepEqual(priorHermesRuns(table, { agentId: "pc", self: 1 }), [10]);
-  assert.deepEqual(priorHermesRuns(table, { agentId: "pc", resumeId: "20261013_old", self: 1 }), [10, 30]);
+  // A TUI is the lease's to end with its launch; one nothing launched for the agent is left alone (operator's ruling).
 });
 
 test("THIS LAUNCH'S OWN LOOP, everything it started, and the launcher's own ancestry are never taken", () => {
@@ -57,7 +57,7 @@ test("WHAT A PROCESS RUNS IS MATCHED, NOT WHAT IT MENTIONS: an observer of the l
     row(44, 1, 100, "node C:/tools/observer.js hermes --tui --resume 20261013_old"), // "hermes" as an argument
     row(45, 44, 110, "node child.js"),
   ]);
-  assert.deepEqual(priorHermesRuns(table, { agentId: "pc", resumeId: "20261013_old", self: 1 }), [43]);
+  assert.deepEqual(priorHermesRuns(table, { agentId: "pc", self: 1 }), [43]);
 });
 
 test("ANOTHER AGENT'S PROCESSES ARE NEVER TARGETS, and never inside a kill: its TUI, its host, the excluded loop", () => {
@@ -66,18 +66,19 @@ test("ANOTHER AGENT'S PROCESSES ARE NEVER TARGETS, and never inside a kill: its 
   const table = new Map([
     row(1, 0, 0, "init"),
     row(30, 1, 100, "hermes --tui --resume 20261013_shared"), // pc-manager's, named by its lease
-    row(31, 1, 100, "hermes --tui --resume 20261013_shared"), // a bare TUI on this agent's session: still taken
+    row(31, 1, 100, "hermes --tui --resume 20261013_shared"), // an operator's own window on this session: left alone
     row(10, 1, 100, `node ${LOOP} pc`), // the old loop, now hosting pc-manager's 40
     row(40, 10, 120, "hermes --tui"),
     row(20, 1, 300, `nohup node ${LOOP} pc`), // this launch's loop
     row(21, 20, 310, `node ${LOOP} pc`),
+    row(50, 1, 100, `node ${LOOP} pc`), // a previous loop hosting nobody: the one target
   ]);
   const others = new Set([30, 40]);
-  assert.deepEqual(priorHermesRuns(table, { agentId: "pc", resumeId: "20261013_shared", exclude: [20], self: 1, others }), [31]);
+  assert.deepEqual(priorHermesRuns(table, { agentId: "pc", exclude: [20], self: 1, others }), [50]);
   const kills = [];
-  reapPriorHermesRuns({ agentId: "pc", resumeId: "20261013_shared", exclude: [20], table, others,
+  reapPriorHermesRuns({ agentId: "pc", exclude: [20], table, others,
     kill: (pid, options) => kills.push({ pid, spare: options.spare, boundaries: options.boundaries }) });
-  assert.deepEqual(kills, [{ pid: 31, spare: [20, 21], boundaries: [30, 40] }]);
+  assert.deepEqual(kills, [{ pid: 50, spare: [20, 21], boundaries: [30, 40] }]);
 });
 
 test("A LOOP WHOSE PARENT ID WAS REUSED IS STILL ITS OWN TARGET, not dropped as that newer process's child", () => {

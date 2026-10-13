@@ -824,17 +824,15 @@ aify_hermes_kill_prior() {
   # Git for Windows has neither, so on Windows a relaunch kept the previous delivery loop running and the agent read
   # online. It ends this agent's prior `hermes-managed-host.js run <agent>` loop, whole id only, whose teardown ends
   # the gateway host it owns, never this launch's own: `exclude_pid` is the loop just started, converted to its
-  # Windows pid where Git Bash has one. The prior visible TUI (`--tui --resume <id>`, MC3 2026-06-06) is ended on the
-  # PRE-spawn call only, before this launch's TUI exists.
-  local _exclude="" _prior_id=""
+  # Windows pid where Git Bash has one. A previous visible TUI is the lease's to end, as part of the previous launch's
+  # tree; a hermes window nothing launched for this agent is left alone (0.9.2 review, the operator's ruling).
+  local _exclude=""
   if [ -n "$exclude_pid" ]; then
     _exclude="$exclude_pid"
     [ -r "/proc/$exclude_pid/winpid" ] && _exclude="$(cat "/proc/$exclude_pid/winpid")"
-  else
-    _prior_id="$(node -e 'import("'"$AIFY_HERMES_STDIO_DIR"'/hermes-endpoint.js").then(m=>process.stdout.write(String(m.readSessionIdMarker(process.argv[1])||"")))' "$agent_id" 2>/dev/null || true)"
   fi
   node "$AIFY_BRIDGE_DIR_FWD/node_modules/aify-wrapper/bin/aify-hermes-reap-prior.mjs" --agent "$agent_id" \
-    ${_exclude:+--exclude "$_exclude"} ${_prior_id:+--resume-id "$_prior_id"} </dev/null >/dev/null 2>&1 || true
+    ${_exclude:+--exclude "$_exclude"} </dev/null >/dev/null 2>&1 || true
   # POSIX only (lsof): reap a gateway host left listening on this agent's port by a SIGKILLed loop. On Windows
   # `hermes-daemon-cli stop` below reaps gateway hosts by their own records.
   if [ -z "$exclude_pid" ] && command -v lsof >/dev/null 2>&1; then
