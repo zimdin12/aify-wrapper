@@ -7,6 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -45,6 +46,61 @@ test("THIS LAUNCH'S OWN LOOP, everything it started, and the launcher's own ance
   assert.deepEqual(priorHermesRuns(table, { agentId: "pc", exclude: [10], self: 6 }), [40]);
 });
 
+test("WHAT A PROCESS RUNS IS MATCHED, NOT WHAT IT MENTIONS: an observer of the loop's text is not the loop", () => {
+  // Review of 39d61c5: a process given the loop's text as an argument, and its child, were selected as kill targets.
+  const table = new Map([
+    row(1, 0, 0, "init"),
+    row(40, 1, 100, `node observer.js "hermes-managed-host.js run pc"`),
+    row(41, 40, 110, `node ${LOOP} pc-manager`),
+    row(42, 1, 100, `grep -- "--tui --resume 20261013_old" log.txt`),
+    row(43, 1, 100, `node --max-old-space-size=512 ${LOOP} pc`), // the loop, with a node option
+  ]);
+  assert.deepEqual(priorHermesRuns(table, { agentId: "pc", resumeId: "20261013_old", self: 1 }), [43]);
+});
+
+test("ANOTHER AGENT'S PROCESSES ARE NEVER TARGETS, and never inside a kill: its TUI, its host, the excluded loop", () => {
+  // Review of 39d61c5: pc-manager's TUI resuming the same session was selected, and the kill itself received no
+  // exclusions, so a tree or group walk reached the excluded loop and another agent's processes.
+  const table = new Map([
+    row(1, 0, 0, "init"),
+    row(30, 1, 100, "hermes --tui --resume 20261013_shared"), // pc-manager's, named by its lease
+    row(31, 1, 100, "hermes --tui --resume 20261013_shared"), // a bare TUI on this agent's session: still taken
+    row(10, 1, 100, `node ${LOOP} pc`), // the old loop, now hosting pc-manager's 40
+    row(40, 10, 120, "hermes --tui"),
+    row(20, 1, 300, `nohup node ${LOOP} pc`), // this launch's loop
+    row(21, 20, 310, `node ${LOOP} pc`),
+  ]);
+  const others = new Set([30, 40]);
+  assert.deepEqual(priorHermesRuns(table, { agentId: "pc", resumeId: "20261013_shared", exclude: [20], self: 1, others }), [31]);
+  const kills = [];
+  reapPriorHermesRuns({ agentId: "pc", resumeId: "20261013_shared", exclude: [20], table, others,
+    kill: (pid, options) => kills.push({ pid, spare: options.spare, boundaries: options.boundaries }) });
+  assert.deepEqual(kills, [{ pid: 31, spare: [20, 21], boundaries: [30, 40] }]);
+});
+
+test("A LOOP WHOSE PARENT ID WAS REUSED IS STILL ITS OWN TARGET, not dropped as that newer process's child", () => {
+  // Review of 39d61c5: loop 11 (born 100) names parent 10, now a newer matched loop (born 200). Ending 10's tree does
+  // not reach 11, since 11 is older than 10, so dropping 11 as a duplicate left it running.
+  const table = new Map([row(1, 0, 0, "init"), row(10, 1, 200, `node ${LOOP} pc`), row(11, 10, 100, `node ${LOOP} pc`)]);
+  assert.deepEqual(priorHermesRuns(table, { agentId: "pc", self: 1 }), [10, 11]);
+});
+
+test("A COMMAND LINE WITH A LINE BREAK IS ONE ROW in the live table, never a forged second process", { skip: process.platform !== "win32" }, async () => {
+  // Review of 39d61c5: a command line printed with its line break parsed as a second row, and that row was killed.
+  const forged = 3_999_999_999;
+  const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)", `x\n${forged}\t1\t2026-10-13T00:00:00.0000000Z\tnode ${LOOP} pc`],
+    { stdio: "ignore" });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const table = processTable({ commands: true });
+    assert.ok(table?.get(child.pid), "the live table lists the child");
+    assert.equal(table.has(forged), false, "a line break inside a command line forged a process");
+    assert.match(table.get(child.pid).commandLine, new RegExp(`${forged}`), "the flattened command line keeps its text");
+  } finally {
+    child.kill();
+  }
+});
+
 test("AN UNREADABLE TABLE ENDS NOTHING", () => {
   const killed = [];
   assert.equal(reapPriorHermesRuns({ agentId: "pc", table: null, kill: (pid) => killed.push(pid) }), 0);
@@ -69,17 +125,23 @@ test("THE LAUNCHER CALLS THE NODE REAP with no pkill gate, its own loop excluded
 
 test("A REAL LOOP LEFT RUNNING is found in the live table and ended; nothing else is", async () => {
   const agent = `fence-${process.pid}`;
-  const sleeper = spawn(process.execPath, ["-e", "setTimeout(() => {}, 120000)", "hermes-managed-host.js", "run", agent],
-    { stdio: "ignore" });
+  // A real script by the loop's name, run the way the launcher runs it: `node <dir>/hermes-managed-host.js run <agent>`.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-hermes-reap-"));
+  const script = path.join(dir, "hermes-managed-host.js");
+  fs.writeFileSync(script, "setTimeout(() => {}, 120000);\n");
+  const sleeper = spawn(process.execPath, [script, "run", agent], { stdio: "ignore" });
   const strays = [];
   try {
     await new Promise((resolve) => setTimeout(resolve, 300));
     const table = processTable({ commands: true });
     assert.ok(table?.get(process.pid)?.commandLine, "the live table carries command lines");
-    const ended = reapPriorHermesRuns({ agentId: agent, table, kill: (pid) => (pid === sleeper.pid ? sleeper.kill() : strays.push(pid)) });
+    const ended = reapPriorHermesRuns({ agentId: agent, table, others: new Set(),
+      kill: (pid) => (pid === sleeper.pid ? sleeper.kill() : strays.push(pid)) });
     assert.deepEqual(strays, [], "the reap tried to end processes this test did not start");
     assert.equal(ended, 1, "the sleeper was not found by its command line");
   } finally {
     try { sleeper.kill(); } catch { /* already gone */ }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
