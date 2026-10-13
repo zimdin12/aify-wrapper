@@ -5,15 +5,8 @@ points the runtime at an MCP bridge, and execs it with your arguments forwarded.
 
 Four are here: `claude-aify`, `codex-aify`, `hermes-aify`, `pi-aify` (with `omp-aify` as an alias).
 
-They were generated inside [aify-comms](https://github.com/zimdin12/aify-comms)' 4,371-line installer
-until v0.6, each body living in an unquoted heredoc where every runtime `$` had to be written `\$` and
-hermes carried 90 escaped backticks. This repo is that text made into files, so a host other than
-aify-comms can install a launcher without taking the service with it.
-
-For a while both repos carried the templates and a hash gate in each kept the copies honest. Since
-2026-08-20 there is one copy: aify-comms deleted its own and now depends on this package, so a
-template edit here reaches it through a version bump rather than through a second commit that has to
-remember to match.
+Each is a template rendered at install, so a host can install a launcher without the aify-comms service;
+aify-comms consumes this package pinned to a commit, the one copy of the templates.
 
 The third repo is [aify-env](https://github.com/zimdin12/aify-env), which owns processes and terminals
 on a host. It runs launchers rendered from these templates, and decides whether it may run one by
@@ -34,6 +27,7 @@ to have. Use `--client <name>` instead when you want exactly one.
 ```
 
 Either writes into `~/.local/bin` (override with `--dest`). Run `./install.sh --help` for the rest.
+On Windows run it from Git Bash: from PowerShell or cmd a bare `bash` is WSL's, and installs into WSL instead.
 
 Install the service's bridge first. The claude, codex and hermes launchers read a named agent's definition
 with the reader in that bridge (`--bridge-dir`), so this installer refuses (78) to write them when the bridge has
