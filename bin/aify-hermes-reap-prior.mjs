@@ -6,7 +6,6 @@
 // `--exclude` is this launch's own delivery loop, a Windows pid on Windows. Always exits 0: kill-prior is
 // best-effort and never stops a launch.
 
-import process from "node:process";
 import { parseArgs } from "node:util";
 
 import { reapPriorHermesRuns } from "../lib/hermes-prior-runs.mjs";
