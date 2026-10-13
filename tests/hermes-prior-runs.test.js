@@ -46,6 +46,20 @@ test("THIS LAUNCH'S OWN LOOP, everything it started, and the launcher's own ance
   assert.deepEqual(priorHermesRuns(table, { agentId: "pc", exclude: [10], self: 6 }), [40]);
 });
 
+test("THE NEW LOOP'S nohup STUB IS SPARED when the launcher excludes node, the pid Git Bash's $! names", () => {
+  // Measured 2026-10-13: `nohup node … &` then `/proc/$!/winpid` gave node.exe, and nohup.exe stayed alive as its parent
+  // with the loop's command line. Taking that stub orphans the new loop from the launcher's exit trap.
+  const table = new Map([
+    row(1, 0, 0, "init"),
+    row(5, 1, 50, "bash hermes-aify --aify-agent pc"),
+    row(10, 5, 100, `"C:\\Program Files\\Git\\usr\\bin\\nohup.exe" node ${LOOP} pc`), // this launch's stub
+    row(11, 10, 110, `C:\\nvm4w\\nodejs\\node.exe ${LOOP} pc`), // this launch's loop: the excluded winpid
+    row(20, 1, 60, `"C:\\Program Files\\Git\\usr\\bin\\nohup.exe" node ${LOOP} pc`), // the previous launch's stub
+    row(21, 20, 70, `C:\\nvm4w\\nodejs\\node.exe ${LOOP} pc`),
+  ]);
+  assert.deepEqual(priorHermesRuns(table, { agentId: "pc", exclude: [11], self: 1 }), [20]);
+});
+
 test("WHAT A PROCESS RUNS IS MATCHED, NOT WHAT IT MENTIONS: an observer of the loop's text is not the loop", () => {
   // Review of 39d61c5: a process given the loop's text as an argument, and its child, were selected as kill targets.
   const table = new Map([
