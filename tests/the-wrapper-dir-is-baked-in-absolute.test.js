@@ -29,11 +29,11 @@ const DEFINITION = { version: 1, agent: { id: "lead", name: "Lead", role: "revie
   workspace: "C:/work", model: "opus", effort: "high", instructions: "", env: {}, herdrSpace: true } };
 
 /** Render claude-aify through install.sh, run from `cwd`, with `wrapperArg` as given. */
-function install(cwd, wrapperArg) {
+function install(cwd, wrapperArg, env = process.env) {
   const out = tmp("wrapdir-out");
   const run = spawnSync("bash", [INSTALL, "--client", "claude", "--endpoint", NOWHERE, "--render-only", posix(out),
     "--bridge-dir", posix(tmp("wrapdir-bridge")), "--registry", posix(path.join(tmp("wrapdir-reg"), "services.json")),
-    "--wrapper-dir", wrapperArg], { cwd, encoding: "utf8", timeout: 120_000 });
+    "--wrapper-dir", wrapperArg], { cwd, env, encoding: "utf8", timeout: 120_000 });
   return { run, launcher: path.join(out, "claude-aify") };
 }
 
@@ -72,6 +72,36 @@ test("POSITIVE CONTROL: an ABSOLUTE --wrapper-dir with a space in it renders and
   const wrapper = readerWrapper(path.join(tmp("wrapdir-abs"), "wrapper copy"));
   const { run, launcher } = install(tmp("wrapdir-install-cwd"), posix(wrapper));
   assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
+  const named = checkNamed(launcher, tmp("wrapdir-other-project"));
+  assert.equal(named.status, 0, `${named.stdout}${named.stderr}`);
+  assert.equal(role(named.stdout), "reviewer");
+});
+
+/** A directory as bash names it: CDPATH is colon-separated, so a Windows `C:/...` would split in two. */
+const shellDir = (dir) => spawnSync("bash", ["-c", 'cd -- "$1" && pwd', "_", posix(dir)], { encoding: "utf8" }).stdout.trim();
+
+test("A BARE RELATIVE --wrapper-dir means the install's cwd, even with an exported CDPATH holding a decoy", () => {
+  // Review of 0.9.7 (C2): `cd` searches an exported CDPATH for a bare relative name and PRINTS the directory it
+  // chose, so the captured root was "path\npath", or a different directory of the same name entirely.
+  const installCwd = tmp("wrapdir-install-cwd");
+  readerWrapper(path.join(installCwd, "wrapper copy"));
+  const decoyParent = tmp("wrapdir-cdpath-decoy");
+  fs.mkdirSync(path.join(decoyParent, "wrapper copy")); // no reader in it: a launcher pointed here refuses 78
+  const env = { ...process.env, CDPATH: shellDir(decoyParent) };
+
+  // CONTROL: the decoy is live. Plain bash, in the install's cwd, with this CDPATH, goes to the decoy and says so.
+  const plain = spawnSync("bash", ["-c", 'cd "wrapper copy" && pwd'], { cwd: installCwd, env, encoding: "utf8" });
+  const lines = plain.stdout.trim().split("\n");
+  assert.equal(lines.length, 2, `bash did not print the CDPATH match, so this fixture tests nothing: ${JSON.stringify(plain.stdout)}`);
+  assert.match(lines[1], /wrapdir-cdpath-decoy/, "bash did not choose the decoy, so this fixture tests nothing");
+
+  const { run, launcher } = install(installCwd, "wrapper copy", env);
+  assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
+  const text = fs.readFileSync(launcher, "utf8");
+  const baked = /^AIFY_WRAPPER_DIR_FWD="([^"]*)"$/m.exec(text)?.[1];
+  assert.ok(baked, "no wrapper root baked");
+  assert.doesNotMatch(baked, /\n/, `the wrapper root was baked across lines: ${JSON.stringify(baked)}`);
+  assert.match(baked, /wrapdir-install-cwd-[^/]*\/wrapper copy$/, `resolved to the wrong directory: ${baked}`);
   const named = checkNamed(launcher, tmp("wrapdir-other-project"));
   assert.equal(named.status, 0, `${named.stdout}${named.stderr}`);
   assert.equal(role(named.stdout), "reviewer");

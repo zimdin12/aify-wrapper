@@ -160,10 +160,16 @@ fi
 # AND RESOLVED TO AN ABSOLUTE PATH NOW, because it is baked into the launcher and the launcher runs from whatever
 # project it is started in: a relative `./wrapper copy` passed the reader check here and then refused every named
 # launch elsewhere (review of 0.9.7). A directory that does not exist is refused before anything is written.
-if ! _aify_wrapper_abs="$(cd "$WRAPPER_DIR" 2>/dev/null && pwd)"; then
+# CDPATH CLEARED AND cd SILENCED: with an exported CDPATH, `cd` searches it for a bare relative name, may pick a
+# different directory of that name, and prints the one it picked, so the capture was "path<newline>path". The
+# option means the install's cwd, and only pwd supplies the root. A root with a newline in it is refused regardless.
+if ! _aify_wrapper_abs="$(CDPATH= cd -- "$WRAPPER_DIR" >/dev/null 2>&1 && pwd -P)"; then
   echo "install.sh: --wrapper-dir '$WRAPPER_DIR' is not a directory." >&2
   exit "$EXIT_CONFIG"
 fi
+case "$_aify_wrapper_abs" in
+  *$'\n'*) echo "install.sh: --wrapper-dir '$WRAPPER_DIR' resolved to a path with a newline in it." >&2; exit "$EXIT_CONFIG" ;;
+esac
 WRAPPER_DIR="$_aify_wrapper_abs"
 [ -n "$HOST_REPO" ] || HOST_REPO="$NATIVE_BASE"
 
