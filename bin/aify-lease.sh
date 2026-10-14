@@ -2,13 +2,16 @@
 #
 #   aify_lease_take_intent "$@"                                 consumes --aify-start-intent=start|replace;
 #                                                               the launcher then runs `set -- "${AIFY_LEASE_ARGS[@]}"`
-#   aify_lease_claim <bridge-dir> <agent-id> <runtime> <mode>   returns 75 when refused, 0 otherwise
+#   aify_lease_claim <agent-id> <runtime> <mode>                returns 75 when refused, 0 otherwise
 #   aify_lease_attach <pid> <kind>                              a process this instance started detached
 #   aify_lease_release                                          on the launcher's way out
 #
 # Every function is safe under `set -euo pipefail` and none can fail a launch except by the refusal,
-# which is the one outcome that must stop it. An installed bridge older than this file simply has no
-# helper, and the claim is skipped.
+# which is the one outcome that must stop it. A directory without the node helper beside this file (a
+# partial copy) skips the claim.
+#
+# THE HELPERS ARE THIS FILE'S SIBLINGS, found from where it was sourced: they are one package, so a launcher
+# never reaches them through a service's bridge.
 #
 # THE PID IS THE LAUNCHER'S OWN. On Git Bash `$$` is an MSYS pid native Windows cannot see, and node's
 # parent there is a short-lived stub rather than this shell, so the Windows pid comes from
@@ -27,11 +30,13 @@
 #
 # THE ARGUMENT IS KEPT APART FROM `AIFY_START_INTENT`, which a shell inside a running session can carry and
 # bin/aify-inherited-session.sh therefore drops: a restore typed into such a pane must keep its `start`.
-# Older installed bridges may lack the C4 helper, as they may lack the lease helper.
+#
+# This file's own directory, where its helpers are (see the header). A partial copy may lack the C4 helper.
+AIFY_LEASE_BIN="${BASH_SOURCE[0]%/*}"
 aify_lifetime_start() { :; }
 aify_lifetime_release() { :; }
-if [ -r "${BASH_SOURCE[0]%/*}/aify-lifetime.sh" ]; then
-  . "${BASH_SOURCE[0]%/*}/aify-lifetime.sh"
+if [ -r "$AIFY_LEASE_BIN/aify-lifetime.sh" ]; then
+  . "$AIFY_LEASE_BIN/aify-lifetime.sh"
 fi
 
 aify_lease_take_intent() {
@@ -73,16 +78,16 @@ aify_lease_claim() {
   local _aify_intent="${AIFY_LEASE_INTENT_ARG:-${AIFY_START_INTENT:-}}"
   unset AIFY_START_INTENT AIFY_LEASE_INTENT_ARG
   AIFY_LEASE_AGENT=""
-  [ -n "${2:-}" ] || return 0
+  [ -n "${1:-}" ] || return 0
   command -v node >/dev/null 2>&1 || return 0
-  AIFY_LEASE_HELPER="$1/node_modules/aify-wrapper/bin/aify-agent-lease.mjs"
+  AIFY_LEASE_HELPER="$AIFY_LEASE_BIN/aify-agent-lease.mjs"
   [ -f "$AIFY_LEASE_HELPER" ] || return 0
   if command -v cygpath >/dev/null 2>&1; then
     AIFY_LEASE_HELPER="$(cygpath -m "$AIFY_LEASE_HELPER" 2>/dev/null || printf '%s' "$AIFY_LEASE_HELPER")"
   fi
   AIFY_LEASE_PID="$(aify_lease_pid "$$")"
   _aify_lease_status=0
-  node "$AIFY_LEASE_HELPER" claim --agent "$2" --pid "$AIFY_LEASE_PID" --runtime "${3:-}" --mode "${4:-}" \
+  node "$AIFY_LEASE_HELPER" claim --agent "$1" --pid "$AIFY_LEASE_PID" --runtime "${2:-}" --mode "${3:-}" \
     --identity "${AIFY_LEASE_IDENTITY:-recovered}" ${_aify_intent:+--intent "$_aify_intent"} \
     ${AIFY_LEASE_INSIDE_SESSION:+--inside 1} </dev/null || _aify_lease_status=$?
   [ "$_aify_lease_status" = 75 ] && return 75
@@ -91,7 +96,7 @@ aify_lease_claim() {
   # after a failed claim went on to reap as though it owned the agent (hermes' kill-prior reaps only for a
   # launcher holding the lease; external review, 2026-09-15).
   [ "$_aify_lease_status" = 0 ] || return 0
-  AIFY_LEASE_AGENT="$2"
+  AIFY_LEASE_AGENT="$1"
   export AIFY_AGENT_LEASE="$AIFY_LEASE_PID"
   return 0
 }

@@ -25,18 +25,17 @@ function tmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "aify-reinstall-"));
 }
 
-/** A bridge directory holding the definition reader, so the install is judged on its own and never on this
- *  machine's real ~/.aify-comms, which the default --bridge-dir would read. */
-function bridgeWithReader() {
-  const bridge = tmp();
-  const bin = path.join(bridge, "node_modules", "aify-wrapper", "bin");
+/** A wrapper directory holding the definition reader, so the install is judged on its own. */
+function wrapperWithReader() {
+  const wrapper = tmp();
+  const bin = path.join(wrapper, "bin");
   fs.mkdirSync(bin, { recursive: true });
   fs.writeFileSync(path.join(bin, "aify-definition.mjs"), "");
-  return bridge;
+  return wrapper;
 }
 
 function install(dest, args) {
-  return spawnSync("bash", [INSTALL, "--client", "claude", "--dest", posix(dest), "--bridge-dir", posix(bridgeWithReader()), ...args], {
+  return spawnSync("bash", [INSTALL, "--client", "claude", "--dest", posix(dest), "--bridge-dir", posix(tmp()), "--wrapper-dir", posix(wrapperWithReader()), ...args], {
     encoding: "utf8", timeout: 120_000, env: { ...process.env, AIFY_NO_PROMPT: "1" },
   });
 }

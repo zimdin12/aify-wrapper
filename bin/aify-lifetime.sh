@@ -1,9 +1,12 @@
 # Sourced by aify-lease.sh. C4 records belong to the waiting launcher, not its runtime.
+#
+#   aify_lifetime_start <agent-id> <harness> <mode>   the record writer is this file's sibling
+AIFY_LIFETIME_BIN="${BASH_SOURCE[0]%/*}"
 AIFY_LIFETIME_AGENT="${AIFY_AGENT_ID:-}"
 AIFY_RESIDENT_RECORD=""
 
 aify_lifetime_start() {
-  local _bridge="$1" _agent="$2" _harness="$3" _mode="$4" _instance="${AIFY_ENV_INSTANCE:-default}"
+  local _agent="$1" _harness="$2" _mode="$3" _instance="${AIFY_ENV_INSTANCE:-default}"
   # A host-minted lifetime is addressed to the inherited identity, before the launcher exports its own.
   if [ "$_mode" = managed ] && [ -n "$_agent" ] && [ "$_agent" = "$AIFY_LIFETIME_AGENT" ] \
     && [ -n "${AIFY_LIFETIME:-}" ] && [ -n "${AIFY_ENV_INSTANCE:-}" ] && [ -n "${AIFY_ENV_URL:-}" ]; then
@@ -11,9 +14,10 @@ aify_lifetime_start() {
   fi
   unset AIFY_LIFETIME AIFY_ENV_URL AIFY_ENV_INSTANCE
   [ "$_mode" = resident ] && [ -n "$_agent" ] || return 0
-  local _helper="$_bridge/node_modules/aify-wrapper/bin/aify-resident-record.mjs" _root="$HOME/.aify/residents"
+  local _helper="$AIFY_LIFETIME_BIN/aify-resident-record.mjs" _root="$HOME/.aify/residents"
   if command -v cygpath >/dev/null 2>&1; then
     _root="$(cygpath -m "$_root")" || return 78
+    _helper="$(cygpath -m "$_helper")" || return 78
   fi
   local _clock="${EPOCHREALTIME:-}" _pid
   _pid="$(aify_lease_pid "$$")" || return 78

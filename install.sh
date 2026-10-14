@@ -16,6 +16,7 @@
 #   --dest <dir>           where to install (default: ~/.local/bin)
 #   --bridge-dir <dir>     directory holding the MCP bridge (default: ~/.aify-comms/mcp/stdio)
 #   --native-base <dir>    the bridge's install root (default: ~/.aify-comms)
+#   --wrapper-dir <dir>    where launchers find this package's bin/ and lib/ (default: this package)
 #   --host-repo <dir>      host checkout, for hooks that must run from source
 #   --set KEY=VALUE        extra placeholder, repeatable (hermes needs three; see README)
 #   --registry <path>      service registry to build against (default: ~/.aify/services.json)
@@ -57,6 +58,7 @@ ENDPOINT=""
 DEST="$HOME/.local/bin"
 NATIVE_BASE=""
 BRIDGE_DIR=""
+WRAPPER_DIR=""
 HOST_REPO=""
 RENDER_ONLY=""
 REGISTRY=""
@@ -78,6 +80,7 @@ while [ $# -gt 0 ]; do
     --dest) DEST="${2:-}"; shift 2 ;;
     --bridge-dir) BRIDGE_DIR="${2:-}"; shift 2 ;;
     --native-base) NATIVE_BASE="${2:-}"; shift 2 ;;
+    --wrapper-dir) WRAPPER_DIR="${2:-}"; shift 2 ;;
     --host-repo) HOST_REPO="${2:-}"; shift 2 ;;
     --set) EXTRAS+=("${2:-}"); shift 2 ;;
     --render-only) RENDER_ONLY="${2:-}"; shift 2 ;;
@@ -150,6 +153,10 @@ fi
 [ -n "$NATIVE_BASE" ] || NATIVE_BASE="$HOME/.$SERVICE_NAME"
 
 [ -n "$BRIDGE_DIR" ] || BRIDGE_DIR="$NATIVE_BASE/mcp/stdio"
+# THE LAUNCHERS FIND THEIR OWN HELPERS HERE: this package, wherever it is installed. Not under the bridge,
+# which is a service's and holds only that service's code. render.sh takes no default for it, so a host that
+# renders through a copy of render.sh cannot end up pointing its launchers at that copy's directory.
+[ -n "$WRAPPER_DIR" ] || WRAPPER_DIR="$HERE"
 [ -n "$HOST_REPO" ] || HOST_REPO="$NATIVE_BASE"
 
 [ -n "$REGISTRY" ] || REGISTRY="$HOME/.aify/services.json"
@@ -214,6 +221,7 @@ install_one() {
         "MCP_TRANSPORT=$MCP_TRANSPORT" \
         "SERVICE_NAME=$SERVICE_NAME" \
         "BRIDGE_DIR=$BRIDGE_DIR" \
+        "WRAPPER_DIR=$WRAPPER_DIR" \
         "NATIVE_BASE=$NATIVE_BASE" \
         "SCRIPT_DIR=$HOST_REPO" \
         ${extras[@]+"${extras[@]}"}
@@ -255,22 +263,22 @@ else
   CLIENTS=("$CLIENT")
 fi
 
-# A LAUNCHER THAT READS DEFINITIONS IS NOT WRITTEN AHEAD OF ITS READER. It reads an agent's definition with the
-# reader in the bridge it points at and refuses (78) when that file is missing, so launchers written before the
-# service's own install put the bridge in place started nothing until it ran (external review of 0.8.1: the
-# upgrade-order trap). Refused before anything is written, naming the install to run first.
-# WHICH LAUNCHERS READ is taken from their templates, not listed: pi's does not, and was refused for nothing
-# (review of 0.8.2). The check is that the reader's file exists, not that it runs. --render-only is left to its
-# caller, who chooses where the launchers go.
+# A LAUNCHER THAT READS DEFINITIONS IS NOT WRITTEN AHEAD OF ITS READER. It reads an agent's definition with
+# bin/aify-definition.mjs in the wrapper directory it was rendered with, and refuses (78) when that file is
+# missing. The reader is this package's own, so it is there unless --wrapper-dir names a directory without it,
+# which is refused here before anything is written. (It once lived in the service's bridge, and launchers
+# written before the service's install started nothing until it ran: external review of 0.8.1.)
+# WHICH LAUNCHERS READ is taken from their templates, not listed: pi's does not (review of 0.8.2). The check is
+# that the reader's file exists, not that it runs. --render-only is left to its caller.
 READING_CLIENTS=()
 for _client in "${CLIENTS[@]}"; do
   if grep -q "aify-definition.mjs" "$HERE/wrappers/$_client-aify.sh.in" 2>/dev/null; then READING_CLIENTS+=("$_client"); fi
 done
 if [ -z "$RENDER_ONLY" ] && [ "${#READING_CLIENTS[@]}" -gt 0 ] \
-  && [ ! -f "$BRIDGE_DIR/node_modules/aify-wrapper/bin/aify-definition.mjs" ]; then
-  echo "install.sh: $BRIDGE_DIR has no definition reader (node_modules/aify-wrapper/bin/aify-definition.mjs)," >&2
-  echo "            so the ${READING_CLIENTS[*]} launcher written now would refuse to start a named agent. Install" >&2
-  echo "            the service's bridge first (aify-comms: install.sh --client <name>), which writes it too." >&2
+  && [ ! -f "$WRAPPER_DIR/bin/aify-definition.mjs" ]; then
+  echo "install.sh: $WRAPPER_DIR has no definition reader (bin/aify-definition.mjs)," >&2
+  echo "            so the ${READING_CLIENTS[*]} launcher written now would refuse to start a named agent." >&2
+  echo "            Point --wrapper-dir at an installed aify-wrapper, or leave it out to use this one." >&2
   exit "$EXIT_CONFIG"
 fi
 

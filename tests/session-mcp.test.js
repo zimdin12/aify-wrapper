@@ -26,7 +26,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { definitionsEnv, readerBridge } from "./definition-reader-bridge.mjs";
+import { definitionsEnv, readerWrapper } from "./definition-reader-wrapper.mjs";
 
 import { parseRegistry, sessionMcpConfig, sessionMcpConfigBase64, sessionMcpEntriesFor } from "../lib/registry.mjs";
 
@@ -70,7 +70,7 @@ function launch(registry, env = {}) {
   fs.writeFileSync(registryFile, JSON.stringify(registry));
 
   const rendered = spawnSync("bash", [INSTALL, "--client", "claude", "--endpoint", NOWHERE, "--render-only", out, "--registry", registryFile,
-    "--bridge-dir", posix(readerBridge(path.join(dir, "bridge")))], {
+    "--bridge-dir", posix(path.join(dir, "bridge")), "--wrapper-dir", posix(readerWrapper(path.join(dir, "wrapper")))], {
     encoding: "utf8",
     timeout: 120_000,
   });

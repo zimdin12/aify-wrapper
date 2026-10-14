@@ -18,7 +18,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { definitionsEnv, readerBridge } from "./definition-reader-bridge.mjs";
+import { definitionsEnv, readerWrapper } from "./definition-reader-wrapper.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const posix = (p) => p.split(String.fromCharCode(92)).join("/");
@@ -38,8 +38,8 @@ const CLIENTS = [
 
 function render(client, extra = []) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `aify-wrapper-${client}-`));
-  const bridge = posix(readerBridge(path.join(dir, "bridge")));
-  execFileSync("bash", [INSTALL, "--client", client, "--endpoint", NOWHERE, "--render-only", dir, "--bridge-dir", bridge, ...extra], {
+  const wrapper = posix(readerWrapper(path.join(dir, "wrapper")));
+  execFileSync("bash", [INSTALL, "--client", client, "--endpoint", NOWHERE, "--render-only", dir, "--bridge-dir", posix(path.join(dir, "bridge")), "--wrapper-dir", wrapper, ...extra], {
     encoding: "utf8",
   });
   return dir;

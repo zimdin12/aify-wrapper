@@ -31,7 +31,7 @@ import test from "node:test";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { definitionsEnv, readerBridge } from "./definition-reader-bridge.mjs";
+import { definitionsEnv, readerWrapper } from "./definition-reader-wrapper.mjs";
 import { CLIENTS_ALL_RENDERS, sealedPath, withPath } from "./sealed-path.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -60,7 +60,7 @@ function world() {
   const sealed = sealedPath(CLIENTS_ALL_RENDERS);
   const result = spawnSync("bash", [
     INSTALL, "--all", "--endpoint", "http://127.0.0.2:1", "--render-only", posix(dir),
-    "--bridge-dir", posix(readerBridge(path.join(dir, "bridge"))),
+    "--bridge-dir", posix(path.join(dir, "bridge")), "--wrapper-dir", posix(readerWrapper(path.join(dir, "wrapper"))),
   ], { encoding: "utf8", timeout: 180_000, env: withPath(process.env, sealed.PATH) });
   assert.equal(result.status, 0, result.stderr);
 

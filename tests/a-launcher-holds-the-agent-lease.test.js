@@ -51,8 +51,7 @@ function world(client) {
   const stubs = path.join(dir, "stubs");
   const home = path.join(dir, "home");
   const bridge = path.join(dir, "bridge");
-  for (const d of [out, stubs, path.join(home, ".codex", "sessions"), path.join(bridge, "node_modules")]) fs.mkdirSync(d, { recursive: true });
-  fs.symlinkSync(ROOT, path.join(bridge, "node_modules", "aify-wrapper"), "dir");
+  for (const d of [out, stubs, path.join(home, ".codex", "sessions"), bridge]) fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(bridge, "hermes-managed-host.js"), MANAGED_HOST);
   const rendered = spawnSync("bash", [INSTALL, "--client", client, "--endpoint", NOWHERE, "--render-only", out, "--bridge-dir", bridge],
     { encoding: "utf8", timeout: 120_000 });
@@ -285,7 +284,7 @@ test("the claim comes before every older reap of the same agent, so a refused st
   const order = { claude: 'node "$AIFY_BRIDGE_DIR_FWD/reap-managed-claude.js"', hermes: '  aify_hermes_kill_prior "$HERMES_AIFY_AGENT_ID"' };
   for (const [client, reap] of Object.entries(order)) {
     const source = fs.readFileSync(path.join(ROOT, "wrappers", `${client}-aify.sh.in`), "utf8");
-    const claim = source.indexOf('  aify_lease_claim "@@BRIDGE_DIR@@"');
+    const claim = source.indexOf('  aify_lease_claim "');
     const reapAt = source.indexOf(reap);
     assert.ok(claim > 0 && reapAt > 0, `${client}: control, both call sites are found`);
     assert.ok(claim < reapAt, `${client}: the reap runs before the claim`);

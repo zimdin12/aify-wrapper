@@ -18,6 +18,7 @@
 #|   @@ + ENDPOINT_RAW@@   the same URL with no fallback (may be empty)
 #|   @@ + NATIVE_BASE@@    native dotfolder holding the bridge runtime (~/.aify-comms)
 #|   @@ + BRIDGE_DIR@@     the bridge directory inside it
+#|   @@ + WRAPPER_DIR@@    this package's own install root, where the launcher finds its bin/ and lib/
 #|   @@ + SCRIPT_DIR@@     the repo checkout, for hooks that must run from source
 #|
 #| Rendering is proven byte-identical to the heredoc it replaced by
@@ -38,9 +39,20 @@ if command -v cygpath >/dev/null 2>&1; then
   if [ -n "$_aify_bridge_converted" ]; then AIFY_BRIDGE_DIR_FWD="$_aify_bridge_converted"; fi
 fi
 
+# THE WRAPPER'S OWN INSTALL ROOT, where every bin/ and lib/ helper below is found. It is this package's
+# own directory, which arrives with the launcher; a service's bridge is used only for that service's code.
+# Converted for node once, here, for the reason the bridge directory is, and with the substitution kept out
+# of the assignment: under `set -e` a `cygpath` that fails inside `VAR="$(...)"` would end the launch
+# before the agent ran (`cygpath: can't convert empty path`, exit 1, proven in review against an empty path).
+AIFY_WRAPPER_DIR_FWD="@@WRAPPER_DIR@@"
+if command -v cygpath >/dev/null 2>&1; then
+  _aify_wrapper_converted="$(cygpath -m "@@WRAPPER_DIR@@" 2>/dev/null || true)"
+  if [ -n "$_aify_wrapper_converted" ]; then AIFY_WRAPPER_DIR_FWD="$_aify_wrapper_converted"; fi
+fi
+
 # ONE LIVE INSTANCE PER AGENT (bin/aify-lease.sh, lib/agent-lease.mjs). Sourced first so every exit path,
-# traps included, can call the release; an installed bridge older than the helper gets no-op stubs.
-AIFY_LEASE_SH="@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-lease.sh"
+# traps included, can call the release; a wrapper directory without the helper gets no-op stubs.
+AIFY_LEASE_SH="@@WRAPPER_DIR@@/bin/aify-lease.sh"
 if [ -r "$AIFY_LEASE_SH" ]; then
   . "$AIFY_LEASE_SH"
 else
@@ -60,7 +72,7 @@ set -- ${AIFY_LEASE_ARGS[@]+"${AIFY_LEASE_ARGS[@]}"}
 # has read whether this command names its agent: a bare launch typed into a pane that inherited another
 # agent's session once started as that agent and replaced it, while a named launch a host composed keeps the
 # mode and role its host gave it.
-AIFY_INHERITED_SESSION_SH="@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-inherited-session.sh"
+AIFY_INHERITED_SESSION_SH="@@WRAPPER_DIR@@/bin/aify-inherited-session.sh"
 if [ -r "$AIFY_INHERITED_SESSION_SH" ]; then
   . "$AIFY_INHERITED_SESSION_SH"
   aify_forget_inherited_session "${AIFY_LEASE_NAMED_AGENT:-}"
@@ -115,23 +127,8 @@ fi
 # IT CAN NEVER FAIL THE LAUNCH. This runs on the path of the operator starting an agent, so a Herdr
 # that is busy, mid-handoff or gone costs the pane its label and never costs the agent its start.
 if [ "${HERDR_ENV:-}" = "1" ]; then
-  # THE UNCONVERTED PATH FIRST, because this assignment cannot fail. `@@BRIDGE_DIR@@` is substituted
-  # MSYS-style (/c/Users/...), which native Windows node cannot open, so cygpath converts it where
-  # cygpath exists -- but the conversion only ever REPLACES a value that is already usable.
-  #
-  # THE SUBSTITUTION IS KEPT OUT OF THE ASSIGNMENT ON PURPOSE. Under `set -euo pipefail`,
-  # `VAR="$(cmd)"` takes cmd's exit status, so writing this the obvious way aborts the wrapper
-  # BEFORE the agent runs whenever cygpath fails -- which review proved with an empty BRIDGE_DIR
-  # (`cygpath: can't convert empty path`, exit 1, agent never started) against a control that
-  # launched normally. Every line below is individually neutralised instead.
-  AIFY_HERDR_BRIDGE="@@BRIDGE_DIR@@"
-  if command -v cygpath >/dev/null 2>&1; then
-    AIFY_HERDR_CONVERTED="$(cygpath -m "@@BRIDGE_DIR@@" 2>/dev/null || true)"
-    if [ -n "$AIFY_HERDR_CONVERTED" ]; then
-      AIFY_HERDR_BRIDGE="$AIFY_HERDR_CONVERTED"
-    fi
-  fi
-  AIFY_HERDR_HELPER="$AIFY_HERDR_BRIDGE/node_modules/aify-wrapper/bin/aify-herdr-pane.mjs"
+  # From the wrapper's own install root, converted for node once at the top of this file.
+  AIFY_HERDR_HELPER="$AIFY_WRAPPER_DIR_FWD/bin/aify-herdr-pane.mjs"
   # STDERR GOES TO A LOG, NOT TO NOWHERE. It used to go to /dev/null, which made every failure of
   # this feature -- a lost record, a pane labelled but never reported, a refused relaunch -- invisible
   # until a reboot did not bring an agent back, with nothing anywhere saying why. It stays off the
@@ -233,7 +230,7 @@ for _aify_def_arg in "$@"; do
   if [ "$_aify_def_arg" = "--aify-ignore-definition" ]; then AIFY_IGNORE_DEFINITION=true; fi
 done
 aify_read_definition() {
-  local _id="$1" _out _reader="$AIFY_BRIDGE_DIR_FWD/node_modules/aify-wrapper/bin/aify-definition.mjs"
+  local _id="$1" _out _reader="$AIFY_WRAPPER_DIR_FWD/bin/aify-definition.mjs"
   if [ -z "$_id" ] || [ "$AIFY_IGNORE_DEFINITION" = true ] || [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ]; then
     return 0
   fi
@@ -604,7 +601,7 @@ if [ "$CLAUDE_AIFY_AGENT_ID" != "$CLAUDE_AIFY_DEFAULTS_FOR" ]; then claude_aify_
 # (lib/claude-default-model.mjs). ANTHROPIC_MODEL already wins inside Claude, so it is left to do that.
 if [ "$CLAUDE_HAS_MODEL" = false ] && [ -z "$CLAUDE_AIFY_MODEL" ] && [ -n "${CLAUDE_RESUME_ID:-}" ] \
    && [ -z "${ANTHROPIC_MODEL:-}" ]; then
-  _claude_default_reader="$AIFY_BRIDGE_DIR_FWD/node_modules/aify-wrapper/bin/aify-claude-default-model.mjs"
+  _claude_default_reader="$AIFY_WRAPPER_DIR_FWD/bin/aify-claude-default-model.mjs"
   if [ -f "$_claude_default_reader" ]; then
     # `pwd -W` is Git Bash's native form of the directory, which a native node can open with path
     # rewriting off; elsewhere it fails, and the POSIX path is native already.
@@ -843,7 +840,7 @@ AIFY_HERDR_EVENTS=""
 if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then
   export AIFY_HERDR_AGENT="${0##*/}"
   _aify_state_hook() {
-    printf '{ "type": "command", "command": "sh \\"%s/node_modules/aify-wrapper/bin/aify-herdr-state.sh\\" %s", "timeout": 5, "async": true }' "$AIFY_BRIDGE_DIR_FWD" "$1"
+    printf '{ "type": "command", "command": "sh \\"%s/bin/aify-herdr-state.sh\\" %s", "timeout": 5, "async": true }' "$AIFY_WRAPPER_DIR_FWD" "$1"
   }
   AIFY_HERDR_WORKING=", $(_aify_state_hook working)"
   AIFY_HERDR_EVENTS=",
@@ -881,7 +878,7 @@ _aify_runtime_exited() {
   AIFY_RUNTIME_RUNNING=0
   _aify_exit_herdr=""
   if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then _aify_exit_herdr=herdr; fi
-  sh "@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-runtime-exited.sh" "@@BRIDGE_DIR@@" "$_aify_exit_herdr" </dev/null >/dev/null 2>&1 || true
+  sh "@@WRAPPER_DIR@@/bin/aify-runtime-exited.sh" "@@BRIDGE_DIR@@" "$_aify_exit_herdr" </dev/null >/dev/null 2>&1 || true
 }
 trap 'rm -f "$AIFY_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null; _aify_runtime_exited; aify_lifetime_release; aify_lease_release' EXIT
 
@@ -890,7 +887,7 @@ trap 'rm -f "$AIFY_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null; _aify_runtime_
 # reap kills this agent's previous managed claude, so running it first let an automatic start end a live
 # instance the claim would then have refused.
 if [ "$CLAUDE_AIFY_SHARED" != true ]; then
-  aify_lease_claim "@@BRIDGE_DIR@@" "${CLAUDE_AIFY_AGENT_ID:-}" claude-code "${AIFY_SESSION_MODE:-}" || exit $?
+  aify_lease_claim "${CLAUDE_AIFY_AGENT_ID:-}" claude-code "${AIFY_SESSION_MODE:-}" || exit $?
 fi
 
 # Managed kill-prior (2026-05-31): exactly one managed claude per agent. Reap
@@ -952,7 +949,7 @@ if [ "$CLAUDE_AIFY_SHARED" = true ]; then
   exec aify-env run     --service "@@SERVICE_NAME@@"     --launcher "$0"     --label "${CLAUDE_AIFY_AGENT_ID:-}"     -- "${CLAUDE_AIFY_PASSTHRU[@]}"
 fi
 
-aify_lifetime_start "$AIFY_BRIDGE_DIR_FWD" "${CLAUDE_AIFY_AGENT_ID:-}" claude "$AIFY_SESSION_MODE" || exit $?
+aify_lifetime_start "${CLAUDE_AIFY_AGENT_ID:-}" claude "$AIFY_SESSION_MODE" || exit $?
 AIFY_RUNTIME_RUNNING=1
 claude --dangerously-load-development-channels server:@@SERVICE_NAME@@-channel "${CLAUDE_MCP_FLAGS[@]}" "${CLAUDE_PERMISSION_FLAGS[@]}" "${CLAUDE_ARGS[@]}"
 STATUS=$?

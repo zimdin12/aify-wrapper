@@ -23,7 +23,7 @@ import path from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { definitionsEnv, readerBridge } from "./definition-reader-bridge.mjs";
+import { definitionsEnv, readerWrapper } from "./definition-reader-wrapper.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -60,7 +60,8 @@ const winPath = (p) => (WIN
 // ONE bridge for the file: its path is baked into the launcher, and two renders compared byte for byte
 // must bake the same one.
 const BRIDGE_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "aify-fp-bridge-"));
-const BRIDGE = readerBridge(path.join(BRIDGE_ROOT, "bridge")).replace(/\\/g, "/");
+const BRIDGE = path.join(BRIDGE_ROOT, "bridge").replace(/\\/g, "/");
+const WRAPPER = readerWrapper(path.join(BRIDGE_ROOT, "wrapper")).replace(/\\/g, "/");
 after(() => fs.rmSync(BRIDGE_ROOT, { recursive: true, force: true }));
 
 /** Render one client with a given registry. `registry` may be an object, a raw string, or null. */
@@ -69,7 +70,7 @@ function renderWith(client, registry, { extraArgs = [] } = {}) {
   const out = path.join(dir, "out");
   fs.mkdirSync(out, { recursive: true });
 
-  const args = [INSTALL, "--client", client, "--endpoint", NOWHERE, "--render-only", out, "--bridge-dir", BRIDGE, ...extraArgs];
+  const args = [INSTALL, "--client", client, "--endpoint", NOWHERE, "--render-only", out, "--bridge-dir", BRIDGE, "--wrapper-dir", WRAPPER, ...extraArgs];
   if (registry !== null) {
     const file = path.join(dir, "services.json");
     fs.writeFileSync(file, typeof registry === "string" ? registry : JSON.stringify(registry));

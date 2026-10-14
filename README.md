@@ -29,10 +29,11 @@ to have. Use `--client <name>` instead when you want exactly one.
 Either writes into `~/.local/bin` (override with `--dest`). Run `./install.sh --help` for the rest.
 On Windows run it from Git Bash: from PowerShell or cmd a bare `bash` is WSL's, and installs into WSL instead.
 
-Install the service's bridge first. The claude, codex and hermes launchers read a named agent's definition
-with the reader in that bridge (`--bridge-dir`), so this installer refuses (78) to write them when the bridge has
-no reader file, and names the install to run first. It checks that the file is there, not that it runs; pi's
-launcher reads no definition and is not held.
+The launchers find this package's own `bin/` and `lib/` in the directory the installer runs from (override
+with `--wrapper-dir`), never through a service's bridge, so the order of the two installs does not matter. The
+claude, codex and hermes launchers read a named agent's definition with `bin/aify-definition.mjs` there, and the
+installer refuses (78) to write them when `--wrapper-dir` names a directory without it. pi's launcher reads no
+definition and is not held.
 
 ### The registry
 
@@ -73,6 +74,7 @@ to be asked without being run.
 | `--dest` | where to install (default `~/.local/bin`) |
 | `--bridge-dir` | directory holding the MCP bridge (default `~/.aify-comms/mcp/stdio`) |
 | `--native-base` | the bridge's install root (default `~/.aify-comms`) |
+| `--wrapper-dir` | where the launchers find this package's `bin/` and `lib/` (default: this package's own directory) |
 | `--host-repo` | your checkout, for hooks that run from source |
 | `--set KEY=VALUE` | an extra placeholder, repeatable |
 | `--render-only DIR` | write the launcher into `DIR` and stop, touching nothing else |
@@ -268,9 +270,8 @@ the instance.
 prints a warning and lets the launch through without the guarantee; a missing helper, or no `node` on
 PATH, lets it through without a word. A failed claim exits 70, and the launcher then does not export
 `AIFY_AGENT_LEASE` or act as the holder: only a claim that succeeded holds the lease. The launcher loads
-the helper from the bridge's installed copy of this package,
-`@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-lease.sh`, so after bumping a service's pin on
-aify-wrapper, reinstall that service or its launchers run without a lease.
+the helper from its own wrapper directory, `@@WRAPPER_DIR@@/bin/aify-lease.sh`, and the helper finds its node
+half beside itself.
 
 **It heals itself.** A dead or reused recorded pid is handled by the next claim, and an abandoned lock is
 taken over when its holder is gone or after 2 minutes. Reset by hand only when a refusal names a process
@@ -286,6 +287,7 @@ install time, and `#|` lines that document the template and are stripped from th
 | `@@ENDPOINT@@` | `--endpoint` |
 | `@@WRAPPER_VERSION@@` | this repo's `VERSION`, so `--check` can report what it is |
 | `@@BRIDGE_DIR@@` `@@NATIVE_BASE@@` `@@SCRIPT_DIR@@` | `--bridge-dir`, `--native-base`, `--host-repo` |
+| `@@WRAPPER_DIR@@` | `--wrapper-dir`, defaulting to this package's directory. `render.sh` has no default: a host that renders through it names the directory |
 | `@@HERMES_PLUGIN_PATH@@` `@@HERMES_STDIO_DIR@@` `@@HERMES_TUI_DIR@@` | `--set`, defaulted from the above |
 
 A placeholder the host does not supply is refused at render with exit 78. Left alone it would reach

@@ -21,7 +21,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { definitionsEnv, readerBridge } from "./definition-reader-bridge.mjs";
+import { definitionsEnv, readerWrapper } from "./definition-reader-wrapper.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -79,7 +79,7 @@ function strictConfigFor(registry) {
 
   const rendered = spawnSync("bash", [
     INSTALL, "--client", "claude", "--endpoint", NOWHERE,
-    "--render-only", out, "--registry", registryFile, "--bridge-dir", posix(readerBridge(path.join(dir, "bridge"))),
+    "--render-only", out, "--registry", registryFile, "--bridge-dir", posix(path.join(dir, "bridge")), "--wrapper-dir", posix(readerWrapper(path.join(dir, "wrapper"))),
   ], { encoding: "utf8", timeout: 120_000 });
   assert.equal(rendered.status, 0, `render failed: ${rendered.stdout}\n${rendered.stderr}`);
 

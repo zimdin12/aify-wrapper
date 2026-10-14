@@ -146,12 +146,12 @@ test("ONLY THE LEASE HOLDER REAPS: a launch whose claim failed starts, but ends 
   const start = TEMPLATE.indexOf("aify_hermes_kill_prior() {");
   const fn = TEMPLATE.slice(start, TEMPLATE.indexOf("\n}\n", start) + 3);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-hermes-gate-"));
-  const reap = path.join(dir, "node_modules", "aify-wrapper", "bin");
+  const reap = path.join(dir, "bin");
   fs.mkdirSync(reap, { recursive: true });
   const marker = path.join(dir, "reaped").replace(/\\/g, "/");
   fs.writeFileSync(path.join(reap, "aify-hermes-reap-prior.mjs"), `import fs from "node:fs";\nfs.writeFileSync(${JSON.stringify(marker)}, "x");\n`);
   const run = (lease) => spawnSync("bash", ["-c", `${fn}\naify_hermes_kill_prior pc 2`], {
-    env: { ...process.env, AIFY_BRIDGE_DIR_FWD: dir.replace(/\\/g, "/"), AIFY_LEASE_AGENT: lease }, encoding: "utf8" });
+    env: { ...process.env, AIFY_WRAPPER_DIR_FWD: dir.replace(/\\/g, "/"), AIFY_LEASE_AGENT: lease }, encoding: "utf8" });
   try {
     run("");
     assert.equal(fs.existsSync(marker), false, "a launch holding no lease reaped");

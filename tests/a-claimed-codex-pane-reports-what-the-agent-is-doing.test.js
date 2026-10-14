@@ -42,11 +42,10 @@ function launch({ env = {}, args = [], listFails = false, codexConfig = null } =
   const stubs = path.join(dir, "stubs");
   const home = path.join(dir, "home");
   const bridge = path.join(dir, "bridge");
-  for (const d of [out, stubs, path.join(home, ".codex", "sessions"), path.join(bridge, "node_modules")]) fs.mkdirSync(d, { recursive: true });
+  for (const d of [out, stubs, path.join(home, ".codex", "sessions"), bridge]) fs.mkdirSync(d, { recursive: true });
   // A saved thread, so `--resume thread-1` takes the launcher's resume branch rather than starting fresh.
   fs.writeFileSync(path.join(home, ".codex", "sessions", "thread-1.jsonl"), "");
-  fs.symlinkSync(ROOT, path.join(bridge, "node_modules", "aify-wrapper"), "dir");
-  const stateScript = path.join(bridge, "node_modules", "aify-wrapper", "bin", "aify-herdr-state.sh");
+  const stateScript = path.join(ROOT, "bin", "aify-herdr-state.sh");
   if (codexConfig) fs.writeFileSync(path.join(home, ".codex", "config.toml"), codexConfig(stateScript));
 
   const rendered = spawnSync("bash", [INSTALL, "--client", "codex", "--endpoint", NOWHERE,

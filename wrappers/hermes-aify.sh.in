@@ -30,9 +30,20 @@ if command -v cygpath >/dev/null 2>&1; then
   if [ -n "$_aify_bridge_converted" ]; then AIFY_BRIDGE_DIR_FWD="$_aify_bridge_converted"; fi
 fi
 
+# THE WRAPPER'S OWN INSTALL ROOT, where every bin/ and lib/ helper below is found. It is this package's
+# own directory, which arrives with the launcher; a service's bridge is used only for that service's code.
+# Converted for node once, here, for the reason the bridge directory is, and with the substitution kept out
+# of the assignment: under `set -e` a `cygpath` that fails inside `VAR="$(...)"` would end the launch
+# before the agent ran (`cygpath: can't convert empty path`, exit 1, proven in review against an empty path).
+AIFY_WRAPPER_DIR_FWD="@@WRAPPER_DIR@@"
+if command -v cygpath >/dev/null 2>&1; then
+  _aify_wrapper_converted="$(cygpath -m "@@WRAPPER_DIR@@" 2>/dev/null || true)"
+  if [ -n "$_aify_wrapper_converted" ]; then AIFY_WRAPPER_DIR_FWD="$_aify_wrapper_converted"; fi
+fi
+
 # ONE LIVE INSTANCE PER AGENT (bin/aify-lease.sh, lib/agent-lease.mjs). Sourced first so every exit path,
-# traps included, can call the release; an installed bridge older than the helper gets no-op stubs.
-AIFY_LEASE_SH="@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-lease.sh"
+# traps included, can call the release; a wrapper directory without the helper gets no-op stubs.
+AIFY_LEASE_SH="@@WRAPPER_DIR@@/bin/aify-lease.sh"
 if [ -r "$AIFY_LEASE_SH" ]; then
   . "$AIFY_LEASE_SH"
 else
@@ -52,7 +63,7 @@ set -- ${AIFY_LEASE_ARGS[@]+"${AIFY_LEASE_ARGS[@]}"}
 # has read whether this command names its agent: a bare launch typed into a pane that inherited another
 # agent's session once started as that agent and replaced it, while a named launch a host composed keeps the
 # mode and role its host gave it.
-AIFY_INHERITED_SESSION_SH="@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-inherited-session.sh"
+AIFY_INHERITED_SESSION_SH="@@WRAPPER_DIR@@/bin/aify-inherited-session.sh"
 if [ -r "$AIFY_INHERITED_SESSION_SH" ]; then
   . "$AIFY_INHERITED_SESSION_SH"
   aify_forget_inherited_session "${AIFY_LEASE_NAMED_AGENT:-}"
@@ -108,23 +119,8 @@ fi
 # IT CAN NEVER FAIL THE LAUNCH. This runs on the path of the operator starting an agent, so a Herdr
 # that is busy, mid-handoff or gone costs the pane its label and never costs the agent its start.
 if [ "${HERDR_ENV:-}" = "1" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then
-  # THE UNCONVERTED PATH FIRST, because this assignment cannot fail. `@@BRIDGE_DIR@@` is substituted
-  # MSYS-style (/c/Users/...), which native Windows node cannot open, so cygpath converts it where
-  # cygpath exists -- but the conversion only ever REPLACES a value that is already usable.
-  #
-  # THE SUBSTITUTION IS KEPT OUT OF THE ASSIGNMENT ON PURPOSE. Under `set -euo pipefail`,
-  # `VAR="$(cmd)"` takes cmd's exit status, so writing this the obvious way aborts the wrapper
-  # BEFORE the agent runs whenever cygpath fails -- which review proved with an empty BRIDGE_DIR
-  # (`cygpath: can't convert empty path`, exit 1, agent never started) against a control that
-  # launched normally. Every line below is individually neutralised instead.
-  AIFY_HERDR_BRIDGE="@@BRIDGE_DIR@@"
-  if command -v cygpath >/dev/null 2>&1; then
-    AIFY_HERDR_CONVERTED="$(cygpath -m "@@BRIDGE_DIR@@" 2>/dev/null || true)"
-    if [ -n "$AIFY_HERDR_CONVERTED" ]; then
-      AIFY_HERDR_BRIDGE="$AIFY_HERDR_CONVERTED"
-    fi
-  fi
-  AIFY_HERDR_HELPER="$AIFY_HERDR_BRIDGE/node_modules/aify-wrapper/bin/aify-herdr-pane.mjs"
+  # From the wrapper's own install root, converted for node once at the top of this file.
+  AIFY_HERDR_HELPER="$AIFY_WRAPPER_DIR_FWD/bin/aify-herdr-pane.mjs"
   # STDERR GOES TO A LOG, NOT TO NOWHERE. It used to go to /dev/null, which made every failure of
   # this feature -- a lost record, a pane labelled but never reported, a refused relaunch -- invisible
   # until a reboot did not bring an agent back, with nothing anywhere saying why. It stays off the
@@ -222,7 +218,7 @@ for _aify_def_arg in "$@"; do
   if [ "$_aify_def_arg" = "--aify-ignore-definition" ]; then AIFY_IGNORE_DEFINITION=true; fi
 done
 aify_read_definition() {
-  local _id="$1" _out _reader="$AIFY_BRIDGE_DIR_FWD/node_modules/aify-wrapper/bin/aify-definition.mjs"
+  local _id="$1" _out _reader="$AIFY_WRAPPER_DIR_FWD/bin/aify-definition.mjs"
   if [ -z "$_id" ] || [ "$AIFY_IGNORE_DEFINITION" = true ] || [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ]; then
     return 0
   fi
@@ -683,7 +679,7 @@ fi
 # hermes starts and each inherits this environment.
 if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then
   export AIFY_HERDR_AGENT="${0##*/}"
-  export AIFY_HERDR_HERMES_PLUGIN="$AIFY_HERDR_BRIDGE/node_modules/aify-wrapper/lib/hermes-herdr-state.py"
+  export AIFY_HERDR_HERMES_PLUGIN="$AIFY_WRAPPER_DIR_FWD/lib/hermes-herdr-state.py"
 fi
 
 # Node >=22 guarantee. The Hermes Ink TUI's gateway client attaches over a
@@ -834,7 +830,7 @@ aify_hermes_kill_prior() {
   # ONLY THE LEASE HOLDER REAPS. A failed claim lets the start through without acting as the holder (bin/aify-lease.sh),
   # and a reap then could end the live loop of the very launch that does hold this agent (whole-diff review of 0.9.2).
   if [ "${AIFY_LEASE_AGENT:-}" = "$agent_id" ]; then
-    node "$AIFY_BRIDGE_DIR_FWD/node_modules/aify-wrapper/bin/aify-hermes-reap-prior.mjs" --agent "$agent_id" \
+    node "$AIFY_WRAPPER_DIR_FWD/bin/aify-hermes-reap-prior.mjs" --agent "$agent_id" \
       ${_exclude:+--exclude "$_exclude"} </dev/null >/dev/null 2>&1 || true
   fi
   # POSIX only (lsof): reap a gateway host left listening on this agent's port by a SIGKILLed loop. On Windows
@@ -899,8 +895,8 @@ if [ ${#HERMES_ARGS[@]} -eq 0 ]; then aify_hermes_warm_bridge; fi
 if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_AIFY_SHARED" != true ]; then
   # Claimed before the gateway host and the delivery loop exist. It stops what a dead instance of this
   # agent left behind, including a gateway still holding hermes' session lease.
-  aify_lease_claim "@@BRIDGE_DIR@@" "$HERMES_AIFY_AGENT_ID" hermes "${AIFY_SESSION_MODE:-}" || exit $?
-  aify_lifetime_start "$AIFY_BRIDGE_DIR_FWD" "$HERMES_AIFY_AGENT_ID" hermes "$AIFY_SESSION_MODE" || exit $?
+  aify_lease_claim "$HERMES_AIFY_AGENT_ID" hermes "${AIFY_SESSION_MODE:-}" || exit $?
+  aify_lifetime_start "$HERMES_AIFY_AGENT_ID" hermes "$AIFY_SESSION_MODE" || exit $?
   trap 'aify_lifetime_release; aify_lease_release' EXIT
   aify_hermes_kill_prior "$HERMES_AIFY_AGENT_ID"
   export AIFY_AGENT_ID="$HERMES_AIFY_AGENT_ID"
@@ -988,7 +984,7 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
     AIFY_RUNTIME_RUNNING=0
     _aify_exit_herdr=""
     if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then _aify_exit_herdr=herdr; fi
-    sh "@@BRIDGE_DIR@@/node_modules/aify-wrapper/bin/aify-runtime-exited.sh" "@@BRIDGE_DIR@@" "$_aify_exit_herdr" </dev/null >/dev/null 2>&1 || true
+    sh "@@WRAPPER_DIR@@/bin/aify-runtime-exited.sh" "@@BRIDGE_DIR@@" "$_aify_exit_herdr" </dev/null >/dev/null 2>&1 || true
     aify_lifetime_release
   }
   trap _aify_hermes_on_exit EXIT INT TERM
@@ -1168,5 +1164,5 @@ if [ "$HERMES_AIFY_SHARED" = true ]; then
 fi
 
 # Plain sessions and subcommands own no resident lifetime, and borrow none from a parent.
-aify_lifetime_start "$AIFY_BRIDGE_DIR_FWD" "" hermes "" || exit $?
+aify_lifetime_start "" hermes "" || exit $?
 aify_hermes_exec_plain_or_tui

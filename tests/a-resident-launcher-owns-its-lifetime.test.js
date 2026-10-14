@@ -107,7 +107,7 @@ test("the real record writer binds identity, exclusive ownership, PID, clock and
 
 // Keep closed source regions in their original order, including enclosing guards.
 // Boundaries are not the lifetime/export/release statements subject to deletion.
-function wrapper(client, bridge) {
+function wrapper(client, { bridge, wrapperDir }) {
   const source = read(`wrappers/${client}-aify.sh.in`), ranges = [];
   function region(start, end) {
     const a = source.indexOf(start), b = end === null ? source.length : source.indexOf(end, a + start.length);
@@ -142,7 +142,7 @@ function wrapper(client, bridge) {
     region("# Plain sessions and subcommands", null);
   }
   for (let i = 1; i < ranges.length; i++) assert.ok(ranges[i - 1][1] <= ranges[i][0], `${client} source order`);
-  return ranges.map(([a, b]) => source.slice(a, b)).join("\n").replaceAll("@@BRIDGE_DIR@@", bridge);
+  return ranges.map(([a, b]) => source.slice(a, b)).join("\n").replaceAll("@@BRIDGE_DIR@@", bridge).replaceAll("@@WRAPPER_DIR@@", wrapperDir);
 }
 const probes = `
 cygpath() { printf '%s' "$2"; }
@@ -192,11 +192,11 @@ unset EPOCHREALTIME
 EPOCHREALTIME=1780000000.123456
 `;
 function fixture(home) {
-  const bridge = path.join(home, "bridge"), bin = path.join(bridge, "node_modules/aify-wrapper/bin");
+  const bridge = path.join(home, "bridge"), wrapperDir = path.join(home, "wrapper"), bin = path.join(wrapperDir, "bin");
   fs.mkdirSync(bin, { recursive: true });
   for (const name of ["aify-lease.sh", "aify-lifetime.sh", "aify-inherited-session.sh", "aify-resident-record.mjs"])
     fs.copyFileSync(path.join(root, "bin", name), path.join(bin, name));
-  return { bridge: bridge.replaceAll("\\", "/"), bin };
+  return { bridge: bridge.replaceAll("\\", "/"), wrapperDir: wrapperDir.replaceAll("\\", "/"), bin };
 }
 const nul = (file) => fs.existsSync(file) ? fs.readFileSync(file, "utf8").split("\0").filter(Boolean) : [];
 function environment(file) {
@@ -239,7 +239,7 @@ for (const client of ["claude", "codex", "hermes"]) {
   test(`${client}: real parsing, lifetime callers and natural teardown preserve all four ownership rows`, async () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "aify-lifetime-fake-"));
     try {
-      const { bridge, bin } = fixture(home);
+      const dirs = fixture(home), { bin } = dirs;
       // Fake lease effects and PID lookup, never lifetime decisions or teardown triggers.
       fs.appendFileSync(path.join(bin, "aify-lease.sh"), `\naify_lease_claim() { :; }\naify_lease_attach() { :; }\naify_lease_release() { :; }\naify_lease_pid() { printf '%s' "$1" > "$PROBE/pid.input"; printf 43210; }\n`);
       const rows = [
@@ -248,7 +248,7 @@ for (const client of ["claude", "codex", "hermes"]) {
         ["mismatched", ["--aify-agent", "different-worker", "--managed"], inherited, {}, "different-worker", false],
         ["anonymous", ["--resident"], Object.fromEntries(keys.map((key) => [key, inherited[key]])), {}, "", false],
       ];
-      const sliced = wrapper(client, bridge);
+      const sliced = wrapper(client, dirs);
       fs.writeFileSync(path.join(home, "slice.sh"), sliced);
       fs.writeFileSync(path.join(home, "probes.sh"), probes);
       let batch = "set -u\njobs=()\n";
@@ -269,7 +269,7 @@ for (const client of ["claude", "codex", "hermes"]) {
 test("shared adoption guards distinguish resident, empty identity and each missing carrier", async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "aify-lifetime-guards-"));
   try {
-    const { bridge, bin } = fixture(home);
+    const { wrapperDir, bin } = fixture(home);
     fs.appendFileSync(path.join(bin, "aify-lease.sh"), '\naify_lease_pid() { printf 43210; }\n');
     const rows = [["resident-same", "host-worker", "resident", inherited, { AIFY_LIFETIME: OWN, AIFY_ENV_INSTANCE: "test-host" }],
       ["empty", "", "managed", { ...inherited, AIFY_AGENT_ID: "" }, {}],
@@ -280,7 +280,7 @@ test("shared adoption guards distinguish resident, empty identity and each missi
       const probe = path.join(home, row); fs.mkdirSync(path.join(probe, ".aify/residents"), { recursive: true });
       batch += `(\nexport HOME=${quote(shellPath(probe))} PROBE=${quote(shellPath(probe))}\n`;
       batch += Object.entries(env).map(([key, value]) => `export ${key}=${quote(value)}\n`).join("");
-      batch += `. ${quote(shellPath(path.join(home, "probes.sh")))}\n. ${quote(`${bridge}/node_modules/aify-wrapper/bin/aify-lease.sh`)}\naify_lifetime_start ${quote(bridge)} ${quote(agent)} claude ${quote(mode)}\nsnapshot runtime\n) &\njobs+=("$!")\n`;
+      batch += `. ${quote(shellPath(path.join(home, "probes.sh")))}\n. ${quote(`${wrapperDir}/bin/aify-lease.sh`)}\naify_lifetime_start ${quote(agent)} claude ${quote(mode)}\nsnapshot runtime\n) &\njobs+=("$!")\n`;
     }
     batch += 'for job in "${jobs[@]}"; do wait "$job" || exit $?; done\n';
     const result = await batchRun(bash(), ["--noprofile", "--norc", "-c", batch, "/fake/claude-aify"], privateEnv(home));
@@ -295,18 +295,18 @@ test("shared adoption guards distinguish resident, empty identity and each missi
 test("native: shared lifetime boundary preserves literal $0 and the waiting shell PID", { timeout: 10_000 }, async () => {
   const deadline = Date.now() + 8500, home = fs.mkdtempSync(path.join(os.tmpdir(), "aify-lifetime-native-"));
   try {
-    const executable = bash(), { bridge } = fixture(home);
+    const executable = bash(), { wrapperDir } = fixture(home);
     const spellings = process.platform === "win32" ? ["/c/aify-test/claude-aify", "C:/aify-test/claude-aify"] : ["/owned/claude-aify"];
     for (const launcher of spellings) {
       const before = Date.now() * 1000;
       const script = `set -euo pipefail; unset MSYS_NO_PATHCONV MSYS2_ARG_CONV_EXCL
-. "$1/node_modules/aify-wrapper/bin/aify-lease.sh"
-aify_lifetime_start "$1" spelling-proof claude resident
+. "$1/bin/aify-lease.sh"
+aify_lifetime_start spelling-proof claude resident
 if [ -r /proc/$$/winpid ]; then IFS= read -r native_pid < /proc/$$/winpid; else native_pid=$$; fi
 printf '%s %s\\n' "$native_pid" "$AIFY_LIFETIME"
 IFS= read -r release
 `;
-      const child = spawn(executable, ["--noprofile", "--norc", "-c", script, launcher, bridge],
+      const child = spawn(executable, ["--noprofile", "--norc", "-c", script, launcher, wrapperDir],
         { env: { ...privateEnv(home), AIFY_LIFETIME: HOST, AIFY_ENV_INSTANCE: "test-host", AIFY_HERDR_PANE_ID: "w1:p3" } });
       let stderr = "", stdout = "";
       child.stderr.on("data", (bytes) => { stderr += bytes; }); child.stdout.on("data", (bytes) => { stdout += bytes; });

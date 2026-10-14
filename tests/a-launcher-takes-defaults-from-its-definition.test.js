@@ -7,7 +7,7 @@
 // behaviour; an invalid file, one for another harness, or a launcher that cannot run the reader refuses
 // with 78 unless --aify-ignore-definition; a managed launch reads no file.
 //
-// THE BRIDGE DIRECTORY HOLDS ONLY THE READER (definition-reader-bridge.mjs); HOME is temporary too.
+// THE WRAPPER DIRECTORY HOLDS ONLY THE READER (definition-reader-wrapper.mjs); HOME is temporary too.
 //
 // `--check` resolves through the same function the launch does, after the same argument loop, so what
 // it reports is what the launch would use (review of P6, R4). The launch itself, to a stub runtime and
@@ -21,7 +21,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { definitionsEnv, readerBridge } from "./definition-reader-bridge.mjs";
+import { definitionsEnv, readerWrapper } from "./definition-reader-wrapper.mjs";
 import { launch } from "./launch-to-a-stub-runtime.mjs";
 import { RUNTIME_COMMANDS, sealedPath, withPath } from "./sealed-path.mjs";
 
@@ -29,16 +29,16 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const NOWHERE = "http://127.0.0.2:1";
 function setUp(client) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-definition-launcher-"));
-  const bridge = readerBridge(path.join(dir, "bridge"));
+  const wrapper = readerWrapper(path.join(dir, "wrapper"));
   const out = path.join(dir, `${client}-aify`);
   execFileSync("bash", [path.join(ROOT, "render.sh"), `${client}-aify.sh.in`, out,
     `ENDPOINT=${NOWHERE}`, "REGISTRY_FINGERPRINT=test-fp", "SERVICE_NAME=aify-comms",
-    `BRIDGE_DIR=${bridge.replace(/\\/g, "/")}`, "WRAPPER_VERSION=0.6.0", "SCRIPT_DIR=/nowhere", "NATIVE_BASE=/nowhere",
+    "BRIDGE_DIR=/nowhere", `WRAPPER_DIR=${wrapper.replace(/\\/g, "/")}`, "WRAPPER_VERSION=0.6.0", "SCRIPT_DIR=/nowhere", "NATIVE_BASE=/nowhere",
     "MCP_TRANSPORT=stdio", "STRICT_EXTRA_MCP_B64=", "SESSION_MCP_B64=", "SESSION_MCP_CODEX_B64=", "HERMES_PLUGIN_PATH=/nowhere", "HERMES_STDIO_DIR=/nowhere",
     "HERMES_TUI_DIR=/nowhere"], { encoding: "utf8" });
   const defs = definitionsEnv(path.join(dir, "defs")).AIFY_AGENT_DEFINITIONS_DIR;
   fs.mkdirSync(path.join(dir, "home"));
-  return { dir, out, defs, bridge, home: path.join(dir, "home") };
+  return { dir, out, defs, wrapper, home: path.join(dir, "home") };
 }
 
 const definition = (over = {}) => ({ version: 1, agent: { id: "lead", name: "Lead", role: "reviewer", harness: "claude",
@@ -153,7 +153,7 @@ for (const client of ["claude", "codex", "hermes"]) {
   test(`${client.toUpperCase()}: A LAUNCHER THAT CANNOT RUN THE READER refuses with 78; ignoring the definition, or a managed launch, starts`, () => withLauncher(client, (setup) => {
     // Not being able to look is not finding nothing (review of P6, R2): with no file at all, the launch
     // still refuses, because without the reader it cannot know there is none.
-    fs.rmSync(setup.bridge, { recursive: true, force: true });
+    fs.rmSync(setup.wrapper, { recursive: true, force: true });
     const refused = check(setup, { args: ["--aify-agent", "lead"] });
     assert.equal(refused.status, 78, `${refused.stdout}${refused.stderr}`);
     assert.match(refused.stderr, /no definition reader at .*, so the definition of 'lead' cannot be checked/);

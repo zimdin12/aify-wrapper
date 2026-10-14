@@ -75,9 +75,8 @@ function world(client, { eventScript = true } = {}) {
   const stubs = path.join(dir, "stubs");
   const home = path.join(dir, "home");
   const bridge = path.join(dir, "bridge");
-  for (const d of [out, stubs, path.join(home, ".codex", "sessions"), path.join(bridge, "node_modules")]) fs.mkdirSync(d, { recursive: true });
+  for (const d of [out, stubs, path.join(home, ".codex", "sessions"), bridge]) fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(home, ".codex", "sessions", "thread-1.jsonl"), "");
-  fs.symlinkSync(ROOT, path.join(bridge, "node_modules", "aify-wrapper"), "dir");
   if (eventScript) fs.writeFileSync(path.join(bridge, "agent-state-event.mjs"), EVENT_SCRIPT);
   fs.writeFileSync(path.join(bridge, "hermes-managed-host.js"), MANAGED_HOST);
 

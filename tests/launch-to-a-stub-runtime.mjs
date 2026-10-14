@@ -3,7 +3,7 @@
 // The launcher is rendered by install.sh with its bridge directory written MSYS-style on Windows, as
 // aify-comms' installer writes it. The bridge holds a stub `agent-for-handle.mjs`, which names the agent
 // for one known handle and records what it was asked, and the definition reader
-// (definition-reader-bridge.mjs) unless a test leaves it out. The runtime is a stub that records its
+// (definition-reader-wrapper.mjs) unless a test leaves it out. The runtime is a stub that records its
 // environment and argv; codex's `app-server` records its own argv and then listens, so the launcher gets
 // past waiting for it. Nothing contacts a service: the endpoint is 127.0.0.2:1. HOME, the temp
 // directories and the definitions directory are the run's own; nothing of this machine's environment
@@ -15,7 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { definitionsEnv, readerBridge } from "./definition-reader-bridge.mjs";
+import { definitionsEnv, readerWrapper } from "./definition-reader-wrapper.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -69,10 +69,10 @@ function runtimeStub(node) {
 /** Render one launcher with a stub bridge and a stub runtime, in a fresh directory. */
 function world(client, { reader, registry, bridgeFiles = {} }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `aify-launch-${client}-`));
-  const [out, stubs, home, bridge] = ["out", "stubs", "home", "bridge"].map((d) => path.join(dir, d));
-  for (const d of [out, stubs, home, bridge]) fs.mkdirSync(d, { recursive: true });
+  const [out, stubs, home, bridge, wrapper] = ["out", "stubs", "home", "bridge", "wrapper"].map((d) => path.join(dir, d));
+  for (const d of [out, stubs, home, bridge, wrapper]) fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(bridge, "agent-for-handle.mjs"), LOOKUP);
-  if (reader) readerBridge(bridge);
+  if (reader) readerWrapper(wrapper);
   for (const [name, text] of Object.entries(bridgeFiles)) fs.writeFileSync(path.join(bridge, name), text);
   // claude-aify keeps a `--resume` only for a session it can find on disk; codex-aify reads CODEX_HOME.
   fs.mkdirSync(path.join(home, ".claude", "projects", "p"), { recursive: true });
@@ -84,7 +84,7 @@ function world(client, { reader, registry, bridgeFiles = {} }) {
   const services = path.join(dir, "services.json");
   fs.writeFileSync(services, registry === undefined ? "" : JSON.stringify(registry));
   const rendered = spawnSync(BASH, [INSTALL, "--client", client, "--endpoint", NOWHERE, "--registry", services,
-    "--render-only", out, "--bridge-dir", shellPath(bridge)], { encoding: "utf8", timeout: 120_000 });
+    "--render-only", out, "--bridge-dir", shellPath(bridge), "--wrapper-dir", shellPath(wrapper)], { encoding: "utf8", timeout: 120_000 });
   if (rendered.status !== 0) throw new Error(`render failed: ${rendered.stdout}\n${rendered.stderr}`);
   fs.writeFileSync(path.join(stubs, client), runtimeStub(shellPath(process.execPath)), { mode: 0o755 });
   return { dir, home, stubs, launcher: path.join(out, `${client}-aify`) };
@@ -102,7 +102,7 @@ export function launch(client, args, { rewriting = true, reader = true, definiti
     for (const file of ["bin/aify-lease.sh", "bin/aify-inherited-session.sh", "bin/aify-lifetime.sh", "bin/aify-resident-record.mjs", "bin/aify-runtime-exited.sh"]) {
       const from = path.join(ROOT, file);
       if (!fs.existsSync(from)) continue; // RED runs before the new helpers exist.
-      const to = path.join(w.dir, "bridge/node_modules/aify-wrapper", file);
+      const to = path.join(w.dir, "wrapper", file);
       fs.mkdirSync(path.dirname(to), { recursive: true });
       fs.copyFileSync(from, to);
     }

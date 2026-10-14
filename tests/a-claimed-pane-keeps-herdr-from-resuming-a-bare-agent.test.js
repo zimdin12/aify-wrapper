@@ -50,8 +50,7 @@ function launch({ env = {}, listFails = false } = {}) {
   const stubs = path.join(dir, "stubs");
   const home = path.join(dir, "home");
   const bridge = path.join(dir, "bridge");
-  for (const d of [out, stubs, home, path.join(bridge, "node_modules")]) fs.mkdirSync(d, { recursive: true });
-  fs.symlinkSync(ROOT, path.join(bridge, "node_modules", "aify-wrapper"), "dir");
+  for (const d of [out, stubs, home, bridge]) fs.mkdirSync(d, { recursive: true });
 
   const rendered = spawnSync("bash", [INSTALL, "--client", "claude", "--endpoint", NOWHERE,
     "--render-only", out, "--bridge-dir", bridge], { encoding: "utf8", timeout: 120_000 });
