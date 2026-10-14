@@ -28,6 +28,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { emptyRegistry } from "./sealed-registry.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const INSTALL = path.join(HERE, "..", "install.sh");
@@ -35,7 +36,7 @@ const NOWHERE = "http://127.0.0.2:1";
 
 function renderClaude() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-wrapper-marker-"));
-  execFileSync("bash", [INSTALL, "--client", "claude", "--endpoint", NOWHERE, "--render-only", dir], {
+  execFileSync("bash", [INSTALL, "--registry", emptyRegistry(), "--client", "claude", "--endpoint", NOWHERE, "--render-only", dir], {
     encoding: "utf8",
   });
   return dir;

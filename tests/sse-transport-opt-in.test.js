@@ -20,6 +20,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { emptyRegistry } from "./sealed-registry.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -29,7 +30,7 @@ const posix = (p) => p.split(String.fromCharCode(92)).join("/");
 function render(extraArgs = []) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-sse-"));
   const r = spawnSync("bash", [
-    INSTALL, "--client", "claude", "--endpoint", ENDPOINT, "--render-only", posix(dir), ...extraArgs,
+    INSTALL, "--registry", emptyRegistry(), "--client", "claude", "--endpoint", ENDPOINT, "--render-only", posix(dir), ...extraArgs,
   ], { encoding: "utf8", timeout: 120_000 });
   assert.equal(r.status, 0, `render failed: ${r.stdout}${r.stderr}`);
   return fs.readFileSync(path.join(dir, "claude-aify"), "utf8");
@@ -76,7 +77,7 @@ test("--mcp-transport sse points the launcher at the container", () => {
 test("an unknown transport is refused rather than silently defaulting", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-sse-bad-"));
   const r = spawnSync("bash", [
-    INSTALL, "--client", "claude", "--endpoint", ENDPOINT, "--render-only", posix(dir),
+    INSTALL, "--registry", emptyRegistry(), "--client", "claude", "--endpoint", ENDPOINT, "--render-only", posix(dir),
     "--mcp-transport", "carrier-pigeon",
   ], { encoding: "utf8", timeout: 120_000 });
   assert.equal(r.status, 78, "a bad transport is a configuration error, not a silent default");

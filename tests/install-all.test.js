@@ -20,6 +20,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { HARNESS_CLIENTS, RUNTIME_COMMANDS, sealedPath } from "./sealed-path.mjs";
+import { emptyRegistry } from "./sealed-registry.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -53,7 +54,7 @@ test("SEAL CONTROL: the runtime names the seal keeps out are derived, including 
 });
 
 function runInstall({ PATH: sealedPath, args }) {
-  return spawnSync("bash", [INSTALL, ...args], {
+  return spawnSync("bash", [INSTALL, "--registry", emptyRegistry(), ...args], {
     encoding: "utf8",
     env: { PATH: sealedPath, HOME: os.tmpdir().replace(/\\/g, "/") },
     // A budget above what the render costs under a full suite, not alone. Measured by dashboard-manager

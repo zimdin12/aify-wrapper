@@ -14,6 +14,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { endpointInFile, endpointInstalledAt } from "../lib/installed-endpoint.mjs";
+import { emptyRegistry } from "./sealed-registry.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -34,11 +35,44 @@ function wrapperWithReader() {
   return wrapper;
 }
 
-function install(dest, args) {
-  return spawnSync("bash", [INSTALL, "--client", "claude", "--dest", posix(dest), "--bridge-dir", posix(tmp()), "--wrapper-dir", posix(wrapperWithReader()), ...args], {
-    encoding: "utf8", timeout: 120_000, env: { ...process.env, AIFY_NO_PROMPT: "1" },
+/** The suite's environment with no agent session in it and a HOME of the test's own, so nothing here reads the real one. */
+function sealedEnv(home = tmp()) {
+  const env = {};
+  for (const [key, value] of Object.entries(process.env)) if (!/^(AIFY_|HERDR_)/i.test(key)) env[key] = value;
+  return { ...env, HOME: posix(home), USERPROFILE: home, AIFY_NO_PROMPT: "1" };
+}
+
+function install(dest, args, { registry = emptyRegistry(), env = sealedEnv() } = {}) {
+  const sealing = registry === null ? [] : ["--registry", registry];
+  return spawnSync("bash", [INSTALL, ...sealing, "--client", "claude", "--dest", posix(dest), "--bridge-dir", posix(tmp()), "--wrapper-dir", posix(wrapperWithReader()), ...args], {
+    encoding: "utf8", timeout: 120_000, env,
   });
 }
+
+// THE SEAL, PROVED BOTH WAYS. A HOME whose registry is malformed: an install that read it would refuse (78).
+// With --registry it must pass, so the install cannot be reading HOME's registry; without it, it must refuse,
+// so the probe is able to see a HOME registry at all (a seal nobody could have broken proves nothing).
+function homeWithABrokenRegistry() {
+  const home = tmp();
+  fs.mkdirSync(path.join(home, ".aify"), { recursive: true });
+  fs.writeFileSync(path.join(home, ".aify", "services.json"), "{ not json");
+  return home;
+}
+
+test("SEALED: with HOME at an empty temp directory, the install passes", () => {
+  const run = install(tmp(), ["--endpoint", KNOWN], { env: sealedEnv(tmp()) });
+  assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
+});
+
+test("SEALED: --registry wins over a broken registry in HOME", () => {
+  const run = install(tmp(), ["--endpoint", KNOWN], { env: sealedEnv(homeWithABrokenRegistry()) });
+  assert.equal(run.status, 0, `the install read HOME's registry: ${run.stdout}\n${run.stderr}`);
+});
+
+test("CONTROL: without --registry, the same broken HOME registry is read and refused", () => {
+  const run = install(tmp(), ["--endpoint", KNOWN], { registry: null, env: sealedEnv(homeWithABrokenRegistry()) });
+  assert.equal(run.status, 78, `the probe cannot see HOME's registry, so the seal above proves nothing: ${run.stdout}\n${run.stderr}`);
+});
 
 test("reads the endpoint back out of an installed launcher", () => {
   const dest = tmp();

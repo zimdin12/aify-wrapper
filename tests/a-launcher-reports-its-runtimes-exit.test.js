@@ -21,6 +21,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { reportLines } from "./herdr-report-lines.mjs";
+import { emptyRegistry } from "./sealed-registry.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -80,7 +81,7 @@ function world(client, { eventScript = true } = {}) {
   if (eventScript) fs.writeFileSync(path.join(bridge, "agent-state-event.mjs"), EVENT_SCRIPT);
   fs.writeFileSync(path.join(bridge, "hermes-managed-host.js"), MANAGED_HOST);
 
-  const rendered = spawnSync("bash", [INSTALL, "--client", client, "--endpoint", NOWHERE,
+  const rendered = spawnSync("bash", [INSTALL, "--registry", emptyRegistry(), "--client", client, "--endpoint", NOWHERE,
     "--render-only", out, "--bridge-dir", bridge], { encoding: "utf8", timeout: 120_000 });
   assert.equal(rendered.status, 0, `render failed: ${rendered.stdout}\n${rendered.stderr}`);
 

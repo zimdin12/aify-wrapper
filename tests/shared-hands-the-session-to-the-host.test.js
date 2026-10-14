@@ -28,6 +28,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { CLIENTS_ALL_RENDERS, sealedPath, withPath } from "./sealed-path.mjs";
+import { emptyRegistry } from "./sealed-registry.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -48,7 +49,7 @@ function renderAll() {
   // whatever the host had installed -- a host with only codex failed every claude assertion here.
   const sealed = sealedPath(CLIENTS_ALL_RENDERS);
   const result = spawnSync("bash", [
-    INSTALL, "--all", "--endpoint", "http://127.0.0.2:1", "--render-only", posix(dir),
+    INSTALL, "--registry", emptyRegistry(), "--all", "--endpoint", "http://127.0.0.2:1", "--render-only", posix(dir),
   ], { encoding: "utf8", timeout: 180_000, env: withPath(process.env, sealed.PATH) });
   assert.equal(result.status, 0, result.stderr);
   // ONLY WHAT WAS ACTUALLY WRITTEN. `--all` does not render every template: no `pi` runtime is on the

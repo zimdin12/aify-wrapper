@@ -22,6 +22,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { CLIENTS_ALL_RENDERS, sealedPath, withPath } from "./sealed-path.mjs";
+import { emptyRegistry } from "./sealed-registry.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -35,7 +36,7 @@ function render(extra = []) {
   // SEALED PATH. With the real one, a host carrying only codex rendered codex-aify alone and every
   // claude-aify assertion below failed with ENOENT -- a verdict about the machine, not the launcher.
   const result = spawnSync("bash", [
-    INSTALL, "--all", "--endpoint", "http://127.0.0.2:1", ...extra, "--render-only", posix(dir),
+    INSTALL, "--registry", emptyRegistry(), "--all", "--endpoint", "http://127.0.0.2:1", ...extra, "--render-only", posix(dir),
   ], { encoding: "utf8", timeout: 180_000, env: withPath(process.env, SEALED.PATH) });
   return { dir, result };
 }

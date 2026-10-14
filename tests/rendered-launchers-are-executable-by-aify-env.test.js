@@ -30,6 +30,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { emptyRegistry } from "./sealed-registry.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -51,7 +52,7 @@ const UNSUBSTITUTED = /^[ \t]*HARNESS_WRAPPER_VERSION[ \t]*=[ \t]*"@@[A-Z0-9_]+@
 
 function render(client) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `aify-env-contract-${client}-`));
-  execFileSync("bash", [INSTALL, "--client", client, "--endpoint", NOWHERE, "--render-only", dir], {
+  execFileSync("bash", [INSTALL, "--registry", emptyRegistry(), "--client", client, "--endpoint", NOWHERE, "--render-only", dir], {
     encoding: "utf8",
   });
   return dir;

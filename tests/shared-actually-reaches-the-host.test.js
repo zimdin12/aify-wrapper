@@ -33,6 +33,7 @@ import { fileURLToPath } from "node:url";
 
 import { definitionsEnv, readerWrapper } from "./definition-reader-wrapper.mjs";
 import { CLIENTS_ALL_RENDERS, sealedPath, withPath } from "./sealed-path.mjs";
+import { emptyRegistry } from "./sealed-registry.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -59,7 +60,7 @@ function world() {
   // only codex, and "nothing to test" for a reason that has nothing to do with `--shared`.
   const sealed = sealedPath(CLIENTS_ALL_RENDERS);
   const result = spawnSync("bash", [
-    INSTALL, "--all", "--endpoint", "http://127.0.0.2:1", "--render-only", posix(dir),
+    INSTALL, "--registry", emptyRegistry(), "--all", "--endpoint", "http://127.0.0.2:1", "--render-only", posix(dir),
     "--bridge-dir", posix(path.join(dir, "bridge")), "--wrapper-dir", posix(readerWrapper(path.join(dir, "wrapper"))),
   ], { encoding: "utf8", timeout: 180_000, env: withPath(process.env, sealed.PATH) });
   assert.equal(result.status, 0, result.stderr);

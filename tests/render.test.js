@@ -19,6 +19,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { definitionsEnv, readerWrapper } from "./definition-reader-wrapper.mjs";
+import { emptyRegistry } from "./sealed-registry.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const posix = (p) => p.split(String.fromCharCode(92)).join("/");
@@ -39,7 +40,7 @@ const CLIENTS = [
 function render(client, extra = []) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `aify-wrapper-${client}-`));
   const wrapper = posix(readerWrapper(path.join(dir, "wrapper")));
-  execFileSync("bash", [INSTALL, "--client", client, "--endpoint", NOWHERE, "--render-only", dir, "--bridge-dir", posix(path.join(dir, "bridge")), "--wrapper-dir", wrapper, ...extra], {
+  execFileSync("bash", [INSTALL, "--registry", emptyRegistry(), "--client", client, "--endpoint", NOWHERE, "--render-only", dir, "--bridge-dir", posix(path.join(dir, "bridge")), "--wrapper-dir", wrapper, ...extra], {
     encoding: "utf8",
   });
   return dir;
@@ -136,7 +137,7 @@ for (const { client, names, runtime } of CLIENTS) {
 }
 
 test("the installer refuses an unknown client rather than rendering nothing", () => {
-  const res = spawnSync("bash", [INSTALL, "--client", "nope", "--endpoint", NOWHERE], { encoding: "utf8" });
+  const res = spawnSync("bash", [INSTALL, "--registry", emptyRegistry(), "--client", "nope", "--endpoint", NOWHERE], { encoding: "utf8" });
   assert.equal(res.status, 78);
   assert.match(res.stderr, /unknown client/);
 });
@@ -147,7 +148,7 @@ test("the installer refuses to guess an endpoint", () => {
   // has never installed one -- it read the developer's real launchers and went green or red by
   // accident. Sealing the input is the fix; the recovery behaviour is correct and has its own tests.
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), "aify-wrapper-noendpoint-"));
-  const res = spawnSync("bash", [INSTALL, "--client", "claude", "--dest", posix(empty)], { encoding: "utf8" });
+  const res = spawnSync("bash", [INSTALL, "--registry", emptyRegistry(), "--client", "claude", "--dest", posix(empty)], { encoding: "utf8" });
   assert.equal(res.status, 78, `expected refusal, got ${res.status}: ${res.stdout}${res.stderr}`);
   assert.match(res.stderr, /--endpoint is required/);
 });

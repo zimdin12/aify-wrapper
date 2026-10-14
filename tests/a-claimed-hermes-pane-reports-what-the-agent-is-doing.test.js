@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 
 import { AIFY_AGENT_SOURCE } from "../lib/herdr-pane.mjs";
 import { reportLines } from "./herdr-report-lines.mjs";
+import { emptyRegistry } from "./sealed-registry.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -65,7 +66,7 @@ function launch({ env = {}, listFails = false } = {}) {
   const bridge = path.join(dir, "bridge");
   for (const d of [out, stubs, home, bridge]) fs.mkdirSync(d, { recursive: true });
 
-  const rendered = spawnSync("bash", [INSTALL, "--client", "hermes", "--endpoint", NOWHERE,
+  const rendered = spawnSync("bash", [INSTALL, "--registry", emptyRegistry(), "--client", "hermes", "--endpoint", NOWHERE,
     "--render-only", out, "--bridge-dir", bridge], { encoding: "utf8", timeout: 120_000 });
   assert.equal(rendered.status, 0, `render failed: ${rendered.stdout}\n${rendered.stderr}`);
 

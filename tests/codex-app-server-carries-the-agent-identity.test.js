@@ -19,6 +19,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { emptyRegistry } from "./sealed-registry.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -38,7 +39,7 @@ function world({ endpoint = NOWHERE } = {}) {
   for (const d of [out, stubs, path.join(home, ".codex", "sessions")]) fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(home, ".codex", "sessions", "thread-1.jsonl"), "");
 
-  const rendered = spawnSync("bash", [INSTALL, "--client", "codex", "--endpoint", endpoint,
+  const rendered = spawnSync("bash", [INSTALL, "--registry", emptyRegistry(), "--client", "codex", "--endpoint", endpoint,
     "--render-only", out, "--bridge-dir", path.join(dir, "bridge")], { encoding: "utf8", timeout: 120_000 });
   assert.equal(rendered.status, 0, `render failed: ${rendered.stdout}\n${rendered.stderr}`);
 

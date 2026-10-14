@@ -20,6 +20,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { emptyRegistry } from "./sealed-registry.mjs";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -30,7 +31,7 @@ const isWindows = process.platform === "win32";
 test("render-only succeeds with MSYS argv conversion disabled", { skip: !isWindows && "Windows-only path semantics" }, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-noconv-"));
   try {
-    execFileSync("bash", [INSTALL, "--client", "claude", "--endpoint", NOWHERE, "--render-only", dir], {
+    execFileSync("bash", [INSTALL, "--registry", emptyRegistry(), "--client", "claude", "--endpoint", NOWHERE, "--render-only", dir], {
       encoding: "utf8",
       env: {
         ...process.env,

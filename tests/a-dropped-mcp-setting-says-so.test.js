@@ -24,6 +24,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { sealedPath, withPath } from "./sealed-path.mjs";
+import { emptyRegistry } from "./sealed-registry.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -39,7 +40,7 @@ const SEALED = sealedPath(["claude"]);
 function render(extraArgs = []) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-dropped-"));
   const r = spawnSync("bash", [
-    INSTALL, "--client", "claude", "--endpoint", ENDPOINT, "--render-only", posix(dir), ...extraArgs,
+    INSTALL, "--registry", emptyRegistry(), "--client", "claude", "--endpoint", ENDPOINT, "--render-only", posix(dir), ...extraArgs,
   ], { encoding: "utf8", timeout: 120_000 });
   assert.equal(r.status, 0, `render failed: ${r.stdout}${r.stderr}`);
   return { dir, launcher: path.join(dir, "claude-aify") };

@@ -30,6 +30,7 @@ import {
 } from "../lib/codex-herdr-hooks.mjs";
 import { AIFY_AGENT_SOURCE } from "../lib/herdr-pane.mjs";
 import { reportLines } from "./herdr-report-lines.mjs";
+import { emptyRegistry } from "./sealed-registry.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -48,7 +49,7 @@ function launch({ env = {}, args = [], listFails = false, codexConfig = null } =
   const stateScript = path.join(ROOT, "bin", "aify-herdr-state.sh");
   if (codexConfig) fs.writeFileSync(path.join(home, ".codex", "config.toml"), codexConfig(stateScript));
 
-  const rendered = spawnSync("bash", [INSTALL, "--client", "codex", "--endpoint", NOWHERE,
+  const rendered = spawnSync("bash", [INSTALL, "--registry", emptyRegistry(), "--client", "codex", "--endpoint", NOWHERE,
     "--render-only", out, "--bridge-dir", bridge], { encoding: "utf8", timeout: 120_000 });
   assert.equal(rendered.status, 0, `render failed: ${rendered.stdout}\n${rendered.stderr}`);
 
