@@ -218,7 +218,7 @@ function checkRow(home, row, client, expected, agent, minted) {
   const args = nul(path.join(probe, "writer.args")), residents = path.join(probe, ".aify/residents");
   if (minted) {
     assert.equal(args.length, 9, "one writer invocation");
-    assert.equal(args[2], agent); assert.equal(args[3], "test-host"); assert.equal(args[4], client);
+    assert.equal(args[2], agent); assert.equal(args[3], "residents", "B1: the role's instance, never the inherited one"); assert.equal(args[4], client);
     assert.equal(args[5], "43210", "native PID collaborator");
     assert.equal(args[6], `/fake/${client}-aify`, "literal launcher");
     assert.equal(args[7], "1780000000123456", "shell epoch microseconds"); assert.equal(args[8], "w1:p3");
@@ -243,7 +243,7 @@ for (const client of ["claude", "codex", "hermes"]) {
       // Fake lease effects and PID lookup, never lifetime decisions or teardown triggers.
       fs.appendFileSync(path.join(bin, "aify-lease.sh"), `\naify_lease_claim() { :; }\naify_lease_attach() { :; }\naify_lease_release() { :; }\naify_lease_pid() { printf '%s' "$1" > "$PROBE/pid.input"; printf 43210; }\n`);
       const rows = [
-        ["resident", ["--aify-agent", "new-resident", "--resident"], inherited, { AIFY_LIFETIME: OWN, AIFY_ENV_INSTANCE: "test-host" }, "new-resident", true],
+        ["resident", ["--aify-agent", "new-resident", "--resident"], inherited, { AIFY_LIFETIME: OWN, AIFY_ENV_INSTANCE: "residents" }, "new-resident", true],
         ["matched", ["--aify-agent", "host-worker", "--managed"], inherited, inherited, "host-worker", false],
         ["mismatched", ["--aify-agent", "different-worker", "--managed"], inherited, {}, "different-worker", false],
         ["anonymous", ["--resident"], Object.fromEntries(keys.map((key) => [key, inherited[key]])), {}, "", false],
@@ -254,7 +254,7 @@ for (const client of ["claude", "codex", "hermes"]) {
       let batch = "set -u\njobs=()\n";
       for (const [row, args, env] of rows) {
         const probe = path.join(home, row); fs.mkdirSync(path.join(probe, ".aify/residents"), { recursive: true });
-        batch += `(\n(\nset -e\nexport HOME=${quote(shellPath(probe))} PROBE=${quote(shellPath(probe))} AIFY_HERDR_PANE_ID=w1:p3\n`;
+        batch += `(\n(\nset -e\nexport HOME=${quote(shellPath(probe))} USERPROFILE=${quote(shellPath(probe))} PROBE=${quote(shellPath(probe))} AIFY_HERDR_PANE_ID=w1:p3\n`;
         batch += Object.entries(env).map(([key, value]) => `export ${key}=${quote(value)}\n`).join("");
         batch += `printf '%s' "$$" > "$PROBE/shell.pid"\nset -- ${args.map(quote).join(" ")}\n. ${quote(shellPath(path.join(home, "probes.sh")))}\n. ${quote(shellPath(path.join(home, "slice.sh")))}\n)\nstatus=$?\nprintf '%s' "$status" > ${quote(shellPath(path.join(probe, "status")))}\n) &\njobs+=("$!")\n`;
       }
@@ -271,14 +271,14 @@ test("shared adoption guards distinguish resident, empty identity and each missi
   try {
     const { wrapperDir, bin } = fixture(home);
     fs.appendFileSync(path.join(bin, "aify-lease.sh"), '\naify_lease_pid() { printf 43210; }\n');
-    const rows = [["resident-same", "host-worker", "resident", inherited, { AIFY_LIFETIME: OWN, AIFY_ENV_INSTANCE: "test-host" }],
+    const rows = [["resident-same", "host-worker", "resident", inherited, { AIFY_LIFETIME: OWN, AIFY_ENV_INSTANCE: "residents" }],
       ["empty", "", "managed", { ...inherited, AIFY_AGENT_ID: "" }, {}],
       ...keys.map((key) => [`missing-${key}`, "host-worker", "managed", Object.fromEntries(Object.entries(inherited).filter(([name]) => name !== key)), {}])];
     fs.writeFileSync(path.join(home, "probes.sh"), probes);
     let batch = "set -eu\njobs=()\n";
     for (const [row, agent, mode, env] of rows) {
       const probe = path.join(home, row); fs.mkdirSync(path.join(probe, ".aify/residents"), { recursive: true });
-      batch += `(\nexport HOME=${quote(shellPath(probe))} PROBE=${quote(shellPath(probe))}\n`;
+      batch += `(\nexport HOME=${quote(shellPath(probe))} USERPROFILE=${quote(shellPath(probe))} PROBE=${quote(shellPath(probe))}\n`;
       batch += Object.entries(env).map(([key, value]) => `export ${key}=${quote(value)}\n`).join("");
       batch += `. ${quote(shellPath(path.join(home, "probes.sh")))}\n. ${quote(`${wrapperDir}/bin/aify-lease.sh`)}\naify_lifetime_start ${quote(agent)} claude ${quote(mode)}\nsnapshot runtime\n) &\njobs+=("$!")\n`;
     }
@@ -323,7 +323,7 @@ IFS= read -r release
         assert.equal(record.launcher, launcher, "native argument conversion must not rewrite $0");
         assert.equal(record.pid, Number(pid), "independently read waiting-shell native PID");
         assert.match(lifetime, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/); assert.notEqual(lifetime, HOST);
-        assert.deepEqual(record, { agentId: "spelling-proof", lifetime, instance: "test-host", harness: "claude",
+        assert.deepEqual(record, { agentId: "spelling-proof", lifetime, instance: "residents", harness: "claude",
           pid: Number(pid), launcher, writtenAtUs: record.writtenAtUs, herdrPane: "w1:p3" });
         assert.ok(Number.isSafeInteger(record.writtenAtUs) && record.writtenAtUs >= before && record.writtenAtUs <= Date.now() * 1000 + 1000, "real epoch microseconds");
         child.stdin.end("release\n"); assert.deepEqual(await closed, { code: 0, signal: null }, stderr);
