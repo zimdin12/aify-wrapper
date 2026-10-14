@@ -157,6 +157,14 @@ fi
 # which is a service's and holds only that service's code. render.sh takes no default for it, so a host that
 # renders through a copy of render.sh cannot end up pointing its launchers at that copy's directory.
 [ -n "$WRAPPER_DIR" ] || WRAPPER_DIR="$HERE"
+# AND RESOLVED TO AN ABSOLUTE PATH NOW, because it is baked into the launcher and the launcher runs from whatever
+# project it is started in: a relative `./wrapper copy` passed the reader check here and then refused every named
+# launch elsewhere (review of 0.9.7). A directory that does not exist is refused before anything is written.
+if ! _aify_wrapper_abs="$(cd "$WRAPPER_DIR" 2>/dev/null && pwd)"; then
+  echo "install.sh: --wrapper-dir '$WRAPPER_DIR' is not a directory." >&2
+  exit "$EXIT_CONFIG"
+fi
+WRAPPER_DIR="$_aify_wrapper_abs"
 [ -n "$HOST_REPO" ] || HOST_REPO="$NATIVE_BASE"
 
 [ -n "$REGISTRY" ] || REGISTRY="$HOME/.aify/services.json"

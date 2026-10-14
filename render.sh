@@ -49,6 +49,17 @@ fi
 text="$(grep -v "^#|" "$template")"
 
 for pair in "$@"; do
+  # THE WRAPPER ROOT IS BAKED IN ABSOLUTE OR NOT AT ALL. The launcher finds its own helpers there from whatever
+  # directory it is started in, so a relative root works only in the cwd it was rendered from (review of 0.9.7).
+  # Refused here as well as resolved by install.sh, because a host can render without install.sh. A path, not a
+  # directory, is checked: a host may render before it puts the package in place.
+  case "$pair" in
+    WRAPPER_DIR=/*|WRAPPER_DIR=[A-Za-z]:/*|WRAPPER_DIR=[A-Za-z]:\\*) ;;
+    WRAPPER_DIR=*)
+      echo "render.sh: WRAPPER_DIR must be an absolute path, got '${pair#*=}'" >&2
+      exit 78
+      ;;
+  esac
   case "$pair" in
     *=*) text="${text//@@${pair%%=*}@@/${pair#*=}}" ;;
     *)

@@ -74,7 +74,7 @@ to be asked without being run.
 | `--dest` | where to install (default `~/.local/bin`) |
 | `--bridge-dir` | directory holding the MCP bridge (default `~/.aify-comms/mcp/stdio`) |
 | `--native-base` | the bridge's install root (default `~/.aify-comms`) |
-| `--wrapper-dir` | where the launchers find this package's `bin/` and `lib/` (default: this package's own directory) |
+| `--wrapper-dir` | where the launchers find this package's `bin/` and `lib/` (default: this package's own directory). Resolved to an absolute path before it is baked in; one that is not a directory is refused |
 | `--host-repo` | your checkout, for hooks that run from source |
 | `--set KEY=VALUE` | an extra placeholder, repeatable |
 | `--render-only DIR` | write the launcher into `DIR` and stop, touching nothing else |
