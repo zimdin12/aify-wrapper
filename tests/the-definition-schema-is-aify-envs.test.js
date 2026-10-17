@@ -4,8 +4,9 @@
 // A COPY, NOT A PORT. A launcher must validate a definition exactly as the store that wrote it does,
 // and a second implementation is a second opinion that drifts. So this file is aify-env's module byte
 // for byte, and this test fails on any difference. Its exports (SCHEMA_VERSION, UNAVAILABLE_HARNESS,
-// MAX_COUNTER, isCounter, isOperationId, idProblems, numberProblems, definitionBytesProblems,
-// definitionProblems, canonicalJson, sha256Hex, definitionDigest, formatDefinitionFile) are aify-env's
+// MAX_COUNTER, ENV_NAME_PATTERN, PLUGIN_SUPPLIED_FIELDS, suppliedNames, isCounter, isOperationId, idProblems,
+// numberProblems, definitionBytesProblems, definitionProblems, canonicalJson, sha256Hex, definitionDigest,
+// formatDefinitionFile) are aify-env's
 // and tested there; here the copy also runs aify-env's shared fixture, so a stale copy fails twice.
 //
 // THE SIBLING CHECKOUT: `AIFY_ENV_REPO`, else beside this checkout, else ~/projects/aify-env. With none,
