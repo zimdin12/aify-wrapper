@@ -127,6 +127,28 @@ test("A SERVICE'S BUDGET CUTS ITS BODY TOO: a body that never ends closes the an
   assert.ok(closedAt < 900, `a 200 ms budget held the turn ${closedAt} ms`);
 });
 
+test("AN ANSWER COMPLETED AFTER ITS DUE TIME IS REFUSED BY THE CLOCK, an identical one just inside it is kept", async (t) => {
+  const svc = await service(t, answer("RULE"));
+  // The `now` seam: the clock reads the start until the body has been read, then the instant chosen for the case.
+  // A late completion is therefore one the due timers have not yet acted on, which is the case under test.
+  const run = async ({ budgetMs, completedAt }) => {
+    const startedAt = Date.now();
+    let bodyRead = false;
+    const fetchImpl = async (url, options) => {
+      const response = await fetch(url, options);
+      return { status: response.status, text: async () => { const raw = await response.text(); bodyRead = true; return raw; } };
+    };
+    return runTurnStart({ request: REQUEST, keyFor: () => KEY, fetchImpl, startedAt, dueAt: startedAt + 1500,
+      now: () => (bodyRead ? startedAt + completedAt : startedAt),
+      targets: [{ service: "s", url: `${svc.endpoint}/t`, budgetMs, credentialRef: "k" }] });
+  };
+  const verdict = async (c) => { const r = await run(c); return [r.outcomes[0].reason, r.text]; };
+  assert.deepEqual(await verdict({ budgetMs: 1500, completedAt: 1501 }), ["late", ""], "past the shared due time");
+  assert.deepEqual(await verdict({ budgetMs: 1500, completedAt: 1499 }), ["", "RULE"], "control: inside the shared due time");
+  assert.deepEqual(await verdict({ budgetMs: 300, completedAt: 301 }), ["late", ""], "past the service's own earlier due time");
+  assert.deepEqual(await verdict({ budgetMs: 300, completedAt: 299 }), ["", "RULE"], "control: inside the service's own due time");
+});
+
 test("A FAILING, MALFORMED OR KEYLESS SERVICE CONTRIBUTES NOTHING; THE ANSWERS JOIN IN TARGET ORDER", async (t) => {
   const first = await service(t, answer("FIRST"));
   const second = await service(t, answer("SECOND"));
