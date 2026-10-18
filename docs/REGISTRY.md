@@ -45,6 +45,7 @@ the launcher stale rather than leaving you to notice.
 | `<service>.endpointEnv` | no | The environment variable names **this service's own code reads** to find its endpoint. |
 | `<service>.mcp` | no | MCP servers this service contributes to a runtime. Each needs `name` and `command`; `args` optional. |
 | `<service>.sessionInject` | no | `{ "mcp": true }` adds this service's `mcp` servers to every default-mode Claude session and every codex session, beside the operator's own. See below. |
+| `<service>.turnStart` | no | `{ "path": "/events/turn-start", "budgetMs": 800 }`: the route the turn-start runner (`bin/aify-turn-start.mjs`) calls as each Claude turn begins. `path` follows `agentState.path`'s rule; `budgetMs` is a whole number from 1 to `TURN_START_DEADLINE_MS` (1500), the runner's shared deadline, and defaults to it. Any other key is refused. See below. |
 | `<service>.advertise` | no | Read by aify-env, not by this package. `false` means aify-env sends this service no environment heartbeat; absent, or any other value, means it does. This parser accepts the field and leaves it out of what it returns. A service plugin aify-env runs for the entry still heartbeats on its own, carrying the host's machine id (aify-env 0.8). |
 
 ## Why `endpointEnv` exists, and why nothing is guessed
@@ -143,6 +144,16 @@ measured on hermes 0.21.5 it deletes a same-named server from the user's config 
 The claude template's placeholder is `SESSION_MCP_B64`. `render.sh` refuses a template with any placeholder
 left, so an installer that renders the claude template must supply it, empty or not.
 
+## `turnStart`: what a service says as a turn begins
+
+The launcher registers one synchronous `UserPromptSubmit` command, `bin/aify-turn-start.mjs`, which a channel wake runs
+as well as a typed prompt. It reads this file at run time, asks every service declaring `turnStart` at once, and adds
+their answers' `text`, joined in the parser's service order, as the turn's `additionalContext`. Each request carries
+`{agentId, cwd, machineId, sessionKey}` (`sessionKey` is Claude's `session_id`), the key the entry's `credentialRef`
+names as `x-api-key`, and the agent as `x-aify-agent`. A service that is slow past its budget, fails, answers anything
+but a 200 with a string `text`, redirects, or has no key contributes nothing; the runner always exits 0, and adds
+nothing once `TURN_START_DEADLINE_MS` has passed. `machineId` is aify-env's derivation exactly (`lib/machine-id.mjs`).
+
 ## Rules the parser enforces
 
 - **Absent is empty, not broken.** A missing, empty or whitespace file is a valid registry with no
@@ -172,6 +183,7 @@ changed output.
 ```js
 REGISTRY_VERSION                 // the schema version this module speaks
 parseRegistry(text)              // -> {ok, registry?, errors[]}
+TURN_START_DEADLINE_MS           // the turn-start runner's shared deadline, and the largest turnStart.budgetMs
 mcpEntriesFor(registry)          // -> [{name, command, args, env}]
 fingerprint(registry)            // -> stable short digest
 strictMcpEntriesFor(registry)    // -> the same entries, strict-MCP shaped

@@ -831,8 +831,8 @@ fi
 # will name the pane showing this managed worker (AIFY_HERDR_PANE_FILE), the agent's own hooks report
 # working / blocked / idle. PermissionRequest reports blocked the moment an approval dialog opens; the
 # Notification matchers stay for input prompts, and lag about six seconds on a permission prompt.
-# PostToolUse re-asserts working after a permission prompt is answered and
-# covers a turn a channel wake starts without a UserPromptSubmit; PostToolUseFailure does the same for a
+# PostToolUse re-asserts working after a permission prompt is answered, and after any gap in the turn's own
+# signals (a channel wake does run UserPromptSubmit, measured 2026-10-18); PostToolUseFailure does the same for a
 # tool that failed. StopFailure ends a turn an API error killed, which runs no Stop. Nothing is added otherwise, so a
 # launch outside Herdr runs no extra hook. They run in the background (`async`), and the script orders them.
 AIFY_HERDR_WORKING=""
@@ -859,11 +859,14 @@ cat > "$AIFY_HOOK_SETTINGS" <<JSON
       { "hooks": [ { "type": "command", "command": "node \"${AIFY_BRIDGE_DIR_FWD}/claude-session-hook.js\"" } ] }
     ],
     "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "node \"${AIFY_BRIDGE_DIR_FWD}/claude-session-hook.js\"" }${AIFY_HERDR_WORKING} ] }
+      { "hooks": [ { "type": "command", "command": "node \"${AIFY_BRIDGE_DIR_FWD}/claude-session-hook.js\"" }${AIFY_HERDR_WORKING},
+        { "type": "command", "command": "node \"${AIFY_WRAPPER_DIR_FWD}/bin/aify-turn-start.mjs\"", "timeout": 5 } ] }
     ]${AIFY_HERDR_EVENTS}
   }
 }
 JSON
+# THE TURN-START RUNNER (bin/aify-turn-start.mjs) is synchronous, unlike the Herdr hooks: its output is the context it
+# adds to the turn. It calls the registry's turnStart services under one 1.5 s deadline and always exits 0.
 CLAUDE_MCP_FLAGS+=(--settings "$AIFY_HOOK_SETTINGS")
 # THE RUNTIME'S EXIT IS REPORTED, HOWEVER IT EXITS. No hook fires when claude itself goes away --
 # killed, crashed, or its terminal closed mid-turn -- so the agent read `working` until something
