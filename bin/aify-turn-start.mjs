@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Claude Code's UserPromptSubmit hook: adds what the registry's turn-start services say to the turn that is starting.
-// The logic is lib/turn-start.mjs; this file is its I/O. It ALWAYS exits 0, and the whole invocation, reading stdin
-// included, is bounded by one deadline, after which it exits with nothing added.
+// The logic is lib/turn-start.mjs; this file is its I/O. It ALWAYS exits 0. Everything after module load is bounded by
+// one absolute due time: stdin, the registry and the credentials are read asynchronously against it, the answer closes
+// at it with what had arrived, and a backstop just after it exits whatever is still pending.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -13,9 +14,17 @@ import { parseRegistry, TURN_START_DEADLINE_MS } from "../lib/registry.mjs";
 import { hookOutput, runTurnStart, turnStartTargets } from "../lib/turn-start.mjs";
 
 const startedAt = Date.now();
-const remaining = () => TURN_START_DEADLINE_MS - (Date.now() - startedAt);
-// The backstop: whatever is still pending when the deadline passes is abandoned, and the turn goes on without it.
+const dueAt = startedAt + TURN_START_DEADLINE_MS;
+const remaining = () => dueAt - Date.now();
+// The backstop: whatever is still pending just after the due time is abandoned, and the turn goes on without it.
 setTimeout(() => process.exit(0), TURN_START_DEADLINE_MS + 100).unref();
+
+/** `promise`'s value, or `fallback` if the due time comes first. */
+function byDue(promise, fallback) {
+  let timer;
+  return Promise.race([promise, new Promise((resolve) => { timer = setTimeout(() => resolve(fallback), Math.max(0, remaining())); })])
+    .finally(() => clearTimeout(timer));
+}
 
 /** The hook's JSON from stdin, or null when it is incomplete or not JSON before the deadline. */
 function readHookInput() {
@@ -42,12 +51,9 @@ async function main() {
   const input = await readHookInput();
   const sessionKey = typeof input?.session_id === "string" ? input.session_id : "";
   if (!sessionKey) return "";
-  let text;
-  try {
-    text = fs.readFileSync(process.env.AIFY_SERVICE_REGISTRY || path.join(os.homedir(), ".aify", "services.json"), "utf8");
-  } catch {
-    return "";
-  }
+  const text = await byDue(fs.promises.readFile(process.env.AIFY_SERVICE_REGISTRY || path.join(os.homedir(), ".aify", "services.json"), "utf8")
+    .catch(() => null), null);
+  if (text === null) return "";
   const parsed = parseRegistry(text);
   if (!parsed.ok) return "";
   const targets = turnStartTargets(parsed.registry);
@@ -59,7 +65,7 @@ async function main() {
     sessionKey,
   };
   const { text: added } = await runTurnStart({
-    targets, request, keyFor: (ref) => readCredential(ref), fetchImpl: fetch, remainingMs: remaining(),
+    targets, request, keyFor: (ref) => readCredential(ref), fetchImpl: fetch, startedAt, dueAt,
   });
   return hookOutput(added);
 }

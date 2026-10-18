@@ -77,14 +77,14 @@ test("THE CREDENTIAL is aify-env's decoding for every byte shape it refuses or a
   assert.ok(theirs.includes("key-1") && theirs.includes(""), "control: both an accepted and a refused shape");
 });
 
-test("readCredential reads ~/.aify/credentials/<ref> under the home it is given, and gives nothing for a missing file", () => {
+test("readCredential reads ~/.aify/credentials/<ref> under the home it is given, and gives nothing for a missing file", async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "aify-credential-file-"));
   try {
     fs.mkdirSync(path.join(home, ".aify", "credentials"), { recursive: true });
     fs.writeFileSync(path.join(home, ".aify", "credentials", "svc.key"), "the-key\n");
-    assert.equal(readCredential("svc.key", { home }), "the-key");
-    assert.equal(readCredential("absent.key", { home }), "");
-    assert.equal(readCredential("", { home }), "");
+    assert.equal(await readCredential("svc.key", { home }), "the-key");
+    assert.equal(await readCredential("absent.key", { home }), "");
+    assert.equal(await readCredential("", { home }), "");
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }

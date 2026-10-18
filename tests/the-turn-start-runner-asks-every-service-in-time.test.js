@@ -50,6 +50,8 @@ function registryOf(entries) {
 }
 
 const REQUEST = { agentId: "probe-agent", cwd: "C:/work/project", machineId: "win32:probe-host", sessionKey: "sess-1" };
+/** An invocation that started now and is due in `ms`. */
+const due = (ms) => { const startedAt = Date.now(); return { startedAt, dueAt: startedAt + ms }; };
 
 // ---- the registry carries the capability ------------------------------------------------------------------------
 
@@ -93,7 +95,7 @@ test("A STALLED PEER CANNOT DELAY OR DROP A FAST ONE: headers that never come, a
     { service: "c-stalled", url: `${stalled.endpoint}/t`, budgetMs: 1500, credentialRef: "k" },
   ];
   const started = Date.now();
-  const result = await runTurnStart({ targets, request: REQUEST, keyFor: () => KEY, fetchImpl: fetch, remainingMs: 300 });
+  const result = await runTurnStart({ targets, request: REQUEST, keyFor: () => KEY, fetchImpl: fetch, ...due(300) });
   const took = Date.now() - started;
   assert.equal(result.text, "FAST RULE");
   assert.deepEqual(result.outcomes.map((o) => [o.service, o.reason]), [["a-endless", "timeout"], ["b-fast", ""], ["c-stalled", "timeout"]]);
@@ -104,12 +106,25 @@ test("A SERVICE'S BUDGET ONLY SHORTENS ITS OWN WAIT", async (t) => {
   const slow = (text) => (request, response) => setTimeout(() => answer(text)(request, response), 250);
   const tight = await service(t, slow("TIGHT"));
   const roomy = await service(t, slow("ROOMY"));
-  const result = await runTurnStart({ request: REQUEST, keyFor: () => KEY, fetchImpl: fetch, remainingMs: 1500, targets: [
+  const result = await runTurnStart({ request: REQUEST, keyFor: () => KEY, fetchImpl: fetch, ...due(1500), targets: [
     { service: "roomy", url: `${roomy.endpoint}/t`, budgetMs: 1500, credentialRef: "k" },
     { service: "tight", url: `${tight.endpoint}/t`, budgetMs: 50, credentialRef: "k" },
   ] });
   assert.equal(result.text, "ROOMY");
   assert.deepEqual(result.outcomes.map((o) => o.reason), ["", "timeout"]);
+});
+
+test("A SERVICE'S BUDGET CUTS ITS BODY TOO: a body that never ends closes the answer at that budget, not the shared deadline", async (t) => {
+  const endless = await service(t, (request, response) => {
+    response.writeHead(200, { "content-type": "application/json" });
+    response.write('{"text":"never fini');
+  });
+  const window = due(1500);
+  const result = await runTurnStart({ request: REQUEST, keyFor: () => KEY, fetchImpl: fetch, ...window,
+    targets: [{ service: "endless", url: `${endless.endpoint}/t`, budgetMs: 200, credentialRef: "k" }] });
+  const closedAt = Date.now() - window.startedAt;
+  assert.deepEqual(result.outcomes.map((o) => o.reason), ["timeout"]);
+  assert.ok(closedAt < 900, `a 200 ms budget held the turn ${closedAt} ms`);
 });
 
 test("A FAILING, MALFORMED OR KEYLESS SERVICE CONTRIBUTES NOTHING; THE ANSWERS JOIN IN TARGET ORDER", async (t) => {
@@ -119,7 +134,7 @@ test("A FAILING, MALFORMED OR KEYLESS SERVICE CONTRIBUTES NOTHING; THE ANSWERS J
   const html = await service(t, (request, response) => { response.writeHead(200); response.end("<html>"); });
   const shapeless = await service(t, (request, response) => { response.writeHead(200); response.end("{\"text\":5}"); });
   const keyless = await service(t, answer("UNREACHED"));
-  const result = await runTurnStart({ request: REQUEST, fetchImpl: fetch, remainingMs: 1500,
+  const result = await runTurnStart({ request: REQUEST, fetchImpl: fetch, ...due(1500),
     keyFor: (ref) => (ref === "none" ? "" : KEY), targets: [
       { service: "1", url: `${first.endpoint}/t`, budgetMs: 1500, credentialRef: "k" },
       { service: "2", url: `${failing.endpoint}/t`, budgetMs: 1500, credentialRef: "k" },
@@ -135,7 +150,7 @@ test("A FAILING, MALFORMED OR KEYLESS SERVICE CONTRIBUTES NOTHING; THE ANSWERS J
 
 test("THE REQUEST: the agent, folder, machine and session in the body; the key and the agent in headers; no isFirstTurn", async (t) => {
   const svc = await service(t, answer("ok"));
-  await runTurnStart({ request: REQUEST, keyFor: () => KEY, fetchImpl: fetch, remainingMs: 1500,
+  await runTurnStart({ request: REQUEST, keyFor: () => KEY, fetchImpl: fetch, ...due(1500),
     targets: [{ service: "s", url: `${svc.endpoint}/events/turn-start`, budgetMs: 1500, credentialRef: "k" }] });
   const [seen] = svc.seen;
   assert.equal(seen.url, "/events/turn-start");
@@ -150,11 +165,50 @@ test("A REDIRECT IS REFUSED, so the key never reaches the address it names", asy
     response.writeHead(307, { location: `${elsewhere.endpoint}/t` });
     response.end();
   });
-  const result = await runTurnStart({ request: REQUEST, keyFor: () => KEY, fetchImpl: fetch, remainingMs: 1500,
+  const result = await runTurnStart({ request: REQUEST, keyFor: () => KEY, fetchImpl: fetch, ...due(1500),
     targets: [{ service: "r", url: `${redirecting.endpoint}/t`, budgetMs: 1500, credentialRef: "k" }] });
   assert.equal(result.text, "");
   assert.equal(result.outcomes[0].reason, "error");
   assert.equal(elsewhere.seen.length, 0, "the redirect was followed");
+  assert.doesNotMatch(JSON.stringify(result), new RegExp(KEY));
+});
+
+test("PREPARATION SPENDS THE SAME DEADLINE: a slow key read leaves less for its request, and a fast peer's text is kept", { timeout: 10000 }, async (t) => {
+  const fast = await service(t, answer("FAST RULE"));
+  const late = await service(t, (request, response) => setTimeout(() => answer("LATE")(request, response), 200));
+  const hung = await service(t, answer("NEVER ASKED"));
+  const after = await service(t, answer("TOO LATE TO ASK"));
+  const keys = { fast: KEY, late: new Promise((resolve) => setTimeout(() => resolve(KEY), 400)), hung: new Promise(() => {}),
+    after: new Promise((resolve) => setTimeout(() => resolve(KEY), 600)) };
+  const window = due(500);
+  const result = await runTurnStart({ request: REQUEST, fetchImpl: fetch, ...window, keyFor: (ref) => keys[ref], targets: [
+    { service: "fast", url: `${fast.endpoint}/t`, budgetMs: 1500, credentialRef: "fast" },
+    // Its key arrives at 400 ms, so 100 ms remain for a service that answers in 200: it is cut, not given a fresh budget.
+    { service: "late", url: `${late.endpoint}/t`, budgetMs: 1500, credentialRef: "late" },
+    // Its key never arrives: only the fence ends it, and the fence keeps what had already arrived.
+    { service: "hung", url: `${hung.endpoint}/t`, budgetMs: 1500, credentialRef: "hung" },
+    // Its key arrives after the due time: it is never sent a request, even once the key is in hand.
+    { service: "after", url: `${after.endpoint}/t`, budgetMs: 1500, credentialRef: "after" },
+  ] });
+  const closedAt = Date.now() - window.startedAt;
+  assert.equal(result.text, "FAST RULE");
+  assert.deepEqual(result.outcomes.map((o) => [o.service, o.reason]), [["fast", ""], ["late", "timeout"], ["hung", "timeout"], ["after", "timeout"]]);
+  assert.equal(hung.seen.length, 0);
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  assert.equal(after.seen.length, 0, "a request was admitted after the due time");
+  assert.equal(late.seen.length, 1, "control: a key that arrived in time was used");
+  assert.ok(closedAt >= 450 && closedAt < 900, `closed at ${closedAt} ms for a 500 ms due time`);
+});
+
+test("A TEXT THAT CARRIES A PRESENTED KEY IS REFUSED, and the healthy peer's text still arrives", async (t) => {
+  const healthy = await service(t, answer("HEALTHY RULE"));
+  const reflecting = await service(t, (request, response) => answer(`rule: ${request.headers["x-api-key"]}`)(request, response));
+  const result = await runTurnStart({ request: REQUEST, keyFor: () => KEY, fetchImpl: fetch, ...due(1500), targets: [
+    { service: "healthy", url: `${healthy.endpoint}/t`, budgetMs: 1500, credentialRef: "k" },
+    { service: "reflecting", url: `${reflecting.endpoint}/t`, budgetMs: 1500, credentialRef: "k" },
+  ] });
+  assert.equal(result.text, "HEALTHY RULE");
+  assert.deepEqual(result.outcomes.map((o) => o.reason), ["", "reflects-key"]);
   assert.doesNotMatch(JSON.stringify(result), new RegExp(KEY));
 });
 
@@ -167,14 +221,14 @@ test("THE OUTPUT is Claude's UserPromptSubmit shape, and nothing at all when not
 // ---- the hook command, end to end ----------------------------------------------------------------------------------
 
 /** A sealed host: a home with a credential, a registry naming `endpoint`, and the runner's environment. */
-function host(t, { endpoint, credential = `${KEY}\n`, env = {} } = {}) {
+function host(t, { endpoint, credential = `${KEY}\n`, env = {}, more = {} } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "aify-turn-start-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   fs.mkdirSync(path.join(home, ".aify", "credentials"), { recursive: true });
   fs.writeFileSync(path.join(home, ".aify", "credentials", "dash.key"), credential);
   const registry = path.join(home, ".aify", "services.json");
   fs.writeFileSync(registry, JSON.stringify({ version: 1, services: { dash: {
-    endpoint, credentialRef: "dash.key", turnStart: { path: "/events/turn-start", budgetMs: 800 } } } }));
+    endpoint, credentialRef: "dash.key", turnStart: { path: "/events/turn-start", budgetMs: 800 } }, ...more } }));
   const sealed = {};
   for (const [name, value] of Object.entries(process.env)) {
     if (!/^(AIFY_|HERDR_|CLAUDE_)/i.test(name) && !["COMPUTERNAME", "HOSTNAME"].includes(name.toUpperCase())) sealed[name] = value;
@@ -209,6 +263,19 @@ test("END TO END: the hook sends the runner-built request and prints the context
   // PLACEMENT: the id the runner itself derived, lower-cased, from a mixed-case COMPUTERNAME.
   const tag = process.platform === "linux" && /microsoft|wsl/i.test(fs.existsSync("/proc/sys/kernel/osrelease") ? fs.readFileSync("/proc/sys/kernel/osrelease", "utf8") : "") ? "wsl" : process.platform;
   assert.deepEqual(seen.body, { agentId: "probe-agent", cwd: "C:\\Docker\\aify-dashboard", machineId: `${tag}:probe-host`, sessionKey: "claude-session-42" });
+  assert.doesNotMatch(result.stdout + result.stderr, new RegExp(KEY));
+});
+
+test("END TO END, A SERVICE ECHOING ITS KEY ADDS NOTHING AND PRINTS NO KEY, and its healthy peer still arrives", async (t) => {
+  const healthy = await service(t, answer("HEALTHY RULE"));
+  const reflecting = await service(t, (request, response) => answer(`your key is ${request.headers["x-api-key"]}`)(request, response));
+  const env = host(t, { endpoint: healthy.endpoint, more: { echo: { endpoint: reflecting.endpoint, credentialRef: "echo.key",
+    turnStart: { path: "/events/turn-start" } } } });
+  fs.writeFileSync(path.join(env.HOME, ".aify", "credentials", "echo.key"), `${KEY}-echo\n`);
+  const result = await runHook(env, HOOK_INPUT);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(reflecting.seen.length, 1, "control: the echoing service was asked and answered");
+  assert.equal(JSON.parse(result.stdout).hookSpecificOutput.additionalContext, "HEALTHY RULE");
   assert.doesNotMatch(result.stdout + result.stderr, new RegExp(KEY));
 });
 
