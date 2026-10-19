@@ -292,8 +292,13 @@ test("shared adoption guards distinguish resident, empty identity and each missi
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
 
-test("native: shared lifetime boundary preserves literal $0 and the waiting shell PID", { timeout: 10_000 }, async () => {
-  const deadline = Date.now() + 8500, home = fs.mkdtempSync(path.join(os.tmpdir(), "aify-lifetime-native-"));
+// A HANG GUARD PER SPELLING, not a speed claim. Each spelling starts git-bash and the node lifetime helper; under this
+// suite's parallel load that took past 8.5 s for the two together (9.4-10.5 s, 4 of 5 runs on 2026-10-19), while the
+// same pair passes in 3.5 s alone. The peers in this suite that spawn the launcher run 25-90 s under the suite timeout.
+const SPELLING_GUARD_MS = 60_000;
+
+test("native: shared lifetime boundary preserves literal $0 and the waiting shell PID", async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "aify-lifetime-native-"));
   try {
     const executable = bash(), { wrapperDir } = fixture(home);
     const spellings = process.platform === "win32" ? ["/c/aify-test/claude-aify", "C:/aify-test/claude-aify"] : ["/owned/claude-aify"];
@@ -311,7 +316,7 @@ IFS= read -r release
       let stderr = "", stdout = "";
       child.stderr.on("data", (bytes) => { stderr += bytes; }); child.stdout.on("data", (bytes) => { stdout += bytes; });
       const closed = new Promise((resolve, reject) => { child.on("error", reject); child.on("close", (code, signal) => resolve({ code, signal })); });
-      const timer = setTimeout(() => stop(child), Math.max(1, deadline - Date.now()));
+      const timer = setTimeout(() => stop(child), SPELLING_GUARD_MS);
       try {
         await new Promise((resolve, reject) => {
           child.stdout.on("data", () => { if (stdout.includes("\n")) resolve(); });
