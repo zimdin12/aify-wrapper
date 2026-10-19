@@ -292,12 +292,12 @@ test("shared adoption guards distinguish resident, empty identity and each missi
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
 
-// A HANG GUARD PER SPELLING, not a speed claim. Each spelling starts git-bash and the node lifetime helper; under this
-// suite's parallel load that took past 8.5 s for the two together (9.4-10.5 s, 4 of 5 runs on 2026-10-19), while the
-// same pair passes in 3.5 s alone. The peers in this suite that spawn the launcher run 25-90 s under the suite timeout.
+// A HANG GUARD PER SPELLING, not a speed claim, with an explicit ceiling for the case (the runner sets none). The
+// single 8.5 s guard for both spellings stopped the child in 4 of 5 full runs on 2026-10-19 (whole-case 9.4-10.5 s);
+// why it was that slow is not attributed. Each spelling starts git-bash and the node lifetime helper.
 const SPELLING_GUARD_MS = 60_000;
 
-test("native: shared lifetime boundary preserves literal $0 and the waiting shell PID", async () => {
+test("native: shared lifetime boundary preserves literal $0 and the waiting shell PID", { timeout: 180_000 }, async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "aify-lifetime-native-"));
   try {
     const executable = bash(), { wrapperDir } = fixture(home);
