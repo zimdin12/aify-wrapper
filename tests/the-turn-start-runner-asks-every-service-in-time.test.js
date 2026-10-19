@@ -249,6 +249,24 @@ test("END TO END, CODEX'S INPUT: the same request, and the output codex parses",
   assert.equal(svc.seen[0].body.cwd, "C:\\Docker\\aify-dashboard");
 });
 
+test("END TO END, A CODEX SUBAGENT'S TURN ASKS NOTHING AND ADDS NOTHING: its parent's turn already carried the rules", async (t) => {
+  // codex-cli 0.160.0 fires UserPromptSubmit for a subagent's turn too, with agent_id and agent_type added
+  // (codex-rs core/src/hook_runtime.rs inspect_pending_input; comms-tech-lead, 2026-10-20). Hermes' callback skips the
+  // same turns (lib/hermes-turn-start.py).
+  const turn = { session_id: "019a2b3c-codex-thread", turn_id: "turn-4", transcript_path: null, cwd: "C:\\Docker\\aify-dashboard",
+    hook_event_name: "UserPromptSubmit", model: "gpt-5.5", permission_mode: "bypassPermissions", prompt: "explore" };
+  const svc = await service(t, answer("OPERATOR RULE"));
+  const env = host(t, { endpoint: svc.endpoint });
+  const sub = await runHook(env, JSON.stringify({ ...turn, agent_id: "subagent-1", agent_type: "explorer" }));
+  assert.equal(sub.code, 0, sub.stderr);
+  assert.equal(sub.stdout, "", "a subagent's turn was given context");
+  assert.equal(svc.seen.length, 0, "a subagent's turn asked the service");
+  // Control: the parent's turn, the same input without the subagent's fields, is asked and answered.
+  const parent = await runHook(env, JSON.stringify(turn));
+  assert.equal(JSON.parse(parent.stdout).hookSpecificOutput.additionalContext, "OPERATOR RULE");
+  assert.equal(svc.seen.length, 1);
+});
+
 test("END TO END: the hook sends the runner-built request and prints the context", async (t) => {
   const svc = await service(t, answer("OPERATOR RULE"));
   const result = await runHook(host(t, { endpoint: svc.endpoint }), HOOK_INPUT);
