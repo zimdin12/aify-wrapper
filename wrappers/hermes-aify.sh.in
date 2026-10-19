@@ -681,6 +681,11 @@ if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]
   export AIFY_HERDR_AGENT="${0##*/}"
   export AIFY_HERDR_HERMES_PLUGIN="$AIFY_WRAPPER_DIR_FWD/lib/hermes-herdr-state.py"
 fi
+# The turn's context: the same plugin loads lib/hermes-turn-start.py, which adds what the registry's turnStart
+# services say to each turn. Only for an agent: the dashboard places a session by its agent, and a plain hermes has none.
+if [ -n "${AIFY_AGENT_ID:-}" ]; then
+  export AIFY_TURN_START_HERMES_PLUGIN="$AIFY_WRAPPER_DIR_FWD/lib/hermes-turn-start.py"
+fi
 
 # Node >=22 guarantee. The Hermes Ink TUI's gateway client attaches over a
 # WebSocket using the global `WebSocket` constructor, which only exists in

@@ -20,6 +20,8 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { withoutAgentSession } from "../lib/inherited-session.mjs";
+import { emptyRegistry } from "./sealed-registry.mjs";
 import { answer, host, KEY, service } from "./turn-start-host.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -124,6 +126,42 @@ test("A RUNNER THAT NEVER EXITS IS STOPPED AT THE GUARD, and the turn goes on wi
   const fired = await fire(host(t, { endpoint: svc.endpoint }), { attrs: { _RUNNER: hang, _GUARD_S: 1 } });
   assert.deepEqual(fired.results, [null]);
   assert.ok(fired.took >= 0.9 && fired.took < 4, `the callback took ${fired.took} s against a 1 s guard`);
+});
+
+/** Render hermes-aify and run `hermes-aify model list` against a stub hermes; what it saw in the environment comes back. */
+function launcherHandsHermes(t, env) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-hermes-export-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const posix = (p) => p.split(path.sep).join("/");
+  const out = path.join(dir, "out");
+  const home = path.join(dir, "home");
+  for (const d of [out, home, path.join(dir, "bridge")]) fs.mkdirSync(d, { recursive: true });
+  const rendered = spawnSync("bash", [posix(path.join(ROOT, "install.sh")), "--registry", emptyRegistry(), "--client", "hermes",
+    "--endpoint", "http://127.0.0.2:1", "--render-only", posix(out), "--bridge-dir", posix(path.join(dir, "bridge"))],
+  { encoding: "utf8", timeout: 120_000 });
+  assert.equal(rendered.status, 0, `render failed: ${rendered.stdout}\n${rendered.stderr}`);
+  const seen = path.join(dir, "seen.json");
+  const stub = path.join(dir, "hermes-stub");
+  fs.writeFileSync(stub, ["#!/bin/sh",
+    `exec '${posix(process.execPath)}' -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ plugin: process.env.AIFY_TURN_START_HERMES_PLUGIN ?? null }))' '${posix(seen)}'`,
+    ""].join("\n"), { mode: 0o755 });
+  // Not the session this suite runs in: a launcher inside one names no agent, whatever AIFY_AGENT_ID says.
+  const base = Object.fromEntries(Object.entries(withoutAgentSession(process.env)).filter(([name]) => !/^(AIFY_|HARNESS_|HERDR_)/.test(name)));
+  // A passthrough subcommand goes straight to the runtime: no gateway, no lease, nothing of the host's touched.
+  const run = spawnSync("bash", [posix(path.join(out, "hermes-aify")), "model", "list"], {
+    encoding: "utf8", timeout: 60_000,
+    env: { ...base, HOME: home, USERPROFILE: home, AIFY_SERVICE_REGISTRY: emptyRegistry(), AIFY_HERMES_COMMAND: posix(stub), ...env },
+  });
+  assert.equal(run.status, 0, `launcher failed (${run.status}): ${run.stdout}\n${run.stderr}`);
+  assert.ok(fs.existsSync(seen), `hermes was never started:\n${run.stderr}`);
+  return JSON.parse(fs.readFileSync(seen, "utf8")).plugin;
+}
+
+test("HERMES-AIFY NAMES THIS MODULE FOR AN AGENT, and a plain hermes is given nothing", async (t) => {
+  const named = launcherHandsHermes(t, { AIFY_AGENT_ID: "probe-agent" });
+  assert.ok(named, "an agent's hermes was not told where the turn-start module is");
+  assert.equal(fs.realpathSync(named), fs.realpathSync(MODULE));
+  assert.equal(launcherHandsHermes(t, {}), null, "a hermes with no agent was handed the turn-start module");
 });
 
 test("NO FAILURE REACHES HERMES: no node, a runner that prints no JSON, a runner that crashes", { skip: NO_PYTHON }, async (t) => {
