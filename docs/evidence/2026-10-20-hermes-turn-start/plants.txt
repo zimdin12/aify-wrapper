@@ -1,0 +1,10 @@
+control-comment: GREEN as expected; exit 0
+subagent-asks: RED as expected; exit 1
+folder-ignores-hermes: RED as expected; exit 1
+outside-hermes-invents-a-folder: RED as expected; exit 1
+session-id-fixed: RED as expected; exit 1
+output-unparsed: RED as expected; exit 1
+no-guard: RED as expected; exit null
+failure-raises: RED as expected; exit 1
+wrong-hook-name: RED as expected; exit 1
+9 rows, 0 not as expected; module restored: true
