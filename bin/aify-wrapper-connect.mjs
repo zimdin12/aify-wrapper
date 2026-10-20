@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { USAGE, keyFromText, parseConnectArgs } from "../lib/connect-args.mjs";
 import { Refused, aifyEnvTools, connect } from "../lib/connect.mjs";
 import { credentialFromBytes } from "../lib/credential-file.mjs";
+import { npmCliBeside, npmTool } from "../lib/package-install.mjs";
 
 const EXIT_REFUSED = 78;
 const EXIT_UNKNOWN = 75;
@@ -51,6 +52,7 @@ try {
 
   const aifyEnvBin = args.aifyEnv || path.join(npmRoot(), "aify-env", "bin", "aify-env.mjs");
   if (!fs.existsSync(aifyEnvBin)) throw new Refused(`aify-env is not installed (${aifyEnvBin}); install it before connecting a service`);
+  const npmCli = args.npmCli || npmCliBeside(process.execPath);
   const catalogue = JSON.parse(fs.readFileSync(path.join(WRAPPER_ROOT, "lib", "artifact-catalogue.json"), "utf8"));
 
   const report = await connect({
@@ -70,6 +72,11 @@ try {
     dest: args.dest || path.join(home, ".local", "bin"),
     home: home.split(path.sep).join("/"),
     fileSetRoot: args.fileSetRoot,
+    packageRoot: args.packageRoot || path.join(home, ".aify", "packages"),
+    npm: (npmArgs) => {
+      if (!npmCli) throw new Refused(`npm's CLI is not beside ${process.execPath}; pass --npm-cli <path to npm-cli.js>`);
+      return npmTool(npmCli, process.env, Refused)(npmArgs);
+    },
     execPath: process.execPath.split(path.sep).join("/"),
     stagingDir: fs.mkdtempSync(path.join(os.tmpdir(), "aify-connect-fetched-")),
     wrapperRoot: WRAPPER_ROOT,
@@ -82,6 +89,7 @@ try {
   for (const field of report.absent ?? []) out.push(`  ${field}: optional, not supplied`);
   for (const server of report.pending) out.push(`  mcp ${server.name}: no entry written -- ${server.reason}`);
   for (const file of report.fetched ?? []) out.push(`  fetched and verified: ${file}`);
+  for (const pkg of report.installed ?? []) out.push(`  ${pkg.id}: ${pkg.reused ? "already installed" : "installed"} at ${pkg.at}`);
   for (const extra of report.unlisted ?? []) out.push(`  ${extra.id}: ${extra.count} file(s) on disk not in its manifest, not run by any entry (e.g. ${extra.sample.join(", ")})`);
   for (const old of report.cleanupPending) {
     out.push(`  cleanup-pending: ${old.field} no longer names ${old.ref}; once nothing still reads it: aify-env credential remove --ref=${old.ref}`);

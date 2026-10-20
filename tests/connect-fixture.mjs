@@ -16,11 +16,15 @@ import { fileURLToPath } from "node:url";
 
 import { createHash } from "node:crypto";
 
+import { npmCliBeside } from "../lib/package-install.mjs";
 import { tupleDigest } from "../lib/service-spec.mjs";
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const BIN = path.join(ROOT, "bin", "aify-wrapper-connect.mjs");
 export const FAKE_ENV = path.join(ROOT, "tests", "fake-aify-env.mjs");
+export const FAKE_NPM = path.join(ROOT, "tests", "fake-npm.mjs");
+//: The real npm the double delegates to, found the way connect finds it, before anything is sealed.
+export const REAL_NPM = npmCliBeside(process.execPath);
 export const KEY = "k3y-of-the-service-0123456789abcdef";
 //: aify-env's real credential command, when its checkout is here. Resolved BEFORE any HOME is sealed.
 export const ENV_REPO = [process.env.AIFY_ENV_REPO, path.join(ROOT, "..", "aify-env"), path.join(os.homedir(), "projects", "aify-env")]
@@ -46,6 +50,9 @@ export function makeHost() {
     registry: path.join(home, ".aify", "services.json"),
     dest: path.join(home, ".local", "bin"),
     spy: path.join(home, "aify-env-calls.log"),
+    npmSpy: path.join(home, "npm-calls.log"),
+    npmGlobal: path.join(home, "npm-global"),
+    npmCalls: () => (fs.existsSync(host.npmSpy) ? fs.readFileSync(host.npmSpy, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []),
     keyFile: (value, name = "key") => {
       const file = path.join(home, `${name}.txt`);
       fs.writeFileSync(file, `${value}\n`);
@@ -164,19 +171,32 @@ export async function startService({ spec, answer = () => null, key = KEY } = {}
 export function runConnect(host, args, { env = {}, input = "" } = {}) {
   const base = {};
   for (const [name, value] of Object.entries(process.env)) {
-    if (!/^(AIFY_|HERDR_|CLAUDE_|CODEX_)/i.test(name)) base[name] = value;
+    // npm_*: `npm test` hands its own config (prefix, cache, userconfig) to everything below it as npm_config_*.
+    if (!/^(AIFY_|HERDR_|CLAUDE_|CODEX_|npm_|GIT_)/i.test(name)) base[name] = value;
   }
   const childEnv = {
     ...base,
     HOME: host.home,
     USERPROFILE: host.home,
     AIFY_TEST_SPY: host.spy,
+    // npm and git, sealed: a cache, a global prefix nothing may create, and no user or system config.
+    NPM_CONFIG_CACHE: path.join(host.home, "npm-cache"),
+    NPM_CONFIG_PREFIX: host.npmGlobal,
+    NPM_CONFIG_USERCONFIG: path.join(host.home, ".npmrc"),
+    NPM_CONFIG_GLOBALCONFIG: path.join(host.home, "npm-globalconfig"),
+    NPM_CONFIG_UPDATE_NOTIFIER: "false",
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: path.join(host.home, ".gitconfig"),
+    AIFY_TEST_NPM_SPY: host.npmSpy,
+    AIFY_TEST_REAL_NPM: REAL_NPM,
+    AIFY_TEST_GIT_ROOT: gitRoot,
     ...(ENV_REPO ? { AIFY_ENV_REPO: ENV_REPO } : {}),
     // The opt-in real `registry check` (see fake-aify-env.mjs), carried through the AIFY_* seal above on purpose.
     ...(process.env.AIFY_TEST_REAL_REGISTRY ? { AIFY_TEST_REAL_REGISTRY: process.env.AIFY_TEST_REAL_REGISTRY } : {}),
     ...env,
   };
-  const argv = [BIN, ...args, "--registry", host.registry, "--dest", host.dest, "--aify-env", FAKE_ENV, "--file-set-root", host.root, "--no-prompt"];
+  const argv = [BIN, ...args, "--registry", host.registry, "--dest", host.dest, "--aify-env", FAKE_ENV, "--file-set-root", host.root,
+    "--npm-cli", FAKE_NPM, "--no-prompt"];
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, argv, { env: childEnv });
     let stdout = "";
@@ -187,4 +207,54 @@ export function runConnect(host, args, { env = {}, input = "" } = {}) {
     child.on("close", (status) => resolve({ status, stdout, stderr }));
     child.stdin.end(input);
   });
+}
+
+let gitRoot = "";
+let built = null;
+
+/**
+ * A package in a local bare repository, `owner/fixture-bridge`, built once per test file: its bin `fixture-bridge`
+ * is dist/bridge.js, which only its `prepare` script writes, so an install that skipped scripts has no bin file.
+ * Two good commits, so a test can make npm install the wrong one, and one whose bin is never built. No test reaches
+ * github: the npm double maps `github:owner/fixture-bridge#<sha>` here.
+ *
+ * @returns {{repo: string, revisions: string[], unbuilt: string}}
+ */
+export function gitPackage() {
+  if (built) return built;
+  gitRoot = fs.mkdtempSync(path.join(os.tmpdir(), "aify-connect-git-")).split(path.sep).join("/");
+  const work = path.join(gitRoot, "work");
+  const emptyConfig = path.join(gitRoot, "gitconfig");
+  fs.mkdirSync(work);
+  fs.writeFileSync(emptyConfig, "");
+  const git = (...args) => {
+    const run = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "core.autocrlf=false", ...args],
+      { cwd: work, encoding: "utf8", env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: emptyConfig } });
+    if (run.status !== 0) throw new Error(`git ${args.join(" ")}: ${run.stderr}`);
+    return run.stdout.trim();
+  };
+  const pkg = { name: "fixture-bridge", version: "1.0.0", bin: { "fixture-bridge": "dist/bridge.js" }, scripts: { prepare: "node build.js" }, files: ["dist", "build.js"] };
+  fs.writeFileSync(path.join(work, "package.json"), `${JSON.stringify(pkg, null, 2)}\n`);
+  fs.writeFileSync(path.join(work, "build.js"), [
+    'const fs = require("fs");',
+    'fs.mkdirSync("dist", { recursive: true });',
+    'fs.writeFileSync("dist/bridge.js", "console.log(\\"fixture bridge\\");" + String.fromCharCode(10));',
+    "",
+  ].join(String.fromCharCode(10)));
+  git("init", "-q");
+  git("add", "-A");
+  git("commit", "-q", "-m", "one");
+  const first = git("rev-parse", "HEAD");
+  fs.writeFileSync(path.join(work, "CHANGES"), "two\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "two");
+  const second = git("rev-parse", "HEAD");
+  // The third commit drops `prepare`: it installs cleanly and its bin was never built.
+  fs.writeFileSync(path.join(work, "package.json"), `${JSON.stringify({ ...pkg, scripts: {} }, null, 2)}\n`);
+  git("add", "-A");
+  git("commit", "-q", "-m", "three");
+  const unbuilt = git("rev-parse", "HEAD");
+  git("clone", "-q", "--bare", ".", path.join(gitRoot, "owner", "fixture-bridge.git"));
+  built = { repo: "owner/fixture-bridge", revisions: [first, second], unbuilt };
+  return built;
 }

@@ -1,7 +1,7 @@
 {
   "specVersion": 1,
   "name": "aify-dashboard",
-  "version": "1.3.10",
+  "version": "1.3.14",
   "fixed": {
     "agentState": {
       "path": "/api/v1/agent-state"
@@ -20,7 +20,10 @@
       "id": "dashboard-bridge",
       "kind": "package",
       "source": {
-        "pending": "where a host gets the package waits on the operator (question 01M5CYJH)"
+        "git": {
+          "repo": "zimdin12/aify-dashboard",
+          "revision": "2d9121dbae592540a8cf8955a4570e16634310d8"
+        }
       },
       "entries": [
         "aify-dashboard-bridge"

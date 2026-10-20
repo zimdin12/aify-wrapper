@@ -104,15 +104,25 @@ nobody types an entry by hand. In order:
 
 The entry is the published one with the spec's fields over it, so `secretsCredentialRef`, `advertise` and any
 other field the spec does not name survive. Each MCP server is `{command: <the absolute node running connect>,
-args: [<install root>/<entry>]}`, so nothing comes from a session's PATH or environment.
+args: [<the entry's absolute file>]}`, so nothing comes from a session's PATH or environment.
 
 An artifact is approved by the exact digest of its `{kind, source, sha256, entries}`: one listed in
 `lib/artifact-catalogue.json` (empty for now), or one passed as `--approve`. A refusal prints the digest it
 needs. A `file-set` must already be at its install root (`~/.<service>/mcp/stdio`, or `--file-set-root`). The service
 serves its manifest at `manifest.path`: `sha256sum` lines, fetched with no key, whose bytes must hash to the
 artifact's `sha256`. Every listed file must match its line, and every entry must be listed; files on disk the
-manifest does not list (node_modules, untracked files) are reported, not failed. A `pending` artifact, and a package (installing one is the guided chain's
-acquire phase), gets no entry; the report says why.
+manifest does not list (node_modules, untracked files) are reported, not failed.
+
+A `package` from git is approved by `{kind, repo, entries}`, and its revision comes from the spec. That revision must
+be a full 40-hex commit, and the artifact carries no `sha256`. After the probes pass, connect runs
+`npm install --prefix ~/.aify/packages/<service>/<id>/<revision> --ignore-scripts=false github:<repo>#<revision>`
+(`--package-root` and `--npm-cli` override where it installs and which npm it runs). Scripts stay on because a
+package's build can run in `prepare`. The install goes into its own prefix rather than `-g`: on npm 10.9.3 a global
+install of a git package that has a `prepare` script leaves a link into a deleted temporary clone, and npm reports
+no commit for it. Connect then reads the installed commit back from npm and refuses anything other than the spec's
+revision. Every entry must be a bin the installed `package.json` declares and must exist on disk. The server
+runs that bin's file with the absolute node. A `pending` artifact, and one the service serves, gets no entry; the
+report says why.
 
 `install.sh` records what each launcher was rendered from in `launchers/` beside the registry
 (`RENDER_RECORD_DIR`, which `render.sh` honours only when a caller sets it): the template's sha256, its name, the

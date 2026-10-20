@@ -13,6 +13,7 @@ import { artifactStanding, mergeEntry, registryWith, renderServers, retiredRefs,
 import { NoSpec, REQUEST_TIMEOUT_MS, RedirectRefused, checkHealth, checkProbe, fetchManifest, fetchServed, fetchSpec } from "../lib/connect-http.mjs";
 import { Refused, aifyEnvTools, checkFileSet, connect, stagedRef } from "../lib/connect.mjs";
 import { SPEC_PATH, SPEC_VERSION, isCredentialRefField, parseManifest, resolveRoute, routeProblem, tupleDigest, validateSpec } from "../lib/service-spec.mjs";
+import { binFiles, installArgs, installedCommit } from "../lib/package-install.mjs";
 import { FAKE_ENV, commsSpec, makeHost } from "./connect-fixture.mjs";
 
 const target = { name: "aify-comms", endpoint: "http://h:1/comms" };
@@ -42,8 +43,8 @@ test("validateSpec accepts comms' frozen shape and refuses each door the spec mi
   assert.equal(validateSpec({ ...good, version: "anything" }, target).ok, true, "version is display-only");
 });
 
-test("the dashboard's live spec (1.3.10, read without a key) passes as the format owner froze it", () => {
-  const spec = JSON.parse(fs.readFileSync(new URL("./fixtures/aify-dashboard-spec-1.3.10.json", import.meta.url), "utf8"));
+test("the dashboard's live spec (1.3.13, read without a key) passes as the format owner froze it", () => {
+  const spec = JSON.parse(fs.readFileSync(new URL("./fixtures/aify-dashboard-spec-1.3.13.json", import.meta.url), "utf8"));
   assert.deepEqual(validateSpec(spec, { name: "aify-dashboard", endpoint: "http://127.0.0.1:9700" }).errors, []);
   assert.equal(validateSpec(spec, { name: "aify-comms", endpoint: "http://127.0.0.1:9700" }).ok, false, "CONTROL: it is judged");
   assert.ok(new NoSpec("x") instanceof Error);
@@ -66,6 +67,36 @@ test("an approval binds the exact tuple: any change to kind, source, hash or ent
   }
   const standing = artifactStanding([a, { id: "p", source: { pending: "why" } }], new Set([tupleDigest(a)]));
   assert.deepEqual(standing.map((s) => s.approved ?? s.pending), [true, "why"]);
+});
+
+test("a package from git: a full commit only, no sha256, and its approval binds {kind, repo, entries} with the revision from the spec", () => {
+  const spec = JSON.parse(fs.readFileSync(new URL("./fixtures/aify-dashboard-spec-1.3.13.json", import.meta.url), "utf8"));
+  const dashboard = { name: "aify-dashboard", endpoint: "http://127.0.0.1:9700" };
+  const [pkg] = spec.artifacts;
+  const withArtifact = (change) => ({ ...spec, artifacts: [{ ...pkg, ...change }] });
+  const at = (revision) => ({ source: { git: { repo: pkg.source.git.repo, revision } } });
+  assert.deepEqual(validateSpec(withArtifact({}), dashboard).errors, [], "CONTROL: the live shape passes");
+  for (const revision of [pkg.source.git.revision.slice(0, 12), "main", "v1.3.13", pkg.source.git.revision.toUpperCase()]) {
+    assert.match(validateSpec(withArtifact(at(revision)), dashboard).errors.join(";"), /full 40-hex commit/, revision);
+  }
+  assert.match(validateSpec(withArtifact({ sha256: "a".repeat(64) }), dashboard).errors.join(";"), /package from git and may not carry a sha256/);
+  assert.equal(tupleDigest(pkg), tupleDigest({ ...pkg, ...at("b".repeat(40)) }), "the revision is the spec's, not the approval's");
+  for (const change of [{ source: { git: { repo: "someone/else", revision: pkg.source.git.revision } } }, { entries: ["other-bin"] }, { kind: "file-set" }]) {
+    assert.notEqual(tupleDigest(pkg), tupleDigest({ ...pkg, ...change }), JSON.stringify(change));
+  }
+});
+
+test("an installed package: npm's one dependency names the commit, and an entry is a bin the package declares", () => {
+  const sha = "c".repeat(40);
+  assert.deepEqual(installedCommit({ dependencies: { b: { resolved: `git+ssh://git@github.com/o/r.git#${sha}` } } }), { name: "b", commit: sha, problem: "" });
+  assert.match(installedCommit({ dependencies: { b: { version: "1.0.0" } } }).problem, /no commit for b/);
+  assert.match(installedCommit({ dependencies: {} }).problem, /0 packages/);
+  assert.match(installedCommit({ dependencies: { a: {}, b: {} } }).problem, /2 packages/);
+  assert.deepEqual(binFiles({ name: "@s/tool", bin: "./cli.js" }, ["tool"]), { files: { tool: "cli.js" }, problems: [] });
+  assert.deepEqual(binFiles({ name: "p", bin: { a: "dist/a.js" } }, ["a"]).files, { a: "dist/a.js" });
+  assert.match(binFiles({ name: "p", bin: { a: "dist/a.js" } }, ["b"]).problems[0], /b is not a bin p declares \(it declares a\)/);
+  assert.match(binFiles({ name: "p", bin: { a: "../x.js" } }, ["a"]).problems[0], /leaves the package/);
+  assert.deepEqual(installArgs("/p", { repo: "o/r", revision: sha }), ["install", "--prefix", "/p", "--ignore-scripts=false", "--no-audit", "--no-fund", `github:o/r#${sha}`]);
 });
 
 test("servers render with the given absolute node and the install root; a pending one is reported, not written", () => {

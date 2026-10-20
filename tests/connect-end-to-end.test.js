@@ -220,7 +220,8 @@ test("NO REPLACEMENT ON FAILURE: a wrong key on reconnect leaves the registry, i
   const spec = commsSpec(host);
   const service = await startService({ spec });
   try {
-    assert.equal((await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY), ...approvals(spec)])).status, 0);
+    const first = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY), ...approvals(spec)]);
+    assert.equal(first.status, 0, first.stderr);
     const registry = host.registryBytes();
     const refs = host.refs();
     const run = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile("not-the-key", "wrong"), ...approvals(spec)]);
@@ -278,7 +279,8 @@ test("REUSE: a reconnect with no new key reuses the published reference and stag
   const spec = commsSpec(host);
   const service = await startService({ spec });
   try {
-    assert.equal((await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY), ...approvals(spec)])).status, 0);
+    const first = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY), ...approvals(spec)]);
+    assert.equal(first.status, 0, first.stderr);
     const before = credentialSets(host).length;
     const run = await runConnect(host, ["aify-comms", service.url, ...approvals(spec)]);
     assert.equal(run.status, 0, run.stderr);
@@ -294,7 +296,8 @@ test("RETIREMENT: a new key leaves the old reference in the store and reports it
   const spec = commsSpec(host);
   const service = await startService({ spec });
   try {
-    assert.equal((await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY), ...approvals(spec)])).status, 0);
+    const first = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY), ...approvals(spec)]);
+    assert.equal(first.status, 0, first.stderr);
     const [old] = host.refs();
     const run = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY, "again"), ...approvals(spec)]);
     assert.equal(run.status, 0, run.stderr);
