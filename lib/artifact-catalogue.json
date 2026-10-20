@@ -1,0 +1,4 @@
+{
+  "about": "Artifact tuples aify-wrapper approves without asking: the sha256 of each canonical {kind, source, sha256, entries} (lib/service-spec.mjs tupleDigest). Empty until a tuple is reviewed and added here; until then the operator approves with --approve.",
+  "approved": []
+}

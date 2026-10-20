@@ -66,7 +66,19 @@ const inherited = withoutAgentSession(process.env);
 for (const name of Object.keys(inherited)) if (/^(AIFY_)?HERDR_/i.test(name)) delete inherited[name];
 const env = { ...inherited, TMPDIR: root, TEMP: root, TMP: root };
 
-const files = fs.readdirSync('tests').filter((f) => f.endsWith('.test.js')).map((f) => path.join('tests', f));
+// `npm test -- <file>...` runs only those files, under the same temp root and the same stripped session: running
+// one file with a bare `node --test` inherits the terminal's agent session and its TEMP, which is what this
+// runner exists to prevent. A named file that does not exist is refused rather than quietly running nothing.
+const selected = process.argv.slice(2);
+for (const file of selected) {
+  if (!file.endsWith('.test.js') || !fs.existsSync(file)) {
+    console.error(`run-in-a-temp-root: ${file} is not a test file here`);
+    process.exit(2);
+  }
+}
+const files = selected.length
+  ? selected
+  : fs.readdirSync('tests').filter((f) => f.endsWith('.test.js')).map((f) => path.join('tests', f));
 
 const child = spawn(process.execPath, ['--test', ...files], { env, stdio: 'inherit' });
 

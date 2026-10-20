@@ -121,3 +121,34 @@ else
   chmod 755 "$staged"
 fi
 mv -f "$staged" "$target"
+
+# WHAT THIS LAUNCHER WAS RENDERED FROM, so `aify-wrapper-connect` can re-render it after the registry changes
+# without guessing the values another installer chose (a bridge dir, hermes' extras). One file per launcher in
+# `.aify-render/` beside it: the template's sha256, its name, then every KEY=VALUE pair, NUL-terminated so no
+# value needs escaping. The four registry-derived pairs are left out: connect recomputes them. A host with no
+# sha256 tool writes no record, and connect then reports the launcher stale rather than re-rendering it.
+record_render() {
+  local sha="" tool record_dir record pair
+  for tool in "sha256sum" "shasum -a 256"; do
+    sha="$($tool "$template" 2>/dev/null | awk '{print $1}')" || sha=""
+    [ -z "$sha" ] || break
+  done
+  [ -n "$sha" ] || return 0
+  record_dir="$(dirname "$target")/.aify-render"
+  record="$record_dir/$(basename "$target").args"
+  mkdir -p "$record_dir" || return 0
+  (
+    umask 077
+    {
+      printf '%s\0' "$sha" "$(basename "$template")"
+      for pair in "$@"; do
+        case "$pair" in
+          REGISTRY_FINGERPRINT=*|STRICT_EXTRA_MCP_B64=*|SESSION_MCP_B64=*|SESSION_MCP_CODEX_B64=*) ;;
+          *) printf '%s\0' "$pair" ;;
+        esac
+      done
+    } > "$record.$$"
+  ) && mv -f "$record.$$" "$record"
+}
+# Best effort: a launcher that rendered is not failed by its record.
+record_render "$@" || true
