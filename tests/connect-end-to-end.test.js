@@ -9,7 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 
-import { KEY, ROOT, approvals, commsSpec, makeHost, runConnect, startService } from "./connect-fixture.mjs";
+import { KEY, MANIFESTS, MANIFEST_PATH, ROOT, approvals, commsSpec, makeHost, manifestFor, runConnect, startService } from "./connect-fixture.mjs";
 
 const fixture = fs.readFileSync(path.join(ROOT, "tests", "fixtures", "services-written-by-aify-comms.json"), "utf8");
 const credentialSets = (host) => host.calls().filter((argv) => argv[0] === "credential");
@@ -138,7 +138,7 @@ test("ORIGIN-RELATIVE: an endpoint with a path probes the origin's route, never 
 
 for (const [label, mutate, expect] of [
   ["an unapproved tuple", (spec) => spec, /not approved/],
-  ["files that do not hash to the approved sha256", (spec) => spec, /hash .*, not the approved/],
+  ["a listed file that no longer hashes to its manifest line", (spec) => spec, /server\.js hashes .*, not its manifest line/],
   ["a server naming a command", (spec) => ({ ...spec, mcp: [{ ...spec.mcp[0], command: "calc.exe" }] }), /never a command/],
 ]) {
   test(`TYPED ARTIFACTS: ${label} is refused under --no-prompt, and nothing runs or is written`, async () => {
@@ -147,7 +147,7 @@ for (const [label, mutate, expect] of [
     const service = await startService({ spec });
     try {
       const approve = label === "an unapproved tuple" ? [] : approvals(spec);
-      if (label.startsWith("files")) fs.appendFileSync(path.join(host.home, ".aify-comms", "mcp", "stdio", "server.js"), "// changed\n");
+      if (label.startsWith("a listed file")) fs.appendFileSync(path.join(host.home, ".aify-comms", "mcp", "stdio", "server.js"), "// changed\n");
       const run = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY), ...approve]);
       assert.equal(run.status, 78);
       assert.match(run.stderr, expect);
@@ -158,6 +158,62 @@ for (const [label, mutate, expect] of [
     }
   });
 }
+
+for (const [label, build, expect] of [
+  ["a manifest whose bytes do not hash to the artifact's sha256",
+    (host) => {
+      const spec = commsSpec(host);
+      MANIFESTS.set("0".repeat(64), manifestFor(host).text);
+      return { ...spec, artifacts: [{ ...spec.artifacts[0], sha256: "0".repeat(64) }] };
+    }, /the manifest hashes .*, not the spec's/],
+  ["an entry the manifest does not list",
+    (host) => commsSpec(host, {}, manifestFor(host, ["server.js", "tests/a.test.js"])), /entry claude-channel\.js is not in the manifest/],
+  ["a manifest line that climbs out of the root",
+    (host) => commsSpec(host, {}, manifestFor(host, [], ["0".repeat(64) + "  ../escape.js", "0".repeat(64) + "  claude-channel.js", "0".repeat(64) + "  server.js"])),
+    /the manifest is refused: .*\.\.\/escape\.js.* not a relative path inside the root/],
+]) {
+  test(`MANIFEST: ${label} is refused before any credential is touched`, async () => {
+    const host = makeHost();
+    const spec = build(host);
+    const service = await startService({ spec });
+    try {
+      const run = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY), ...approvals(spec)]);
+      assert.equal(run.status, 78, run.stdout);
+      assert.match(run.stderr, expect);
+      assert.deepEqual(host.calls(), []);
+      assert.equal(host.registryBytes().length, 0);
+    } finally {
+      await service.close();
+    }
+  });
+}
+
+test("MANIFEST: a web page where the manifest should be is refused", async () => {
+  const host = makeHost();
+  const spec = commsSpec(host);
+  const service = await startService({ spec, answer: (req) => (req.url === MANIFEST_PATH ? { status: 200, body: "<html></html>", type: "text/html" } : null) });
+  try {
+    const run = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY), ...approvals(spec)]);
+    assert.equal(run.status, 78);
+    assert.match(run.stderr, /answered text\/html, not a plain manifest/);
+    assert.deepEqual(host.calls(), []);
+  } finally {
+    await service.close();
+  }
+});
+
+test("MANIFEST: files on disk the manifest does not list are reported, not failed", async () => {
+  const host = makeHost();
+  const spec = commsSpec(host);
+  const service = await startService({ spec });
+  try {
+    const run = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY), ...approvals(spec)]);
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, /comms-bridge: 1 file\(s\) on disk not in its manifest, not run by any entry \(e\.g\. node_modules\/dep\/index\.js\)/);
+  } finally {
+    await service.close();
+  }
+});
 
 test("NO REPLACEMENT ON FAILURE: a wrong key on reconnect leaves the registry, its reference and the launchers as they were", async () => {
   const host = makeHost();

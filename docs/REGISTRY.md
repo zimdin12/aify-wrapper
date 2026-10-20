@@ -9,6 +9,12 @@ learns that a service exists at all.
 aify-comms adds `aify-comms`. Installing a graph service adds that. Nothing else edits it, and no
 service touches another's entry.
 
+**Or by `aify-wrapper-connect`**, from the spec a service serves (README, "Connecting a service"). It writes
+the raw entry, keeping every field the spec does not name, under `<registry>.lock`, and only when the file still
+holds what it read. The lock binds cooperating writers only: aify-dashboard's own register (a temp file and a
+rename, no lock) is not excluded by it; the reread catches it when it lands between connect's read and its
+write.
+
 **Read by aify-wrapper at install time** to decide what to bake into each launcher, and by the host
 process runner when it starts.
 

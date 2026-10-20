@@ -81,6 +81,7 @@ try {
   for (const field of report.absent ?? []) out.push(`  ${field}: optional, not supplied`);
   for (const server of report.pending) out.push(`  mcp ${server.name}: no entry written -- ${server.reason}`);
   for (const file of report.fetched ?? []) out.push(`  fetched and verified: ${file}`);
+  for (const extra of report.unlisted ?? []) out.push(`  ${extra.id}: ${extra.count} file(s) on disk not in its manifest, not run by any entry (e.g. ${extra.sample.join(", ")})`);
   for (const old of report.cleanupPending) {
     out.push(`  cleanup-pending: ${old.field} no longer names ${old.ref}; once nothing still reads it: aify-env credential remove --ref=${old.ref}`);
   }

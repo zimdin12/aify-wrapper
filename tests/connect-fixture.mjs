@@ -14,7 +14,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { fileSetDigest } from "../lib/connect.mjs";
+import { createHash } from "node:crypto";
+
 import { tupleDigest } from "../lib/service-spec.mjs";
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -34,6 +35,11 @@ export function makeHost() {
   fs.mkdirSync(root, { recursive: true });
   fs.writeFileSync(path.join(root, "server.js"), "// the bridge\n");
   fs.writeFileSync(path.join(root, "claude-channel.js"), "// the channel\n");
+  // A listed file nothing runs, and an unlisted one: the copy holds the commit's whole directory, and more.
+  fs.mkdirSync(path.join(root, "tests"));
+  fs.writeFileSync(path.join(root, "tests", "a.test.js"), "// a test\n");
+  fs.mkdirSync(path.join(root, "node_modules", "dep"), { recursive: true });
+  fs.writeFileSync(path.join(root, "node_modules", "dep", "index.js"), "// installed\n");
   const host = {
     home,
     root: fwd(root),
@@ -55,13 +61,28 @@ export function makeHost() {
   return host;
 }
 
+export const MANIFEST_PATH = "/.well-known/aify-service/artifacts/comms-bridge.manifest";
+const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+//: The manifest each spec's hash names, so the service serves the text that hash binds.
+export const MANIFESTS = new Map();
+
+/** `sha256sum` text for `files` under `host.root`, as comms' spec builder writes it; `lines` replaces the computed ones. */
+export function manifestFor(host, files = ["claude-channel.js", "server.js", "tests/a.test.js"], lines = null) {
+  const LF = String.fromCharCode(10);
+  const rows = lines ?? [...files].sort().map((file) => `${sha256(fs.readFileSync(path.join(host.root, file)))}  ${file}`);
+  const text = rows.map((row) => `${row}${LF}`).join("");
+  MANIFESTS.set(sha256(text), text);
+  return { text, sha256: sha256(text) };
+}
+
 /** comms' spec, the shape the format owner froze, with its file-set bound to `host`'s bridge files. */
-export function commsSpec(host, overrides = {}) {
+export function commsSpec(host, overrides = {}, manifest = manifestFor(host)) {
   const artifact = {
     id: "comms-bridge",
     kind: "file-set",
     source: { git: { repo: "zimdin12/aify-comms", revision: "a".repeat(40) } },
-    sha256: fileSetDigest(host.root, ["server.js", "claude-channel.js"]),
+    sha256: manifest.sha256,
+    manifest: { path: MANIFEST_PATH },
     entries: ["server.js", "claude-channel.js"],
   };
   return {
@@ -108,6 +129,11 @@ export async function startService({ spec, answer = () => null, key = KEY } = {}
     }
     if (req.url === "/.well-known/aify-service") return send(200, JSON.stringify(typeof spec === "function" ? spec() : spec));
     if (req.url === "/health") return send(200, "{}");
+    if (req.url === MANIFEST_PATH) {
+      const current = typeof spec === "function" ? spec() : spec;
+      const text = MANIFESTS.get(current?.artifacts?.[0]?.sha256);
+      return text ? send(200, text, { "content-type": "text/plain; charset=utf-8" }) : send(404);
+    }
     if (req.url === "/api/v1/agents" || req.url === "/api/v1/settings/schema") return send(keyed === "right" ? 200 : 401, "{}");
     return send(404);
   });

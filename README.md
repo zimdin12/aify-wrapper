@@ -79,6 +79,46 @@ to be asked without being run.
 | `--set KEY=VALUE` | an extra placeholder, repeatable |
 | `--render-only DIR` | write the launcher into `DIR` and stop, touching nothing else |
 
+### Connecting a service: `aify-wrapper-connect`
+
+```bash
+aify-wrapper-connect aify-comms http://127.0.0.1:8800 --key-file ~/comms.key --approve <digest>
+```
+
+It registers one service on this host from the spec the service serves at `/.well-known/aify-service`, so
+nobody types an entry by hand. In order:
+
+1. **Prepare.** It fetches the spec with no key and refuses a redirect, a non-JSON or non-200 answer ("serves
+   no spec"), a spec naming another service, and any route off the service's origin. It also refuses a `fixed`
+   that sets `endpoint`, `mcp` or a credential reference, an unknown field such as a `command`, and an artifact
+   nobody approved. Nothing has read or written a credential yet.
+2. **Stage.** Each new key goes into aify-env's store through `aify-env credential set`, under a fresh
+   reference. A key travels on stdin (`--key-stdin`) or in a file (`--key-file`), never in argv.
+3. **Probe.** It checks `/health`, then each probe a secret names: no key gives 401, a wrong key gives 401, and
+   the key gives 200, with the real key sent last. A redirect at any point aborts.
+4. **Validate and publish.** The candidate must pass the registry parser and `aify-env registry check`. It is
+   then written under `<registry>.lock`, only if the file still holds what step 1 read, and read back.
+5. **Settle.** Staged keys are removed only when nothing was committed. Old references are never removed; they
+   are reported `cleanup-pending`. The launchers are re-rendered from their render records, and only after a
+   commit.
+
+The entry is the published one with the spec's fields over it, so `secretsCredentialRef`, `advertise` and any
+other field the spec does not name survive. Each MCP server is `{command: <the absolute node running connect>,
+args: [<install root>/<entry>]}`, so nothing comes from a session's PATH or environment.
+
+An artifact is approved by the exact digest of its `{kind, source, sha256, entries}`: one listed in
+`lib/artifact-catalogue.json` (empty for now), or one passed as `--approve`. A refusal prints the digest it
+needs. A `file-set` must already be at its install root (`~/.<service>/mcp/stdio`, or `--file-set-root`) with
+entry files hashing to its `sha256`. A `pending` artifact, and a package (installing one is the guided chain's
+acquire phase), gets no entry; the report says why.
+
+Every launcher `render.sh` writes leaves `.aify-render/<name>.args` beside it: the template's sha256, its name,
+and its pairs without the four the registry decides. A launcher with no record, or one rendered from another
+template, is reported stale and left alone, never re-rendered from guessed values.
+
+Exit codes: 0 published, 78 refused with nothing published, 75 the publish outcome is unknown (the staged keys
+are kept, since the registry may name them).
+
 ### Updating
 
 Re-run the installer. A launcher is generated text, so an update is a rewrite of that text -- there is
@@ -323,7 +363,8 @@ npm test
 ```
 
 `npm test` runs the suite through `tests/run-in-a-temp-root.mjs`, which gives it one temporary root and
-deletes it afterwards.
+deletes it afterwards. `npm test -- tests/<file>.test.js ...` runs only those files, under the same root and
+with the terminal's agent session stripped the same way.
 
 They render each launcher and run it, rather than reading the templates. A wrapper's failure mode is
 silence, so a test that only reads text cannot see it.

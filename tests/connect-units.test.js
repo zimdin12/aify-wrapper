@@ -1,6 +1,7 @@
 // The pure pieces of connect, each held to the rule it exists for.
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -9,9 +10,9 @@ import { test } from "node:test";
 
 import { USAGE, keyFromText, parseConnectArgs } from "../lib/connect-args.mjs";
 import { artifactStanding, mergeEntry, registryWith, renderServers, retiredRefs, stableJson } from "../lib/connect-entry.mjs";
-import { NoSpec, REQUEST_TIMEOUT_MS, RedirectRefused, checkHealth, checkProbe, fetchServed, fetchSpec } from "../lib/connect-http.mjs";
-import { Refused, aifyEnvTools, connect, fileSetDigest, stagedRef } from "../lib/connect.mjs";
-import { SPEC_PATH, SPEC_VERSION, isCredentialRefField, resolveRoute, routeProblem, tupleDigest, validateSpec } from "../lib/service-spec.mjs";
+import { NoSpec, REQUEST_TIMEOUT_MS, RedirectRefused, checkHealth, checkProbe, fetchManifest, fetchServed, fetchSpec } from "../lib/connect-http.mjs";
+import { Refused, aifyEnvTools, checkFileSet, connect, stagedRef } from "../lib/connect.mjs";
+import { SPEC_PATH, SPEC_VERSION, isCredentialRefField, parseManifest, resolveRoute, routeProblem, tupleDigest, validateSpec } from "../lib/service-spec.mjs";
 import { FAKE_ENV, commsSpec, makeHost } from "./connect-fixture.mjs";
 
 const target = { name: "aify-comms", endpoint: "http://h:1/comms" };
@@ -31,6 +32,8 @@ test("validateSpec accepts comms' frozen shape and refuses each door the spec mi
   refused({ ...good, fixed: { ...good.fixed, mcp: [] } }, /fixed\.mcp is derived/);
   refused({ ...good, fixed: { ...good.fixed, secretsCredentialRef: "x" } }, /fixed\.secretsCredentialRef names a credential/);
   refused({ ...good, artifacts: [{ ...good.artifacts[0], source: { pending: "later" } }] }, /pending and may not carry a sha256/);
+  refused({ ...good, artifacts: [{ ...good.artifacts[0], manifest: undefined }] }, /manifest \{path\} is required for a file-set/);
+  refused({ ...good, artifacts: [{ ...good.artifacts[0], manifest: { path: "//elsewhere/m" } }] }, /manifest\.path/);
   refused({ ...good, artifacts: [{ ...good.artifacts[0], source: { git: { repo: "a/b", revision: "main" } } }] }, /40-hex commit/);
   refused({ ...good, artifacts: [{ ...good.artifacts[0], entries: ["../escape.js"] }] }, /not a relative file path/);
   refused({ ...good, secrets: [{ field: "apiKey", required: true }] }, /credential reference field/);
@@ -108,14 +111,30 @@ test("a staged reference is fresh and inside aify-env's grammar", () => {
   assert.ok(!a.startsWith("."));
 });
 
-test("fileSetDigest binds the entries' bytes and names, in a fixed order", () => {
+test("parseManifest reads sha256sum lines and refuses traversal, absolute paths, backslashes, disorder and a missing line feed", () => {
+  const h = "a".repeat(64);
+  const LF = String.fromCharCode(10);
+  const ok = parseManifest(`${h}  a.js${LF}${h}  sub/b.js${LF}`);
+  assert.deepEqual([...ok.files.keys()], ["a.js", "sub/b.js"]);
+  for (const [text, pattern] of [
+    [`${h}  ../x.js${LF}`, /not a relative path/],
+    [`${h}  /etc/x${LF}`, /not a relative path/],
+    [`${h}  a${String.fromCharCode(92)}b.js${LF}`, /not a relative path/],
+    [`${h}  b.js${LF}${h}  a.js${LF}`, /out of order/],
+    [`${h}  a.js`, /line feed/],
+    [`${h} a.js${LF}`, /not "<sha256>  <path>"/],
+  ]) assert.match(parseManifest(text).errors.join(";"), pattern);
+});
+
+test("checkFileSet holds every listed file to its line, requires every entry listed, and only reports extras", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-fileset-"));
   fs.writeFileSync(path.join(dir, "a.js"), "a");
-  fs.writeFileSync(path.join(dir, "b.js"), "b");
-  const digest = fileSetDigest(dir, ["a.js", "b.js"]);
-  assert.equal(digest, fileSetDigest(dir, ["b.js", "a.js"]));
-  fs.writeFileSync(path.join(dir, "b.js"), "B");
-  assert.notEqual(digest, fileSetDigest(dir, ["a.js", "b.js"]));
+  fs.writeFileSync(path.join(dir, "extra.js"), "x");
+  const listed = new Map([["a.js", createHash("sha256").update("a").digest("hex")]]);
+  assert.deepEqual(checkFileSet(dir, listed, ["a.js"]), { problems: [], unlisted: ["extra.js"] });
+  assert.match(checkFileSet(dir, listed, ["a.js", "b.js"]).problems.join(";"), /entry b\.js is not in the manifest/);
+  fs.writeFileSync(path.join(dir, "a.js"), "changed");
+  assert.match(checkFileSet(dir, listed, ["a.js"]).problems.join(";"), /a\.js hashes .*, not its manifest line/);
 });
 
 test("aifyEnvTools runs aify-env's commands and turns a non-zero exit into a refusal naming the command", () => {
@@ -130,6 +149,7 @@ test("HTTP: no redirect is followed, a probe sends the real key last, and served
     seen.push(`${req.url} ${req.headers["x-k"] ?? "-"}`);
     if (req.url === "/.well-known/aify-service") return res.writeHead(301, { location: "http://elsewhere/" }).end();
     if (req.url === "/health") return res.writeHead(200).end();
+    if (req.url === "/m") return res.writeHead(200, { "content-type": "text/plain" }).end("manifest");
     if (req.url === "/t.tgz") return res.writeHead(req.headers["x-k"] === "KEY" ? 200 : 401).end("bytes");
     return res.writeHead(req.headers["x-k"] === "KEY" ? 200 : 401).end();
   });
@@ -140,11 +160,14 @@ test("HTTP: no redirect is followed, a probe sends the real key last, and served
     await checkHealth(url, { verify: { health: { path: "/health" } } });
     await checkProbe(url, { path: "/p", header: "x-k" }, "KEY");
     assert.deepEqual(seen.filter((s) => s.startsWith("/p")).map((s) => s.split(" ")[1] === "KEY"), [false, false, true]);
-    const { createHash } = await import("node:crypto");
     const artifact = { id: "t", sha256: createHash("sha256").update("bytes").digest("hex"), source: { served: { path: "/t.tgz", version: "1" } } };
     assert.equal((await fetchServed(url, artifact, "x-k", "KEY")).toString(), "bytes");
     await assert.rejects(fetchServed(url, { ...artifact, sha256: "0".repeat(64) }, "x-k", "KEY"), /not the spec's/);
     assert.ok(REQUEST_TIMEOUT_MS > 0);
+    const m = { id: "m", sha256: createHash("sha256").update("manifest").digest("hex"), manifest: { path: "/m" } };
+    assert.equal(await fetchManifest(url, m), "manifest");
+    await assert.rejects(fetchManifest(url, { ...m, sha256: "0".repeat(64) }), /the manifest hashes/);
+    assert.ok(seen.includes("/m -"), "the manifest is fetched with no key");
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

@@ -129,7 +129,11 @@ test("RE-RENDER: a recorded launcher is re-rendered for the new registry after a
 test("NO REPLACEMENT ON FAILURE: a refused connect leaves a recorded launcher byte for byte", async () => {
   const host = makeHost();
   const launcher = renderLauncher(host, "claude-aify", "claude-aify.sh.in");
+  // STALE BEFORE THE CONNECT, so a re-render would change it: with an unchanged registry it renders to the same bytes,
+  // and a witness on those bytes could not tell a refused connect that re-rendered from one that did not.
+  seed(host, { other: { endpoint: "http://other" } });
   const bytes = fs.readFileSync(launcher);
+  assert.notEqual(bakedFingerprint(launcher), fingerprint(parseRegistry(host.registryBytes().toString("utf8")).registry), "CONTROL: it is stale");
   const spec = commsSpec(host);
   const service = await startService({ spec, answer: (req) => (req.url === "/api/v1/agents" ? { status: 401 } : null) });
   try {
