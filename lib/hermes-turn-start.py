@@ -28,7 +28,7 @@ import shutil
 import subprocess
 
 _RUNNER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bin", "aify-turn-start.mjs")
-_GUARD_S = 5
+_GUARD_S = 15  # covers node start-up on a loaded host; the runner bounds its own work at 1.5 s
 _NODE = None  # node on PATH, looked up at each turn when unset
 
 

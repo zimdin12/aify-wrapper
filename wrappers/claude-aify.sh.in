@@ -860,7 +860,7 @@ cat > "$AIFY_HOOK_SETTINGS" <<JSON
     ],
     "UserPromptSubmit": [
       { "hooks": [ { "type": "command", "command": "node \"${AIFY_BRIDGE_DIR_FWD}/claude-session-hook.js\"" }${AIFY_HERDR_WORKING},
-        { "type": "command", "command": "node \"${AIFY_WRAPPER_DIR_FWD}/bin/aify-turn-start.mjs\"", "timeout": 5 } ] }
+        { "type": "command", "command": "node \"${AIFY_WRAPPER_DIR_FWD}/bin/aify-turn-start.mjs\"", "timeout": 15 } ] }
     ]${AIFY_HERDR_EVENTS}
   }
 }
