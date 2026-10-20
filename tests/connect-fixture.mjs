@@ -7,7 +7,7 @@
 // THE BIN RUNS ASYNCHRONOUSLY, because the service it talks to lives in this process: a synchronous spawn would
 // block the event loop the service answers on.
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -73,6 +73,24 @@ export function manifestFor(host, files = ["claude-channel.js", "server.js", "te
   const text = rows.map((row) => `${row}${LF}`).join("");
   MANIFESTS.set(sha256(text), text);
   return { text, sha256: sha256(text) };
+}
+
+/**
+ * Put a key into `host`'s store the way production does: aify-env's own `credential set`, so the file carries the
+ * store's ACL. A plain write leaves the temp directory's inherited ACL, which the real `registry check` rightly reads
+ * as CREDENTIAL_INSECURE. Only without the aify-env checkout does it fall back to writing the file.
+ */
+export function storeCredential(host, ref, value) {
+  const cli = ENV_REPO && path.join(ENV_REPO, "bin", "aify-env-credential.mjs");
+  if (cli) {
+    const run = spawnSync(process.execPath, [cli, "set", "--service", "seed", "--stdin", `--ref=${ref}`],
+      { input: `${value}\n`, env: { ...process.env, HOME: host.home, USERPROFILE: host.home }, encoding: "utf8" });
+    if (run.status !== 0) throw new Error(`seeding ${ref}: ${run.stderr}`);
+    return;
+  }
+  const store = path.join(host.home, ".aify", "credentials");
+  fs.mkdirSync(store, { recursive: true });
+  fs.writeFileSync(path.join(store, ref), `${value}\n`, { mode: 0o600 });
 }
 
 /** comms' spec, the shape the format owner froze, with its file-set bound to `host`'s bridge files. */
@@ -154,6 +172,8 @@ export function runConnect(host, args, { env = {}, input = "" } = {}) {
     USERPROFILE: host.home,
     AIFY_TEST_SPY: host.spy,
     ...(ENV_REPO ? { AIFY_ENV_REPO: ENV_REPO } : {}),
+    // The opt-in real `registry check` (see fake-aify-env.mjs), carried through the AIFY_* seal above on purpose.
+    ...(process.env.AIFY_TEST_REAL_REGISTRY ? { AIFY_TEST_REAL_REGISTRY: process.env.AIFY_TEST_REAL_REGISTRY } : {}),
     ...env,
   };
   const argv = [BIN, ...args, "--registry", host.registry, "--dest", host.dest, "--aify-env", FAKE_ENV, "--file-set-root", host.root, "--no-prompt"];

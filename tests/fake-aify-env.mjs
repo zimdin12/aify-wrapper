@@ -51,26 +51,47 @@ if (args[0] === "credential") {
   process.exit(0);
 }
 
-if (args[0] === "registry" && args[1] === "check") {
-  const registry = JSON.parse(fs.readFileSync(args[2], "utf8"));
+// `registry check [--service <name>] <file>`, the interface of aify-env 1970a88 plus the `--service` scope the operator
+// decided: JSON `{check, ok, references, problems, warnings}` on stdout, exit 0 ok, 65 problems, 64 usage. With
+// --service, only that service's references must exist in the store; another service's missing one is a warning.
+// AIFY_TEST_REAL_REGISTRY=<aify-env-registry.mjs> runs the real check instead, for a recorded real-binary run.
+if (args[0] === "registry") {
+  if (process.env.AIFY_TEST_REAL_REGISTRY) {
+    const run = spawnSync(process.execPath, [process.env.AIFY_TEST_REAL_REGISTRY, ...args.slice(1)], { env: process.env });
+    process.stdout.write(run.stdout);
+    process.stderr.write(run.stderr);
+    process.exit(run.status ?? 65);
+  }
+  const at = args.indexOf("--service");
+  const service = at === -1 ? "" : args[at + 1];
+  const file = args.filter((a, i) => i > 1 && a !== "--service" && i !== at + 1)[0];
+  if (args[1] !== "check" || !file || (at !== -1 && !service)) {
+    process.stderr.write("aify-env registry: usage: registry check [--service <name>] <file>\n");
+    process.exit(64);
+  }
+  const registry = JSON.parse(fs.readFileSync(file, "utf8"));
   const owners = new Map();
   const problems = [];
+  const warnings = [];
+  const references = [];
   for (const [name, entry] of Object.entries(registry.services ?? {})) {
-    const refs = Object.entries(entry).filter(([key]) => REF.test(key)).map(([, value]) => value);
-    if (entry.agentState?.credentialRef) refs.push(entry.agentState.credentialRef);
-    for (const ref of refs) {
-      if (refProblem(ref)) problems.push(`${name}: ${JSON.stringify(ref)} is ${refProblem(ref)}`);
+    const refs = Object.entries(entry).filter(([key]) => REF.test(key));
+    if (entry.agentState?.credentialRef) refs.push(["agentState.credentialRef", entry.agentState.credentialRef]);
+    for (const [field, ref] of refs) {
+      if (refProblem(ref)) { problems.push({ code: "credential-ref", service: name, field, detail: `${JSON.stringify(ref)} is ${refProblem(ref)}` }); continue; }
       const owner = owners.get(String(ref).toLowerCase());
-      if (owner && owner !== name) problems.push(`${JSON.stringify(ref)} is claimed by both ${owner} and ${name}`);
+      if (owner && owner !== name) problems.push({ code: "credential-ref-collision", service: name, field, detail: `'${String(ref).toLowerCase()}' is also ${owner}'s credential file, so the two services would share one key` });
       owners.set(String(ref).toLowerCase(), name);
+      const present = fs.existsSync(path.join(os.homedir(), ".aify", "credentials", ref));
+      references.push({ service: name, field, ref, store: present ? "CREDENTIAL_OK" : "CREDENTIAL_MISSING" });
+      if (present) continue;
+      const missing = { code: "credential-store", service: name, field, detail: "CREDENTIAL_MISSING: the registry names a credential file that does not exist" };
+      (service && name !== service ? warnings : problems).push(missing);
     }
-    if (entry.advertise !== undefined && typeof entry.advertise !== "boolean") problems.push(`${name}.advertise is not true or false`);
+    if (entry.advertise !== undefined && typeof entry.advertise !== "boolean") problems.push({ code: "advertise", service: name, field: "advertise", detail: "is not true or false" });
   }
-  if (problems.length) {
-    process.stderr.write(`${problems.join("\n")}\n`);
-    process.exit(65);
-  }
-  process.exit(0);
+  process.stdout.write(`${JSON.stringify({ check: 1, ok: problems.length === 0, references, problems, warnings }, null, 2)}\n`);
+  process.exit(problems.length ? 65 : 0);
 }
 
 process.stderr.write(`fake-aify-env: no such command ${args.join(" ")}\n`);

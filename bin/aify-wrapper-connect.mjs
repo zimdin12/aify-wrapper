@@ -77,6 +77,7 @@ try {
   });
 
   const out = [`connected ${report.service} at ${endpoint}: ${report.result}`];
+  for (const warning of report.warnings ?? []) out.push(`  warning (another service, not blocking): ${warning}`);
   for (const field of report.unprobed) out.push(`  ${field}: stored, not probed`);
   for (const field of report.absent ?? []) out.push(`  ${field}: optional, not supplied`);
   for (const server of report.pending) out.push(`  mcp ${server.name}: no entry written -- ${server.reason}`);

@@ -10,7 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 
-import { KEY, ROOT, approvals, commsSpec, makeHost, runConnect, startService } from "./connect-fixture.mjs";
+import { KEY, ROOT, approvals, commsSpec, makeHost, runConnect, startService, storeCredential } from "./connect-fixture.mjs";
 import { RECORD_DIR, parseRecord, registryPairs, rerenderLaunchers } from "../lib/launcher-rerender.mjs";
 import { fingerprint, parseRegistry } from "../lib/registry.mjs";
 
@@ -30,9 +30,7 @@ function dashboardSpec() {
 function seed(host, services, credentials = {}) {
   fs.mkdirSync(path.dirname(host.registry), { recursive: true });
   fs.writeFileSync(host.registry, `${JSON.stringify({ version: 1, services }, null, 2)}\n`);
-  const store = path.join(host.home, ".aify", "credentials");
-  fs.mkdirSync(store, { recursive: true });
-  for (const [ref, value] of Object.entries(credentials)) fs.writeFileSync(path.join(store, ref), `${value}\n`);
+  for (const [ref, value] of Object.entries(credentials)) storeCredential(host, ref, value);
 }
 
 function renderLauncher(host, name, template) {
@@ -89,17 +87,33 @@ test("OWNER VALIDATION: a raw reference that case-folds onto another service's i
   seed(host, {
     "aify-comms": { endpoint: "http://old", backupCredentialRef: "Shared.key", mcp: [] },
     other: { endpoint: "http://other", credentialRef: "shared.key" },
-  });
+  }, { "Shared.key": "a key" }); // stored, so the collision is the only thing the check can refuse
   const before = host.registryBytes();
   const spec = commsSpec(host);
   const service = await startService({ spec });
   try {
     const run = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY), ...approvals(spec)]);
     assert.equal(run.status, 78);
-    assert.match(run.stderr, /aify-env registry check failed: "shared.key" is claimed by both/i);
+    assert.match(run.stderr, /aify-env registry check failed: credential-ref-collision: .*'shared\.key' is also .*credential file/);
+    assert.doesNotMatch(run.stderr, /credential-store/, "the collision alone refused it");
     assert.deepEqual(host.registryBytes(), before);
-    assert.deepEqual(host.refs(), [], "the staged reference was removed");
+    assert.deepEqual(host.refs(), ["Shared.key"], "the staged reference was removed; the seeded one stays");
     assert.ok(host.calls().some((argv) => argv[0] === "registry"), "CONTROL: the check was asked");
+  } finally {
+    await service.close();
+  }
+});
+
+test("SCOPED CHECK: another service's missing key does not block a connect, and the operator is shown it", async () => {
+  const host = makeHost();
+  seed(host, { other: { endpoint: "http://other", credentialRef: "other.key" } });
+  const spec = commsSpec(host);
+  const service = await startService({ spec });
+  try {
+    const run = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY), ...approvals(spec)]);
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, /warning \(another service, not blocking\): other\.credentialRef: CREDENTIAL_MISSING/);
+    assert.ok(host.calls().some((argv) => argv[0] === "registry" && argv.includes("--service") && argv.includes("aify-comms")), "the check was scoped");
   } finally {
     await service.close();
   }

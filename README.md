@@ -108,8 +108,10 @@ args: [<install root>/<entry>]}`, so nothing comes from a session's PATH or envi
 
 An artifact is approved by the exact digest of its `{kind, source, sha256, entries}`: one listed in
 `lib/artifact-catalogue.json` (empty for now), or one passed as `--approve`. A refusal prints the digest it
-needs. A `file-set` must already be at its install root (`~/.<service>/mcp/stdio`, or `--file-set-root`) with
-entry files hashing to its `sha256`. A `pending` artifact, and a package (installing one is the guided chain's
+needs. A `file-set` must already be at its install root (`~/.<service>/mcp/stdio`, or `--file-set-root`). The service
+serves its manifest at `manifest.path`: `sha256sum` lines, fetched with no key, whose bytes must hash to the
+artifact's `sha256`. Every listed file must match its line, and every entry must be listed; files on disk the
+manifest does not list (node_modules, untracked files) are reported, not failed. A `pending` artifact, and a package (installing one is the guided chain's
 acquire phase), gets no entry; the report says why.
 
 Every launcher `render.sh` writes leaves `.aify-render/<name>.args` beside it: the template's sha256, its name,
