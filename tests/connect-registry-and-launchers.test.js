@@ -197,6 +197,28 @@ test("install.sh records each launcher beside the registry it was built against,
   assert.deepEqual(fs.readdirSync(host.dest), ["claude-aify"]);
 });
 
+test("GIT-BASH: a launcher rendered under an MSYS path records the native target, and re-renders from it", { skip: process.platform !== "win32" && "MSYS paths exist only under git-bash on Windows" }, () => {
+  // Every launcher install.sh writes from git-bash is named the way that shell spells HOME: `/c/Users/...`. Node reads
+  // `/c/...` as `C:\c\...`, so a record holding that form names no file and its launcher read stale (2026-10-21).
+  // Under the test runner's TEMP the git-bash spelling is a mount, `/tmp/...`, which only cygpath can map back.
+  const host = makeHost();
+  seed(host, {});
+  const native = path.join(host.dest, "claude-aify").split(path.sep).join("/");
+  const msys = spawnSync("cygpath", ["-u", native], { encoding: "utf8" }).stdout.trim();
+  assert.ok(msys.startsWith("/") && msys !== native, `CONTROL: the target is spelled as git-bash spells it: ${msys}`);
+  fs.mkdirSync(host.dest, { recursive: true });
+  const run = spawnSync("bash", [path.join(ROOT, "render.sh").split(path.sep).join("/"), "claude-aify.sh.in", msys,
+    "ENDPOINT=http://127.0.0.2:1", "WRAPPER_VERSION=test", "MCP_TRANSPORT=stdio", "SERVICE_NAME=aify-comms", `BRIDGE_DIR=${host.root}`,
+    `WRAPPER_DIR=${ROOT.split(path.sep).join("/")}`, "NATIVE_BASE=/n", "SCRIPT_DIR=/s", ...registryPairs(host.registryBytes().toString("utf8"), "claude-aify.sh.in", {}).pairs],
+  { encoding: "utf8", env: { ...process.env, RENDER_RECORD_DIR: recordDirFor(host.registry) } });
+  assert.equal(run.status, 0, run.stderr);
+  const [file] = fs.readdirSync(recordDirFor(host.registry));
+  assert.equal(parseRecord(fs.readFileSync(path.join(recordDirFor(host.registry), file))).target, native);
+  const rows = rerenderLaunchers({ dest: host.dest, registryPath: host.registry, wrapperRoot: ROOT });
+  assert.deepEqual(rows.map((row) => [row.name, row.state]), [["claude-aify", "re-rendered"]]);
+  assert.deepEqual(fs.readdirSync(recordDirFor(host.registry)), [file], "the re-render rewrote its own record, not a second one");
+});
+
 test("the render record holds the template's hash, its name and the installer's pairs, and never the registry-derived four", () => {
   const host = makeHost();
   const launcher = renderLauncher(host, "pi-aify", "pi-aify.sh.in");

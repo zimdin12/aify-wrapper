@@ -129,6 +129,12 @@ mv -f "$staged" "$target"
 # named for its path: the template's sha256, its name, TARGET=<the launcher>, then every KEY=VALUE pair,
 # NUL-terminated so no value needs escaping. The four registry-derived pairs are left out: connect recomputes them.
 # A host with no sha256 tool writes no record, and connect then reports the launcher stale.
+#
+# THE TARGET IS RECORDED NATIVE. connect reads it in Node, and under git-bash the path an installer passes is
+# spelled the way that shell spells it: `/c/Users/...`, or a mount such as `/tmp/...`. Node reads either as a path
+# under the current drive's root, so the record named no file and every launcher read stale (2026-10-21). `cygpath -m`
+# knows the mounts; off Windows there is no cygpath and the path is already native. The record's name hashes the same
+# native form, so a re-render, which passes the recorded target back, rewrites this record rather than adding one.
 sha_of() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum | awk '{print $1}'
   elif command -v shasum >/dev/null 2>&1; then shasum -a 256 | awk '{print $1}'
@@ -136,17 +142,18 @@ sha_of() {
   fi
 }
 record_render() {
-  local sha name record pair
+  local sha name record pair native="$target"
   [ -n "${RENDER_RECORD_DIR:-}" ] || return 0
+  if command -v cygpath >/dev/null 2>&1; then native="$(cygpath -m "$target")" || return 0; fi
   sha="$(sha_of < "$template")" || return 0
-  name="$(printf '%s' "$target" | sha_of)" || return 0
+  name="$(printf '%s' "$native" | sha_of)" || return 0
   [ -n "$sha" ] && [ -n "$name" ] || return 0
   record="$RENDER_RECORD_DIR/${name:0:24}.args"
   mkdir -p "$RENDER_RECORD_DIR" || return 0
   (
     umask 077
     {
-      printf '%s\0' "$sha" "$(basename "$template")" "TARGET=$target"
+      printf '%s\0' "$sha" "$(basename "$template")" "TARGET=$native"
       for pair in "$@"; do
         case "$pair" in
           REGISTRY_FINGERPRINT=*|STRICT_EXTRA_MCP_B64=*|SESSION_MCP_B64=*|SESSION_MCP_CODEX_B64=*) ;;
