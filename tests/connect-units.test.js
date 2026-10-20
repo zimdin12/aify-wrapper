@@ -12,8 +12,8 @@ import { USAGE, keyFromText, parseConnectArgs } from "../lib/connect-args.mjs";
 import { artifactStanding, mergeEntry, registryWith, renderServers, retiredRefs, stableJson } from "../lib/connect-entry.mjs";
 import { NoSpec, REQUEST_TIMEOUT_MS, RedirectRefused, checkHealth, checkProbe, fetchManifest, fetchServed, fetchSpec } from "../lib/connect-http.mjs";
 import { Refused, aifyEnvTools, checkFileSet, connect, stagedRef } from "../lib/connect.mjs";
-import { SPEC_PATH, SPEC_VERSION, isCredentialRefField, parseManifest, resolveRoute, routeProblem, tupleDigest, validateSpec } from "../lib/service-spec.mjs";
-import { binFiles, installArgs, installedCommit } from "../lib/package-install.mjs";
+import { SPEC_PATH, SPEC_VERSION, isCredentialRefField, isPackageFromGit, parseManifest, resolveRoute, routeProblem, tupleDigest, validateSpec } from "../lib/service-spec.mjs";
+import { binFiles, installArgs, installPackage, installedCommit, npmTool } from "../lib/package-install.mjs";
 import { FAKE_ENV, commsSpec, makeHost } from "./connect-fixture.mjs";
 
 const target = { name: "aify-comms", endpoint: "http://h:1/comms" };
@@ -250,4 +250,25 @@ test("HTTP: every request opens its own connection, so none can land on a socket
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test("installPackage leaves no directory when npm itself fails, and npmTool names npm's exit and its last lines", () => {
+  const sha = "d".repeat(40);
+  const artifact = { id: "b", kind: "package", source: { git: { repo: "o/r", revision: sha } }, entries: ["b"] };
+  assert.ok(isPackageFromGit(artifact) && !isPackageFromGit({ ...artifact, kind: "file-set" }) && !isPackageFromGit({ ...artifact, source: { served: {} } }));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "aify-package-root-"));
+  const calls = [];
+  const npm = (args) => {
+    calls.push(args[0]);
+    throw new Refused("npm install failed (exit 1): no network");
+  };
+  assert.throws(() => installPackage({ artifact, root, npm, Fail: Refused }), /npm install failed/);
+  assert.deepEqual(calls, ["install"], "CONTROL: npm was asked");
+  assert.deepEqual(fs.readdirSync(root), [], "the partial directory is gone");
+
+  const failing = path.join(root, "npm-cli.js");
+  fs.writeFileSync(failing, 'const LF = String.fromCharCode(10); process.stderr.write("line one" + LF + "npm error code E404" + LF); process.exit(3);\n');
+  assert.throws(() => npmTool(failing, process.env, Refused)(["install", "x"]), (e) => e instanceof Refused && /npm install failed \(exit 3\): .*npm error code E404/.test(e.message));
+  fs.writeFileSync(failing, 'process.stdout.write("{}");\n');
+  assert.equal(npmTool(failing, process.env, Refused)(["ls"]), "{}", "CONTROL: a zero exit returns stdout");
 });
