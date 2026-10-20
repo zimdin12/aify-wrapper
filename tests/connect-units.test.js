@@ -222,3 +222,11 @@ test("HTTP: no redirect is followed, a probe sends the real key last, and served
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test("HTTP: a request that never reaches the service names its url and the network's reason, not fetch's bare 'fetch failed'", async () => {
+  const server = http.createServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  await new Promise((resolve) => server.close(resolve));
+  await assert.rejects(fetchSpec(`http://127.0.0.1:${port}`), /127\.0\.0\.1:\d+\/\.well-known\/aify-service: fetch failed \(ECONNREFUSED/);
+});

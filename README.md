@@ -117,10 +117,10 @@ A `package` from git is approved by `{kind, repo, entries}`, and its revision co
 be a full 40-hex commit, and the artifact carries no `sha256`. After the probes pass, connect runs
 `npm install --prefix ~/.aify/packages/<service>/<id>/<revision> --ignore-scripts=false github:<repo>#<revision>`
 (`--package-root` and `--npm-cli` override where it installs and which npm it runs). Scripts stay on because a
-package's build can run in `prepare`. The install goes into its own prefix rather than `-g`: on npm 10.9.3 a global
-install of a git package that has a `prepare` script leaves a link into a deleted temporary clone, and npm reports
-no commit for it. Connect then reads the installed commit back from npm and refuses anything other than the spec's
-revision. Every entry must be a bin the installed `package.json` declares and must exist on disk. The server
+package's build can run in `prepare`. The install goes into its own prefix rather than `-g`, one per service and
+revision: it touches no global npm state, a failed reconnect cannot touch the files the live entry runs, and npm
+records the installed commit in that prefix's lockfile. Connect reads that commit back and refuses anything other
+than the spec's revision. Every entry must be a bin the installed `package.json` declares and must exist on disk. The server
 runs that bin's file with the absolute node. A `pending` artifact, and one the service serves, gets no entry; the
 report says why.
 
