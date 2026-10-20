@@ -51,7 +51,7 @@ if (args[0] === "credential") {
   process.exit(0);
 }
 
-// `registry check [--service <name>] <file>`, the interface of aify-env 1970a88 plus the `--service` scope the operator
+// `registry check [--service <name>] <file>`, the interface of aify-env 3b3913a, with the `--service` scope the operator
 // decided: JSON `{check, ok, references, problems, warnings}` on stdout, exit 0 ok, 65 problems, 64 usage. With
 // --service, only that service's references must exist in the store; another service's missing one is a warning.
 // AIFY_TEST_REAL_REGISTRY=<aify-env-registry.mjs> runs the real check instead, for a recorded real-binary run.
@@ -63,8 +63,9 @@ if (args[0] === "registry") {
     process.exit(run.status ?? 65);
   }
   const at = args.indexOf("--service");
-  const service = at === -1 ? "" : args[at + 1];
-  const file = args.filter((a, i) => i > 1 && a !== "--service" && i !== at + 1)[0];
+  const joined = args.find((a) => a.startsWith("--service="));
+  const service = joined ? joined.slice(10) : at === -1 ? "" : args[at + 1];
+  const file = args.filter((a, i) => i > 1 && a !== "--service" && a !== joined && i !== at + 1)[0];
   if (args[1] !== "check" || !file || (at !== -1 && !service)) {
     process.stderr.write("aify-env registry: usage: registry check [--service <name>] <file>\n");
     process.exit(64);
@@ -72,6 +73,10 @@ if (args[0] === "registry") {
   const registry = JSON.parse(fs.readFileSync(file, "utf8"));
   const owners = new Map();
   const problems = [];
+  // 3b3913a: a --service the candidate does not hold is refused, so a typo cannot turn every store fault into a warning.
+  if (service && !Object.hasOwn(registry.services ?? {}, service)) {
+    problems.push({ code: "service-absent", service, field: null, detail: "the candidate holds no entry by this name" });
+  }
   const warnings = [];
   const references = [];
   for (const [name, entry] of Object.entries(registry.services ?? {})) {

@@ -188,6 +188,7 @@ test("the render record holds the template's hash, its name and the installer's 
   assert.deepEqual(fs.readdirSync(host.dest), ["pi-aify"], "the launcher directory, on PATH, gains nothing but the launcher");
   renderLauncher(host, "claude-aify", "claude-aify.sh.in", false);
   assert.equal(fs.readdirSync(recordDirFor(host.registry)).length, 1, "a render that did not ask leaves no record");
+  assert.deepEqual(fs.readdirSync(host.dest).sort(), ["claude-aify", "pi-aify"], "...anywhere, the launcher directory included");
   assert.ok(record.pairs.includes(`BRIDGE_DIR=${host.root}`));
   assert.ok(!record.pairs.some((pair) => /^(REGISTRY_FINGERPRINT|STRICT_EXTRA_MCP_B64|SESSION_MCP_B64|SESSION_MCP_CODEX_B64)=/.test(pair)));
   assert.equal(parseRecord(Buffer.from("not a record")), null, "a malformed record is no record");
