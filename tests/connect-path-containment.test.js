@@ -92,9 +92,10 @@ test("VALIDATOR: an artifact id or service name that is not one path segment is 
 test("INSIDE: a join that leaves its root is refused, whatever spelling reaches it; one segment inside returns path.join", () => {
   const root = path.join(path.sep, "aify", "packages");
   assert.equal(inside(root, "aify-dashboard", "dashboard-bridge"), path.join(root, "aify-dashboard", "dashboard-bridge"));
-  const escapes = [[ESCAPE], ["aify-dashboard", ESCAPE], [".."], ["."], ["..", "packages-evil", "x"], [path.resolve(path.sep, "elsewhere")]];
+  const escapes = [[ESCAPE], ["aify-dashboard", ESCAPE], [".."], ["."], ["..", "packages-evil", "x"]];
   // `D:x` is not here: joined under a root it stays inside (on NTFS a stream name), and the validator refuses colons.
-  if (process.platform === "win32") escapes.push(["..\\..\\escaped"], ["D:\\elsewhere"]);
+  // An absolute segment escapes only on win32; on POSIX path.join("/aify/packages", "/elsewhere") stays inside.
+  if (process.platform === "win32") escapes.push(["..\\..\\escaped"], ["D:\\elsewhere"], [path.resolve(path.sep, "elsewhere")]);
   for (const segments of escapes) {
     assert.throws(() => inside(root, ...segments), (e) => e instanceof Refused && /resolves outside/.test(e.message), JSON.stringify(segments));
   }
