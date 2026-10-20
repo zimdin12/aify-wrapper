@@ -123,24 +123,30 @@ fi
 mv -f "$staged" "$target"
 
 # WHAT THIS LAUNCHER WAS RENDERED FROM, so `aify-wrapper-connect` can re-render it after the registry changes
-# without guessing the values another installer chose (a bridge dir, hermes' extras). One file per launcher in
-# `.aify-render/` beside it: the template's sha256, its name, then every KEY=VALUE pair, NUL-terminated so no
-# value needs escaping. The four registry-derived pairs are left out: connect recomputes them. A host with no
-# sha256 tool writes no record, and connect then reports the launcher stale rather than re-rendering it.
+# without guessing the values another installer chose (a bridge dir, hermes' extras). Written ONLY when the caller
+# names a place for it in RENDER_RECORD_DIR -- install.sh names `launchers/` beside the registry -- so a launcher
+# directory on PATH never gains a file, and a render that did not ask leaves nothing anywhere. One file per launcher,
+# named for its path: the template's sha256, its name, TARGET=<the launcher>, then every KEY=VALUE pair,
+# NUL-terminated so no value needs escaping. The four registry-derived pairs are left out: connect recomputes them.
+# A host with no sha256 tool writes no record, and connect then reports the launcher stale.
+sha_of() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 | awk '{print $1}'
+  else return 1
+  fi
+}
 record_render() {
-  local sha="" tool record_dir record pair
-  for tool in "sha256sum" "shasum -a 256"; do
-    sha="$($tool "$template" 2>/dev/null | awk '{print $1}')" || sha=""
-    [ -z "$sha" ] || break
-  done
-  [ -n "$sha" ] || return 0
-  record_dir="$(dirname "$target")/.aify-render"
-  record="$record_dir/$(basename "$target").args"
-  mkdir -p "$record_dir" || return 0
+  local sha name record pair
+  [ -n "${RENDER_RECORD_DIR:-}" ] || return 0
+  sha="$(sha_of < "$template")" || return 0
+  name="$(printf '%s' "$target" | sha_of)" || return 0
+  [ -n "$sha" ] && [ -n "$name" ] || return 0
+  record="$RENDER_RECORD_DIR/${name:0:24}.args"
+  mkdir -p "$RENDER_RECORD_DIR" || return 0
   (
     umask 077
     {
-      printf '%s\0' "$sha" "$(basename "$template")"
+      printf '%s\0' "$sha" "$(basename "$template")" "TARGET=$target"
       for pair in "$@"; do
         case "$pair" in
           REGISTRY_FINGERPRINT=*|STRICT_EXTRA_MCP_B64=*|SESSION_MCP_B64=*|SESSION_MCP_CODEX_B64=*) ;;

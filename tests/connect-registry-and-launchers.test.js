@@ -11,7 +11,7 @@ import path from "node:path";
 import { test } from "node:test";
 
 import { KEY, ROOT, approvals, commsSpec, makeHost, runConnect, startService, storeCredential } from "./connect-fixture.mjs";
-import { RECORD_DIR, parseRecord, registryPairs, rerenderLaunchers } from "../lib/launcher-rerender.mjs";
+import { parseRecord, recordDirFor, registryPairs, rerenderLaunchers } from "../lib/launcher-rerender.mjs";
 import { fingerprint, parseRegistry } from "../lib/registry.mjs";
 
 function dashboardSpec() {
@@ -33,12 +33,13 @@ function seed(host, services, credentials = {}) {
   for (const [ref, value] of Object.entries(credentials)) storeCredential(host, ref, value);
 }
 
-function renderLauncher(host, name, template) {
+function renderLauncher(host, name, template, record = true) {
   fs.mkdirSync(host.dest, { recursive: true });
   const fresh = registryPairs(host.registryBytes().toString("utf8"), template, {});
   const run = spawnSync("bash", [path.join(ROOT, "render.sh").split(path.sep).join("/"), template, path.join(host.dest, name).split(path.sep).join("/"),
     "ENDPOINT=http://127.0.0.2:1", "WRAPPER_VERSION=test", "MCP_TRANSPORT=stdio", "SERVICE_NAME=aify-comms", `BRIDGE_DIR=${host.root}`,
-    `WRAPPER_DIR=${ROOT.split(path.sep).join("/")}`, "NATIVE_BASE=/n", "SCRIPT_DIR=/s", ...fresh.pairs], { encoding: "utf8" });
+    `WRAPPER_DIR=${ROOT.split(path.sep).join("/")}`, "NATIVE_BASE=/n", "SCRIPT_DIR=/s", ...fresh.pairs],
+    { encoding: "utf8", env: { ...process.env, ...(record ? { RENDER_RECORD_DIR: recordDirFor(host.registry) } : {}) } });
   assert.equal(run.status, 0, run.stderr);
   return path.join(host.dest, name);
 }
@@ -159,13 +160,37 @@ test("NO REPLACEMENT ON FAILURE: a refused connect leaves a recorded launcher by
   }
 });
 
+test("install.sh records each launcher beside the registry it was built against, and --render-only records nothing", () => {
+  const host = makeHost();
+  fs.mkdirSync(path.dirname(host.registry), { recursive: true });
+  fs.writeFileSync(host.registry, "{\"version\":1,\"services\":{}}\n");
+  const install = (...extra) => spawnSync("bash", [path.join(ROOT, "install.sh").split(path.sep).join("/"), "--client", "claude",
+    "--endpoint", "http://127.0.0.2:1", "--registry", host.registry.split(path.sep).join("/"), ...extra],
+  { encoding: "utf8", env: { ...process.env, HOME: host.home, USERPROFILE: host.home } });
+  const only = path.join(host.home, "render-only");
+  assert.equal(install("--render-only", only.split(path.sep).join("/")).status, 0);
+  assert.ok(!fs.existsSync(recordDirFor(host.registry)), "--render-only touched nothing outside its directory");
+  const run = install("--dest", host.dest.split(path.sep).join("/"));
+  assert.equal(run.status, 0, run.stderr);
+  const records = fs.readdirSync(recordDirFor(host.registry)).map((name) => parseRecord(fs.readFileSync(path.join(recordDirFor(host.registry), name))));
+  assert.deepEqual(records.map((r) => path.basename(r.target)), ["claude-aify"]);
+  assert.deepEqual(fs.readdirSync(host.dest), ["claude-aify"]);
+});
+
 test("the render record holds the template's hash, its name and the installer's pairs, and never the registry-derived four", () => {
   const host = makeHost();
-  renderLauncher(host, "pi-aify", "pi-aify.sh.in");
-  const record = parseRecord(fs.readFileSync(path.join(host.dest, RECORD_DIR, "pi-aify.args")));
+  const launcher = renderLauncher(host, "pi-aify", "pi-aify.sh.in");
+  const [file, ...more] = fs.readdirSync(recordDirFor(host.registry));
+  assert.deepEqual(more, [], "one record per launcher");
+  const record = parseRecord(fs.readFileSync(path.join(recordDirFor(host.registry), file)));
   assert.equal(record.template, "pi-aify.sh.in");
+  assert.equal(record.target, launcher.split(path.sep).join("/"));
+  assert.deepEqual(fs.readdirSync(host.dest), ["pi-aify"], "the launcher directory, on PATH, gains nothing but the launcher");
+  renderLauncher(host, "claude-aify", "claude-aify.sh.in", false);
+  assert.equal(fs.readdirSync(recordDirFor(host.registry)).length, 1, "a render that did not ask leaves no record");
   assert.ok(record.pairs.includes(`BRIDGE_DIR=${host.root}`));
   assert.ok(!record.pairs.some((pair) => /^(REGISTRY_FINGERPRINT|STRICT_EXTRA_MCP_B64|SESSION_MCP_B64|SESSION_MCP_CODEX_B64)=/.test(pair)));
   assert.equal(parseRecord(Buffer.from("not a record")), null, "a malformed record is no record");
-  assert.deepEqual(rerenderLaunchers({ dest: path.join(host.home, "absent"), registryPath: host.registry, wrapperRoot: ROOT }), []);
+  const bare = makeHost();
+  assert.deepEqual(rerenderLaunchers({ dest: path.join(bare.home, "absent"), registryPath: bare.registry, wrapperRoot: ROOT }), [], "no records and no launchers: nothing to report");
 });

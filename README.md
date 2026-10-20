@@ -114,9 +114,12 @@ artifact's `sha256`. Every listed file must match its line, and every entry must
 manifest does not list (node_modules, untracked files) are reported, not failed. A `pending` artifact, and a package (installing one is the guided chain's
 acquire phase), gets no entry; the report says why.
 
-Every launcher `render.sh` writes leaves `.aify-render/<name>.args` beside it: the template's sha256, its name,
-and its pairs without the four the registry decides. A launcher with no record, or one rendered from another
-template, is reported stale and left alone, never re-rendered from guessed values.
+`install.sh` records what each launcher was rendered from in `launchers/` beside the registry
+(`RENDER_RECORD_DIR`, which `render.sh` honours only when a caller sets it): the template's sha256, its name, the
+launcher's path, and its pairs without the four the registry decides. Nothing is added to the launcher directory,
+which is on PATH. A launcher with no record (one rendered by an installer that does not record yet, aify-comms'
+among them, or by `--render-only`), or one rendered from another template, is reported stale and left alone,
+never re-rendered from guessed values.
 
 Exit codes: 0 published, 78 refused with nothing published, 75 the publish outcome is unknown (the staged keys
 are kept, since the registry may name them).

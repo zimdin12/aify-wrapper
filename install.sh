@@ -314,6 +314,14 @@ for _client in "${CLIENTS[@]}"; do
   fi
 done
 
+# WHAT EACH LAUNCHER WAS RENDERED FROM, beside the registry it was built against, so `aify-wrapper-connect` can
+# re-render it after a service is connected without guessing these values. Not for --render-only, which touches
+# nothing outside the directory it was given.
+if [ -z "$RENDER_ONLY" ]; then
+  RENDER_RECORD_DIR="$(dirname "$REGISTRY")/launchers"
+  export RENDER_RECORD_DIR
+fi
+
 for _client in "${CLIENTS[@]}"; do
   install_one "$_client"
 done
