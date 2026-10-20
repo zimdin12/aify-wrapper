@@ -193,6 +193,7 @@ export function runConnect(host, args, { env = {}, input = "" } = {}) {
     ...(ENV_REPO ? { AIFY_ENV_REPO: ENV_REPO } : {}),
     // The opt-in real `registry check` (see fake-aify-env.mjs), carried through the AIFY_* seal above on purpose.
     ...(process.env.AIFY_TEST_REAL_REGISTRY ? { AIFY_TEST_REAL_REGISTRY: process.env.AIFY_TEST_REAL_REGISTRY } : {}),
+    ...(process.env.AIFY_TEST_REAL_CANDIDATE_ONLY ? { AIFY_TEST_REAL_CANDIDATE_ONLY: process.env.AIFY_TEST_REAL_CANDIDATE_ONLY } : {}),
     ...env,
   };
   const argv = [BIN, ...args, "--registry", host.registry, "--dest", host.dest, "--aify-env", FAKE_ENV, "--file-set-root", host.root,

@@ -223,10 +223,31 @@ test("HTTP: no redirect is followed, a probe sends the real key last, and served
   }
 });
 
-test("HTTP: a request that never reaches the service names its url and the network's reason, not fetch's bare 'fetch failed'", async () => {
+test("HTTP: a request that never reaches the service names its url and the network's reason", async () => {
   const server = http.createServer();
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address();
   await new Promise((resolve) => server.close(resolve));
-  await assert.rejects(fetchSpec(`http://127.0.0.1:${port}`), /127\.0\.0\.1:\d+\/\.well-known\/aify-service: fetch failed \(ECONNREFUSED/);
+  await assert.rejects(fetchSpec(`http://127.0.0.1:${port}`), /127\.0\.0\.1:\d+\/\.well-known\/aify-service: request failed \(ECONNREFUSED/);
+});
+
+test("HTTP: every request opens its own connection, so none can land on a socket the service's keep-alive timeout is closing", async () => {
+  let connections = 0;
+  let requests = 0;
+  const server = http.createServer((req, res) => {
+    requests += 1;
+    res.writeHead(req.url === "/health" || req.headers["x-k"] === "right" ? 200 : 401, { "content-type": "application/json" });
+    res.end("{}");
+  });
+  server.on("connection", () => { connections += 1; });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const endpoint = `http://127.0.0.1:${server.address().port}`;
+  try {
+    await checkHealth(endpoint, { verify: { health: { path: "/health" } } });
+    await checkProbe(endpoint, { path: "/p", header: "x-k" }, "right");
+    assert.equal(requests, 4, "CONTROL: health, then the probe's three requests");
+    assert.equal(connections, requests);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });

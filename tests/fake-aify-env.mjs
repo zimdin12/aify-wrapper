@@ -56,8 +56,9 @@ if (args[0] === "credential") {
 // --service, only that service's references must exist in the store; another service's missing one is a warning.
 // AIFY_TEST_REAL_REGISTRY=<aify-env-registry.mjs> runs the real check instead, for a recorded real-binary run.
 // `--candidate-only` (operator decision on S1b): grammar, version, collisions and advertising with NO store I/O, the same
-// JSON and exits; combined with --service it is a usage error, 64. The real one is not built yet, so a real-binary run
-// still answers it here unless AIFY_TEST_REAL_CANDIDATE_ONLY is set: that run is pending.
+// JSON and exits, each reference's `store` null; combined with --service it is a usage error, 64 (aify-env ccf9a7e).
+// A real-binary run sends it to the real check only when AIFY_TEST_REAL_CANDIDATE_ONLY is also set, so a binary from
+// before ccf9a7e can still be run for its --service half.
 if (args[0] === "registry") {
   const candidateOnly = args.includes("--candidate-only");
   if (process.env.AIFY_TEST_REAL_REGISTRY && (!candidateOnly || process.env.AIFY_TEST_REAL_CANDIDATE_ONLY)) {
@@ -91,7 +92,7 @@ if (args[0] === "registry") {
       const owner = owners.get(String(ref).toLowerCase());
       if (owner && owner !== name) problems.push({ code: "credential-ref-collision", service: name, field, detail: `'${String(ref).toLowerCase()}' is also ${owner}'s credential file, so the two services would share one key` });
       owners.set(String(ref).toLowerCase(), name);
-      if (candidateOnly) { references.push({ service: name, field, ref }); continue; }
+      if (candidateOnly) { references.push({ service: name, field, ref, store: null }); continue; }
       const present = fs.existsSync(path.join(os.homedir(), ".aify", "credentials", ref));
       references.push({ service: name, field, ref, store: present ? "CREDENTIAL_OK" : "CREDENTIAL_MISSING" });
       if (present) continue;
