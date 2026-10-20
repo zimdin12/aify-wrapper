@@ -189,6 +189,7 @@ changed output.
 ```js
 REGISTRY_VERSION                 // the schema version this module speaks
 parseRegistry(text)              // -> {ok, registry?, errors[]}
+READ_FIELDS                      // every entry field parseRegistry reads; a spec's `fixed` may set only an owned one
 TURN_START_DEADLINE_MS           // the turn-start runner's shared deadline, and the largest turnStart.budgetMs
 mcpEntriesFor(registry)          // -> [{name, command, args, env}]
 fingerprint(registry)            // -> stable short digest
