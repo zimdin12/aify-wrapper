@@ -51,6 +51,8 @@ async function main() {
   const input = await readHookInput();
   const sessionKey = typeof input?.session_id === "string" ? input.session_id : "";
   if (!sessionKey) return "";
+  // A Codex subagent's turn, the only one that carries agent_id: its parent's turn already carried the rules.
+  if (typeof input.agent_id === "string") return "";
   const text = await byDue(fs.promises.readFile(process.env.AIFY_SERVICE_REGISTRY || path.join(os.homedir(), ".aify", "services.json"), "utf8")
     .catch(() => null), null);
   if (text === null) return "";

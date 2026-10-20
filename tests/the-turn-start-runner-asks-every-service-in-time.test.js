@@ -8,7 +8,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
-import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -16,31 +15,10 @@ import { fileURLToPath } from "node:url";
 
 import { parseRegistry, TURN_START_DEADLINE_MS } from "../lib/registry.mjs";
 import { hookOutput, runTurnStart, turnStartTargets } from "../lib/turn-start.mjs";
+import { answer, host, KEY, service } from "./turn-start-host.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const RUNNER = path.join(ROOT, "bin", "aify-turn-start.mjs");
-const KEY = "sekret-key-0123456789";
-
-/** A local service: `behave(request, response, body)` decides the answer; every request is recorded. */
-async function service(t, behave) {
-  const seen = [];
-  const server = createServer((request, response) => {
-    let body = "";
-    request.on("data", (chunk) => { body += chunk; });
-    request.on("end", () => {
-      seen.push({ url: request.url, headers: request.headers, body: body ? JSON.parse(body) : null });
-      behave(request, response, body);
-    });
-  });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  t.after(() => { server.closeAllConnections(); return new Promise((resolve) => server.close(resolve)); });
-  return { endpoint: `http://127.0.0.1:${server.address().port}`, seen };
-}
-
-const answer = (text) => (request, response) => {
-  response.writeHead(200, { "content-type": "application/json" });
-  response.end(JSON.stringify({ text, firedEventIds: [] }));
-};
 const never = () => {};
 
 function registryOf(entries) {
@@ -242,23 +220,6 @@ test("THE OUTPUT is Claude's UserPromptSubmit shape, and nothing at all when not
 
 // ---- the hook command, end to end ----------------------------------------------------------------------------------
 
-/** A sealed host: a home with a credential, a registry naming `endpoint`, and the runner's environment. */
-function host(t, { endpoint, credential = `${KEY}\n`, env = {}, more = {} } = {}) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "aify-turn-start-"));
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
-  fs.mkdirSync(path.join(home, ".aify", "credentials"), { recursive: true });
-  fs.writeFileSync(path.join(home, ".aify", "credentials", "dash.key"), credential);
-  const registry = path.join(home, ".aify", "services.json");
-  fs.writeFileSync(registry, JSON.stringify({ version: 1, services: { dash: {
-    endpoint, credentialRef: "dash.key", turnStart: { path: "/events/turn-start", budgetMs: 800 } }, ...more } }));
-  const sealed = {};
-  for (const [name, value] of Object.entries(process.env)) {
-    if (!/^(AIFY_|HERDR_|CLAUDE_)/i.test(name) && !["COMPUTERNAME", "HOSTNAME"].includes(name.toUpperCase())) sealed[name] = value;
-  }
-  return { ...sealed, HOME: home, USERPROFILE: home, AIFY_SERVICE_REGISTRY: registry, AIFY_AGENT_ID: "probe-agent",
-    COMPUTERNAME: "Probe-HOST", ...env };
-}
-
 /** Run the hook as Claude does; `stdin` null leaves the pipe open and never writes. */
 function runHook(env, stdin) {
   return new Promise((resolve) => {
@@ -273,6 +234,38 @@ function runHook(env, stdin) {
 }
 
 const HOOK_INPUT = JSON.stringify({ session_id: "claude-session-42", cwd: "C:\\Docker\\aify-dashboard", hook_event_name: "UserPromptSubmit", prompt: "hi" });
+
+test("END TO END, CODEX'S INPUT: the same request, and the output codex parses", async (t) => {
+  // What codex-cli 0.160.0 writes to a UserPromptSubmit command (codex-rs hooks/src/schema.rs
+  // UserPromptSubmitCommandInput). Its output parser takes this runner's Claude shape, and refuses an unknown key
+  // (deny_unknown_fields on UserPromptSubmitCommandOutputWire): "THE OUTPUT" above pins the whole object.
+  const codexInput = JSON.stringify({ session_id: "019a2b3c-codex-thread", turn_id: "turn-3", transcript_path: null,
+    cwd: "C:\\Docker\\aify-dashboard", hook_event_name: "UserPromptSubmit", model: "gpt-5.5", permission_mode: "bypassPermissions", prompt: "hi" });
+  const svc = await service(t, answer("OPERATOR RULE"));
+  const result = await runHook(host(t, { endpoint: svc.endpoint }), codexInput);
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: "OPERATOR RULE" } });
+  assert.equal(svc.seen[0].body.sessionKey, "019a2b3c-codex-thread");
+  assert.equal(svc.seen[0].body.cwd, "C:\\Docker\\aify-dashboard");
+});
+
+test("END TO END, A CODEX SUBAGENT'S TURN ASKS NOTHING AND ADDS NOTHING: its parent's turn already carried the rules", async (t) => {
+  // codex-cli 0.160.0 fires UserPromptSubmit for a subagent's turn too, with agent_id and agent_type added
+  // (codex-rs core/src/hook_runtime.rs inspect_pending_input; comms-tech-lead, 2026-10-20). Hermes' callback skips the
+  // same turns (lib/hermes-turn-start.py).
+  const turn = { session_id: "019a2b3c-codex-thread", turn_id: "turn-4", transcript_path: null, cwd: "C:\\Docker\\aify-dashboard",
+    hook_event_name: "UserPromptSubmit", model: "gpt-5.5", permission_mode: "bypassPermissions", prompt: "explore" };
+  const svc = await service(t, answer("OPERATOR RULE"));
+  const env = host(t, { endpoint: svc.endpoint });
+  const sub = await runHook(env, JSON.stringify({ ...turn, agent_id: "subagent-1", agent_type: "explorer" }));
+  assert.equal(sub.code, 0, sub.stderr);
+  assert.equal(sub.stdout, "", "a subagent's turn was given context");
+  assert.equal(svc.seen.length, 0, "a subagent's turn asked the service");
+  // Control: the parent's turn, the same input without the subagent's fields, is asked and answered.
+  const parent = await runHook(env, JSON.stringify(turn));
+  assert.equal(JSON.parse(parent.stdout).hookSpecificOutput.additionalContext, "OPERATOR RULE");
+  assert.equal(svc.seen.length, 1);
+});
 
 test("END TO END: the hook sends the runner-built request and prints the context", async (t) => {
   const svc = await service(t, answer("OPERATOR RULE"));
