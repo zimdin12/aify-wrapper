@@ -55,8 +55,12 @@ if (args[0] === "credential") {
 // decided: JSON `{check, ok, references, problems, warnings}` on stdout, exit 0 ok, 65 problems, 64 usage. With
 // --service, only that service's references must exist in the store; another service's missing one is a warning.
 // AIFY_TEST_REAL_REGISTRY=<aify-env-registry.mjs> runs the real check instead, for a recorded real-binary run.
+// `--candidate-only` (operator decision on S1b): grammar, version, collisions and advertising with NO store I/O, the same
+// JSON and exits; combined with --service it is a usage error, 64. The real one is not built yet, so a real-binary run
+// still answers it here unless AIFY_TEST_REAL_CANDIDATE_ONLY is set: that run is pending.
 if (args[0] === "registry") {
-  if (process.env.AIFY_TEST_REAL_REGISTRY) {
+  const candidateOnly = args.includes("--candidate-only");
+  if (process.env.AIFY_TEST_REAL_REGISTRY && (!candidateOnly || process.env.AIFY_TEST_REAL_CANDIDATE_ONLY)) {
     const run = spawnSync(process.execPath, [process.env.AIFY_TEST_REAL_REGISTRY, ...args.slice(1)], { env: process.env });
     process.stdout.write(run.stdout);
     process.stderr.write(run.stderr);
@@ -65,9 +69,9 @@ if (args[0] === "registry") {
   const at = args.indexOf("--service");
   const joined = args.find((a) => a.startsWith("--service="));
   const service = joined ? joined.slice(10) : at === -1 ? "" : args[at + 1];
-  const file = args.filter((a, i) => i > 1 && a !== "--service" && a !== joined && i !== at + 1)[0];
-  if (args[1] !== "check" || !file || (at !== -1 && !service)) {
-    process.stderr.write("aify-env registry: usage: registry check [--service <name>] <file>\n");
+  const file = args.filter((a, i) => i > 1 && a !== "--service" && a !== "--candidate-only" && a !== joined && i !== at + 1)[0];
+  if (args[1] !== "check" || !file || ((at !== -1 || joined) && !service) || (candidateOnly && service)) {
+    process.stderr.write("aify-env registry: usage: registry check [--candidate-only | --service <name>] <file>\n");
     process.exit(64);
   }
   const registry = JSON.parse(fs.readFileSync(file, "utf8"));
@@ -87,6 +91,7 @@ if (args[0] === "registry") {
       const owner = owners.get(String(ref).toLowerCase());
       if (owner && owner !== name) problems.push({ code: "credential-ref-collision", service: name, field, detail: `'${String(ref).toLowerCase()}' is also ${owner}'s credential file, so the two services would share one key` });
       owners.set(String(ref).toLowerCase(), name);
+      if (candidateOnly) { references.push({ service: name, field, ref }); continue; }
       const present = fs.existsSync(path.join(os.homedir(), ".aify", "credentials", ref));
       references.push({ service: name, field, ref, store: present ? "CREDENTIAL_OK" : "CREDENTIAL_MISSING" });
       if (present) continue;

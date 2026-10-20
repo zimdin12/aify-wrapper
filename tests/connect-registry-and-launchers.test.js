@@ -98,8 +98,28 @@ test("OWNER VALIDATION: a raw reference that case-folds onto another service's i
     assert.match(run.stderr, /aify-env registry check failed: credential-ref-collision: .*'shared\.key' is also .*credential file/);
     assert.doesNotMatch(run.stderr, /credential-store/, "the collision alone refused it");
     assert.deepEqual(host.registryBytes(), before);
-    assert.deepEqual(host.refs(), ["Shared.key"], "the staged reference was removed; the seeded one stays");
-    assert.ok(host.calls().some((argv) => argv[0] === "registry"), "CONTROL: the check was asked");
+    assert.deepEqual(host.refs(), ["Shared.key"], "the seeded reference stays");
+    assert.deepEqual(host.calls().filter((argv) => argv[0] === "credential"), [], "refused in prepare, before any key was staged");
+    assert.ok(host.calls().some((argv) => argv[0] === "registry" && argv.includes("--candidate-only")), "CONTROL: the candidate check was asked");
+  } finally {
+    await service.close();
+  }
+});
+
+test("CHECK ORDER: prepare asks the candidate-only check before any key is staged; the store-aware check runs after staging", async () => {
+  const host = makeHost();
+  const spec = commsSpec(host);
+  const service = await startService({ spec });
+  try {
+    const run = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY), ...approvals(spec)]);
+    assert.equal(run.status, 0, run.stderr);
+    const calls = host.calls().map((argv) => argv.slice(0, 3).join(" "));
+    const candidate = calls.indexOf("registry check --candidate-only");
+    const staged = calls.indexOf("credential set --service");
+    const scoped = calls.indexOf("registry check --service");
+    assert.ok(candidate !== -1 && staged !== -1 && scoped !== -1, calls.join(" / "));
+    assert.ok(candidate < staged && staged < scoped, calls.join(" / "));
+    assert.equal(calls.filter((c) => c.startsWith("registry")).length, 2, "one check of each kind");
   } finally {
     await service.close();
   }

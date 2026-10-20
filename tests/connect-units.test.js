@@ -174,6 +174,25 @@ test("aifyEnvTools runs aify-env's commands and turns a non-zero exit into a ref
   assert.equal(typeof connect, "function");
 });
 
+test("registry check: a non-zero exit refuses before its output is trusted, and an exit 0 must carry a passing verdict", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-check-exit-"));
+  const bin = path.join(dir, "aify-env.mjs");
+  // Answers as ANSWER says: `<exit>|<stdout>|<stderr>`.
+  fs.writeFileSync(bin, 'const [code, out, err] = process.env.ANSWER.split("|"); process.stdout.write(out); process.stderr.write(err); process.exit(Number(code));\n');
+  const verdict = (ok, problems, warnings = []) => JSON.stringify({ check: 1, ok, references: [], problems, warnings });
+  const problem = { code: "credential-ref-collision", service: "s", field: "credentialRef", detail: "shared" };
+  const answer = (value) => aifyEnvTools(bin, { ...process.env, ANSWER: value });
+  const refusal = (value, pattern) => assert.throws(() => answer(value).registryCheck("f", "s"), (e) => e instanceof Refused && pattern.test(e.message), value);
+  refusal("64||usage: registry check [--candidate-only | --service <name>] <file>", /failed: exit 64: usage: registry check/);
+  refusal("65||cannot read f: ENOENT", /failed: exit 65: cannot read f: ENOENT/);
+  refusal(`65|${verdict(false, [problem])}|`, /failed: credential-ref-collision: s\.credentialRef: shared/);
+  refusal(`65|${verdict(true, [], [{ service: "x", field: "credentialRef", detail: "w" }])}|`, /failed: exit 65/); // a non-zero exit is never read as a pass
+  refusal("0|not json|", /exited 0 without a passing verdict/);
+  refusal(`0|${verdict(false, [problem])}|`, /exited 0 without a passing verdict/);
+  assert.deepEqual(answer(`0|${verdict(true, [], [{ service: "x", field: "credentialRef", detail: "w" }])}|`).registryCheck("f", "s"), ["x.credentialRef: w"], "CONTROL");
+  assert.deepEqual(answer(`0|${verdict(true, [])}|`).registryCheckCandidate("f"), [], "CONTROL: candidate-only");
+});
+
 test("HTTP: no redirect is followed, a probe sends the real key last, and served bytes are checked against their hash", async () => {
   const seen = [];
   const server = http.createServer((req, res) => {
