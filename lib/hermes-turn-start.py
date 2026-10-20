@@ -15,7 +15,7 @@ TERMINAL_CWD, then the launch folder), because the dashboard places an agent by 
 the runner names its own, which is the launch folder it inherits.
 
 BOUNDED. The callback runs on the agent's own thread before the model is called, so a slow answer delays the turn.
-The runner closes at its own due time and exits; _GUARD_S only stops a runner that never exits, and is the 5 s Claude
+The runner closes at its own due time and exits; _GUARD_S only stops a runner that never exits, and is the 15 s Claude
 Code is given for the same command. A subagent's turn asks nothing: its parent's turn already carried the rules.
 Every failure returns None and nothing is raised.
 """
