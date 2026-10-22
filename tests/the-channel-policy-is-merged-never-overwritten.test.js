@@ -92,6 +92,15 @@ test("install writes the merged per-user value, does nothing when it already adm
   assert.equal(planInstall("win32", reader({ [HKCU]: "{" })).action, "refuse", "a malformed per-user value is left alone");
 });
 
+test("the admin file is found through Program Files, and not knowing where that is refuses the install", () => {
+  const file = policySources("win32", { ProgramFiles: "D:\\Apps" })[1];
+  assert.deepEqual(file, { kind: "file", path: "D:\\Apps\\ClaudeCode\\managed-settings.json", admin: true }); // example path
+  const plan = planInstall("win32", reader({}), {});
+  assert.equal(plan.action, "refuse");
+  assert.match(plan.reason, /cannot tell whether an admin policy exists/);
+  assert.equal(readSource(policySources("win32", {})[1]), null, "an unknown location is never read as a file");
+});
+
 test("Linux and macOS have no per-user source: install refuses unless the admin file admits", () => {
   for (const platform of ["linux", "darwin"]) {
     assert.equal(planInstall(platform, reader({})).action, "refuse", platform);

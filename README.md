@@ -190,16 +190,19 @@ comment.
 
 ## The channel without the development-channels prompt
 
-`claude-aify` loads aify-comms' channel one of two ways. Today's is the development channel
-(`--dangerously-load-development-channels server:aify-comms-channel`), which shows a warning dialog at
-every start. The other is the `aify-channel` plugin this package ships (`plugins/aify-local`), started
-with `--channels plugin:aify-channel@aify-local`, which shows none: Claude Code admits a plugin channel
-without the dialog once managed settings list it in `allowedChannelPlugins`.
+`claude-aify` loads aify-comms' channel one of two ways:
+- the development channel (`--dangerously-load-development-channels server:aify-comms-channel`), which
+  shows a warning dialog at every start;
+- the `aify-channel` plugin (`--channels plugin:aify-channel@aify-local`), which shows none. Claude Code
+  admits a plugin channel without the dialog once managed settings list it in `allowedChannelPlugins`.
+
+The plugin is rendered for this host's bridge (`lib/channel-plugin.mjs`). Its server runs aify-comms'
+`claude-channel-plugin.mjs` with `node`, so Claude itself is the channel's parent.
 
 ```bash
-node lib/channel-install.mjs install   # policy merge, plugin install, then the old user-scope server removed
-node lib/channel-install.mjs check     # the route claude-aify would take, and why
-node lib/channel-install.mjs remove    # our policy entry and the plugin removed
+node lib/channel-install.mjs install --bridge-dir <bridge>   # bridge checked, policy merged, plugin installed
+node lib/channel-install.mjs check [--bridge-dir <bridge>]   # the route claude-aify would take, and why
+node lib/channel-install.mjs remove                          # plugin, marketplace and our policy entry removed
 ```
 
 On Windows the policy is the per-user value `HKCU\SOFTWARE\Policies\ClaudeCode` → `Settings`, which
@@ -208,11 +211,17 @@ and `allowedChannelPlugins` replaces Anthropic's default channel list. When an a
 the install reports that and writes nothing. On Linux and macOS the policy is an admin file, so the install
 only reports.
 
-The launcher takes the plugin route only when the policy admits it, it is installed and enabled, and
-`~/.claude.json` no longer has the user-scope `aify-comms-channel` server: that server would start a second
-copy of the channel, racing the first for the same agent's runs. Anything less means the development
-channel, which still works. Re-running aify-comms' installer puts that server back, and the launcher
-falls back to the development route until `channel-install.mjs install` runs again.
+Claude starts every configured channel server, so a session runs both the user-scope `aify-comms-channel`
+server and the plugin's. The launcher exports `AIFY_CHANNEL_ROUTE`, and each server reads it to decide
+whether it claims messages (aify-comms `channel-producer.mjs`); the other has no effect. The plugin route
+is taken only when every channel server the session runs declares that gate
+(`export const CHANNEL_PRODUCER_GATE = 1;`). That covers the plugin's entry and the `claude-channel.js`
+beside it, plus the scripts in the user scope, the folder's local scope, its `.mcp.json` and the
+launcher's session config. Anything less means the development channel, whose server the install never
+removes. When neither route has a server, the launcher refuses to start and names the repair.
+
+On the plugin route, channel events arrive as `<channel source="plugin:aify-channel:aify-comms-channel">`.
+Evidence: `docs/evidence/2026-10-22-channel-plugin`.
 
 ## The contract
 

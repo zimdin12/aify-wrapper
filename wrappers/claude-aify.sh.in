@@ -679,20 +679,35 @@ if [ "$CLAUDE_AUTO" = true ]; then
   CLAUDE_PERMISSION_FLAGS+=(--dangerously-skip-permissions)
 fi
 
-# THE CHANNEL'S ROUTE (lib/channel-route.mjs). The aify-channel plugin starts with no development-channels prompt,
-# but only where the managed policy admits it, it is installed, and ~/.claude.json no longer carries the user-scope
-# server the development route loads (two copies would race for one agent's runs). Anything less, or any failure of
-# the check itself, keeps today's development channel, which needs none of that.
+# THE CHANNEL'S ROUTE, decided by lib/channel-route-cli.mjs: the aify-channel plugin (no development-channels prompt),
+# today's development channel, or `none`, refused here with the repair rather than started deaf. Strict mode, a service
+# other than the plugin's, and any failure of the check keep the development channel. Exported on every route: each configured channel
+# server reads it to decide whether it claims messages (aify-comms mcp/stdio/channel-producer.mjs).
 AIFY_CHANNEL_ROUTE=dev
-if [ "@@SERVICE_NAME@@" = "aify-comms" ]; then
-  AIFY_CHANNEL_ROUTE="$(node "$AIFY_WRAPPER_DIR_FWD/lib/channel-route-cli.mjs" 2>/dev/null)" || AIFY_CHANNEL_ROUTE=dev
+AIFY_CHANNEL_REASON=""
+if [ "${AIFY_CLAUDE_STRICT_MCP:-0}" != "1" ]; then
+  _aify_route_text="$(AIFY_CHANNEL_SERVICE="@@SERVICE_NAME@@" AIFY_BRIDGE_DIR="$AIFY_BRIDGE_DIR_FWD" AIFY_CHANNEL_SESSION_MCP="@@SESSION_MCP_B64@@" \
+    node "$AIFY_WRAPPER_DIR_FWD/lib/channel-route-cli.mjs" "${CLAUDE_ARGS[@]}" 2>/dev/null)" || _aify_route_text=dev
+  AIFY_CHANNEL_ROUTE="$(printf '%s\n' "$_aify_route_text" | sed -n 1p)"
+  AIFY_CHANNEL_REASON="$(printf '%s\n' "$_aify_route_text" | sed -n 2p)"
 fi
-if [ "$AIFY_CHANNEL_ROUTE" = "plugin" ]; then
-  AIFY_CHANNEL_FLAGS=(--channels plugin:aify-channel@aify-local)
-else
-  AIFY_CHANNEL_ROUTE=dev
-  AIFY_CHANNEL_FLAGS=(--dangerously-load-development-channels server:@@SERVICE_NAME@@-channel)
-fi
+case "$AIFY_CHANNEL_ROUTE" in
+  plugin)
+    AIFY_CHANNEL_FLAGS=(--channels plugin:aify-channel@aify-local)
+    # The plugin's server has no env block of its own: it reads the endpoint from what Claude inherits.
+    export AIFY_SERVER_URL="$HARNESS_ENDPOINT" CLAUDE_MCP_SERVER_URL="$HARNESS_ENDPOINT"
+    ;;
+  none)
+    echo "[claude-aify] this session would start with no channel: $AIFY_CHANNEL_REASON" >&2
+    echo "              Re-run the service's installer (install.sh --client claude) to configure its channel server." >&2
+    exit "$HARNESS_EXIT_CONFIG"
+    ;;
+  *)
+    AIFY_CHANNEL_ROUTE=dev
+    AIFY_CHANNEL_FLAGS=(--dangerously-load-development-channels server:@@SERVICE_NAME@@-channel)
+    ;;
+esac
+export AIFY_CHANNEL_ROUTE
 
 # MCP server config: default is "load the operator's full ~/.claude.json
 # mcpServers list" (the install_claude_config function has already merged
@@ -774,20 +789,15 @@ if [ "${AIFY_CLAUDE_STRICT_MCP:-0}" = "1" ]; then
   else
     _aify_comms_entry="\"@@SERVICE_NAME@@\": { \"command\": \"${_mcp_cmd}\", \"args\": [${_mcp_args}], \"env\": { \"AIFY_SERVER_URL\": \"$HARNESS_ENDPOINT\", \"CLAUDE_MCP_SERVER_URL\": \"$HARNESS_ENDPOINT\" } }"
   fi
-  # On the plugin route the plugin runs the channel; naming it here too would start a second copy.
-  _aify_channel_entry=""
-  if [ "$AIFY_CHANNEL_ROUTE" = "dev" ]; then
-    _aify_channel_entry=",
-    \"@@SERVICE_NAME@@-channel\": {
-      \"command\": \"node\",
-      \"args\": [\"${AIFY_BRIDGE_DIR_FWD}/claude-channel.js\"],
-      \"env\": { \"AIFY_SERVER_URL\": \"$HARNESS_ENDPOINT\", \"CLAUDE_MCP_SERVER_URL\": \"$HARNESS_ENDPOINT\" }
-    }"
-  fi
   cat > "$AIFY_MCP_CONFIG" <<JSON
 {
   "mcpServers": {
-    ${_aify_comms_entry}${_aify_channel_entry}${AIFY_STRICT_EXTRA}
+    ${_aify_comms_entry},
+    "@@SERVICE_NAME@@-channel": {
+      "command": "node",
+      "args": ["${AIFY_BRIDGE_DIR_FWD}/claude-channel.js"],
+      "env": { "AIFY_SERVER_URL": "$HARNESS_ENDPOINT", "CLAUDE_MCP_SERVER_URL": "$HARNESS_ENDPOINT" }
+    }${AIFY_STRICT_EXTRA}
   }
 }
 JSON
@@ -974,10 +984,6 @@ fi
 
 aify_lifetime_start "${CLAUDE_AIFY_AGENT_ID:-}" claude "$AIFY_SESSION_MODE" || exit $?
 AIFY_RUNTIME_RUNNING=1
-# The plugin's channel finds comms' installed channel and endpoint here (plugins/aify-local/plugins/aify-channel).
-if [ "$AIFY_CHANNEL_ROUTE" = "plugin" ]; then
-  export AIFY_BRIDGE_DIR="$AIFY_BRIDGE_DIR_FWD" AIFY_SERVER_URL="$HARNESS_ENDPOINT" CLAUDE_MCP_SERVER_URL="$HARNESS_ENDPOINT"
-fi
 claude "${AIFY_CHANNEL_FLAGS[@]}" "${CLAUDE_MCP_FLAGS[@]}" "${CLAUDE_PERMISSION_FLAGS[@]}" "${CLAUDE_ARGS[@]}"
 STATUS=$?
 exit "$STATUS"

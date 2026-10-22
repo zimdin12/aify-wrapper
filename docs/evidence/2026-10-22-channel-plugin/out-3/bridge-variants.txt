@@ -1,0 +1,6 @@
+/bridges/gate-deleted/channel-producer.mjs:23:  return true;
+/bridges/gate-deleted/channel-producer.mjs:28:  return fromPlugin ? PLUGIN_CHANNEL_SOURCE : USER_SCOPE_CHANNEL_SOURCE;
+/bridges/gate-inverted/channel-producer.mjs:23:  return Boolean(fromPlugin) !== (route === PLUGIN_ROUTE);
+/bridges/gate-inverted/channel-producer.mjs:28:  return fromPlugin ? PLUGIN_CHANNEL_SOURCE : USER_SCOPE_CHANNEL_SOURCE;
+/bridges/real/channel-producer.mjs:23:  return Boolean(fromPlugin) === (route === PLUGIN_ROUTE);
+/bridges/real/channel-producer.mjs:28:  return fromPlugin ? PLUGIN_CHANNEL_SOURCE : USER_SCOPE_CHANNEL_SOURCE;

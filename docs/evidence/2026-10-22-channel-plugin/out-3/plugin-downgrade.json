@@ -1,0 +1,13 @@
+{
+  "name": "aify-channel",
+  "version": "1.0.0",
+  "description": "Delivers aify-comms messages into a claude-aify session as channel events.",
+  "mcpServers": {
+    "aify-comms-channel": {
+      "command": "node",
+      "args": [
+        "/bridges/downgrade/claude-channel-plugin.mjs"
+      ]
+    }
+  }
+}

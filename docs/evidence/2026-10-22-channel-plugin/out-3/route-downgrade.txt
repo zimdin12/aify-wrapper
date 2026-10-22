@@ -1,0 +1,2 @@
+dev
+/bridges/downgrade/claude-channel-plugin.mjs is missing: that bridge predates the plugin

@@ -1,0 +1,32 @@
+== real-plugin-route
+started: user-scope 1, plugin 1
+user-scope: requests 0, claims 0, liveness beats 0, delivered receipts 0, accepted claim none
+plugin: requests 21, claims 9, liveness beats 1, delivered receipts 1, accepted claim real-plugin-route-msg
+markers: 1 (plugin)
+envelopes carrying real-plugin-route-msg: plugin:aify-channel:aify-comms-channel
+left after exit: (none left)
+
+== real-dev-route
+started: user-scope 1, plugin 1
+user-scope: requests 22, claims 10, liveness beats 0, delivered receipts 1, accepted claim real-dev-route-msg
+plugin: requests 0, claims 0, liveness beats 0, delivered receipts 0, accepted claim none
+markers: 1 (user-scope)
+envelopes carrying real-dev-route-msg: aify-comms-channel
+left after exit: (none left)
+
+== control-gate-deleted
+started: user-scope 1, plugin 1
+user-scope: requests 17, claims 8, liveness beats 1, delivered receipts 0, accepted claim none
+plugin: requests 21, claims 9, liveness beats 1, delivered receipts 1, accepted claim control-gate-deleted-msg
+markers: 2 (user-scope, plugin)
+envelopes carrying control-gate-deleted-msg: plugin:aify-channel:aify-comms-channel
+left after exit: (none left)
+
+== control-gate-inverted
+started: user-scope 1, plugin 1
+user-scope: requests 21, claims 9, liveness beats 1, delivered receipts 1, accepted claim control-gate-inverted-msg
+plugin: requests 0, claims 0, liveness beats 0, delivered receipts 0, accepted claim none
+markers: 1 (user-scope)
+envelopes carrying control-gate-inverted-msg: none
+left after exit: (none left)
+

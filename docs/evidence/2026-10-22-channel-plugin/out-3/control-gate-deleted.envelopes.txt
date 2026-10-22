@@ -1,0 +1,1 @@
+2026-10-22T19:18:16.432Z   envelope <channel source="plugin:aify-channel:aify-comms-channel" event_type="dispatch" agent_id="witness-agent" run_id="witness-run-1" from_agent="witness-sender" message_id="control-gate-deleted-msg" priority="normal">

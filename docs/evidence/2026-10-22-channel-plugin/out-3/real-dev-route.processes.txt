@@ -1,0 +1,2 @@
+    536     469 node /bridges/real/claude-channel.js
+    537     469 node /bridges/real/claude-channel-plugin.mjs

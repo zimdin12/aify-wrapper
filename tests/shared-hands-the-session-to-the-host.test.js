@@ -75,12 +75,18 @@ const code = (text) => text.split("\n").filter((line) => !/^\s*#/.test(line)).jo
 test("THE DEFAULT PATH STILL ENDS EXACTLY AS IT DID", () => {
   // The operator's constraint. If this line ever changes shape, an ordinary resident session is no
   // longer what it was, whatever the flag does.
+  //
+  // The channel's flags became an array when the launcher gained the plugin route (2026-10-22). On the
+  // development route they are the two words this line used to spell, and that is what Claude receives:
+  // claude-user-arguments-are-never-a-channel-name.test.js runs the launcher and reads the argv.
   const claude = renderClaude();
   assert.match(
     claude,
-    /\nclaude --dangerously-load-development-channels server:aify-comms-channel "\$\{CLAUDE_MCP_FLAGS\[@\]\}" "\$\{CLAUDE_PERMISSION_FLAGS\[@\]\}" "\$\{CLAUDE_ARGS\[@\]\}"\nSTATUS=\$\?\nexit "\$STATUS"/,
+    /\nclaude "\$\{AIFY_CHANNEL_FLAGS\[@\]\}" "\$\{CLAUDE_MCP_FLAGS\[@\]\}" "\$\{CLAUDE_PERMISSION_FLAGS\[@\]\}" "\$\{CLAUDE_ARGS\[@\]\}"\nSTATUS=\$\?\nexit "\$STATUS"/,
     "the ordinary launch line changed shape",
   );
+  assert.match(claude, /\n {4}AIFY_CHANNEL_FLAGS=\(--dangerously-load-development-channels server:aify-comms-channel\)\n/,
+    "the development route's flags changed");
 });
 
 test("the shared branch sits BELOW everything, so a normal run never enters it", () => {
@@ -90,7 +96,7 @@ test("the shared branch sits BELOW everything, so a normal run never enters it",
   // The branch that ENTERS the shared path. The lease claim's `!= true` guard also names the flag, and
   // sits higher up on purpose, above the managed reap it must precede.
   const branch = lines.findIndex((l) => /^if \[ "\$CLAUDE_AIFY_SHARED" = true \]; then/.test(l));
-  const launch = lines.findIndex((l) => l.startsWith("claude --dangerously-load"));
+  const launch = lines.findIndex((l) => l.startsWith('claude "${AIFY_CHANNEL_FLAGS[@]}"'));
   assert.ok(branch > 0, "no shared branch in the rendered launcher");
   assert.ok(branch < launch, "the branch is below the launch line, so --shared would never fire");
   // And nothing between them: the branch execs or falls through, and any work in the gap would run

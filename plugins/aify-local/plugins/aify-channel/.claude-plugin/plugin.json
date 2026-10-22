@@ -1,8 +1,0 @@
-{
-  "name": "aify-channel",
-  "version": "1.0.0",
-  "description": "Delivers aify-comms messages into the session as a channel, without the development-channels prompt",
-  "mcpServers": {
-    "aify-comms-channel": { "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/channel.mjs"] }
-  }
-}
