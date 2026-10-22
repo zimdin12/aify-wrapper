@@ -25,6 +25,19 @@ test("the export parser returns the Settings string exactly: unicode, quotes, ba
   assert.equal(settingsFromRegExport(text, HKCU), value);
 });
 
+test("the value name is matched as Windows matches it, without case; two spellings refuse", () => {
+  // Windows keeps a value's first spelling and treats every other as the same value (measured on a scratch key,
+  // 2026-10-23: `reg add /v SETTINGS` and SetValue('Settings') both rewrote an existing `settings`, keeping its name).
+  // Read case-sensitively, `settings` was absent and the install wrote only our entry over the operator's policy.
+  assert.equal(settingsFromRegExport(exportText(HEADER, `"settings"="{\\"model\\":\\"x\\"}"`), HKCU), "{\"model\":\"x\"}");
+  assert.equal(settingsFromRegExport(exportText(HEADER, `"SETTINGS"="{}"`), HKCU), "{}");
+  const plan = planInstall("win32", (s) => (s.key === HKCU ? settingsFromRegExport(exportText(HEADER, `"settings"="{\\"model\\":\\"x\\"}"`), HKCU) : null), { ProgramFiles: "C:\\PF" });
+  assert.equal(plan.action, "write");
+  assert.equal(JSON.parse(plan.text).model, "x", "the operator's value is merged, not replaced");
+  const two = settingsFromRegExport(exportText(HEADER, `"settings"="{}"`, `"Settings"="{}"`), HKCU);
+  assert.ok(two?.unreadable, JSON.stringify(two));
+});
+
 test("the export parser: no Settings is absent; a subkey's Settings is not ours; the header matches regardless of case", () => {
   assert.equal(settingsFromRegExport(exportText(HEADER, `"Other"="x"`), HKCU), null);
   assert.equal(settingsFromRegExport(exportText(HEADER, "", `${HEADER.slice(0, -1)}\\child]`, `"Settings"="{}"`), HKCU), null);

@@ -106,7 +106,7 @@ test("a configuration present but unreadable: the development route, never a gue
 
 test("channel servers are found by name or by script; other servers are not", () => {
   assert.deepEqual(channelServers({ a: { command: "node", args: ["/x/claude-channel.js"] }, b: { command: "node", args: ["/x/server.js"] } }),
-    [{ name: "a", script: "/x/claude-channel.js" }]);
+    [{ name: "a", script: "/x/claude-channel.js", route: undefined }]);
   assert.deepEqual(channelServers(undefined), []);
   assert.ok(samePath("C:\\Users\\A\\x", "c:/users/a/x/", "win32"));
   assert.ok(!samePath("C:/Users/A/x", "c:/users/a/x", "linux"));
