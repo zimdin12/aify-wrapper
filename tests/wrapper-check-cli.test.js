@@ -11,7 +11,7 @@
 // sentinel not to exist afterwards.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs, { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -191,6 +191,81 @@ test("--json answers in JSON when it refuses, too", () => {
     const report = JSON.parse(missing.stdout);
     assert.equal(report.ok, false);
     assert.match(report.summary, /cannot read .*absent/);
+  } finally {
+    w.cleanup();
+  }
+});
+
+/** 2000 services that are not objects: one error each, a report of about 100 KB. */
+const registryWithManyErrors = () => registryFor(
+  Object.fromEntries(Array.from({ length: 2000 }, (_, i) => [`s${String(i).padStart(4, "0")}`, 1])),
+);
+
+/**
+ * Run the check with its stdout read through a pipe whose reader is held for a while before draining.
+ *
+ * The `data` listener is attached BEFORE the pause: a child's stream with no listener is drained and
+ * discarded by Node when the child exits, which once made this helper report an empty stdout for any checker.
+ * On Windows a child's stdout pipe is synchronous (node 22.20, measured: 20 MiB then process.exit(0), through
+ * a reader held 500 ms, arrived whole), so here this is a healthy control; the asynchronous-stdout test below
+ * is the one that fails an early exit on every platform.
+ */
+function runHeld(args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [CHECK, ...args], { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (text) => { stdout += text; });
+    child.stdout.pause();
+    child.stderr.resume();
+    setTimeout(() => child.stdout.resume(), 500);
+    child.on("error", reject);
+    child.on("close", (status) => resolve({ status, stdout }));
+  });
+}
+
+test("a LARGE refusal arrives whole through a pipe held before draining, in both exit modes", async () => {
+  const w = workspace();
+  try {
+    fs.writeFileSync(w.registry, registryWithManyErrors());
+    for (const [extra, status] of [[[], 0], [["--strict"], 1]]) {
+      const res = await runHeld(["--dest", w.dest, "--registry", w.registry, "--json", ...extra]);
+      assert.equal(res.status, status, String(extra));
+      const report = JSON.parse(res.stdout);
+      assert.equal(report.errors.length, 2000, String(extra));
+      assert.equal(report.ok, false);
+    }
+  } finally {
+    w.cleanup();
+  }
+});
+
+test("the report outlives an ASYNCHRONOUS stdout: refusal and result, in both exit modes", () => {
+  // On POSIX a pipe is asynchronous, and process.exit() straight after the write cuts the report off.
+  // Windows pipes are synchronous, so the preload makes stdout asynchronous on every platform; a
+  // process.exit() after the write then loses the report here as it would on Linux (review of 87cf786).
+  const w = workspace();
+  try {
+    install(w, registryFor({ "aify-comms": { endpoint: NOWHERE, mcp: [] } }));
+    const preload = new URL("./async-stdout.mjs", import.meta.url).href;
+    const run = (extra) => spawnSync(
+      process.execPath,
+      ["--import", preload, CHECK, "--dest", w.dest, "--registry", w.registry, "--json", ...extra],
+      { encoding: "utf8", timeout: 60_000 },
+    );
+
+    for (const [extra, status] of [[[], 0], [["--strict"], 0]]) {
+      const res = run(extra);
+      assert.equal(res.status, status, `result ${extra}: ${res.stderr}`);
+      assert.deepEqual(JSON.parse(res.stdout).current.map((r) => r.name), ["claude-aify"], `result ${extra}`);
+    }
+
+    fs.writeFileSync(w.registry, registryWithManyErrors());
+    for (const [extra, status] of [[[], 0], [["--strict"], 1]]) {
+      const res = run(extra);
+      assert.equal(res.status, status, `refusal ${extra}: ${res.stderr.slice(0, 200)}`);
+      assert.equal(JSON.parse(res.stdout).errors.length, 2000, `refusal ${extra}`);
+    }
   } finally {
     w.cleanup();
   }

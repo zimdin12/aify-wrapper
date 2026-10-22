@@ -33,68 +33,69 @@ const asJson = args.includes("--json");
 const strict = args.includes("--strict");
 
 /**
- * Refuse to judge, and say why: on stderr, and under --json also as the report on stdout, so a JSON reader
- * gets an answer rather than an empty stdout it cannot tell from a crash. Only --strict exits 1.
+ * A refusal to judge, and why: said on stderr here, and returned as the report, so under --json the reader
+ * gets an answer rather than an empty stdout it cannot tell from a crash.
  */
-function refuse(summary, errors = []) {
+function refusal(summary, errors = []) {
   process.stderr.write(`${summary}${errors.length ? ":" : ""}\n`);
   for (const problem of errors) process.stderr.write(`  - ${problem}\n`);
-  if (asJson) {
-    const report = { ok: false, current: [], stale: [], unknown: [], summary, errors };
-    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
-  }
-  process.exit(strict ? 1 : 0);
+  return { refused: true, report: { ok: false, current: [], stale: [], unknown: [], summary, errors } };
 }
 
 /** `<something>-aify`, which is the shape every launcher this package installs has. */
 const LAUNCHER = /-aify(\.[a-z0-9]+)?$/i;
 
-let launchers = [];
-try {
-  launchers = readdirSync(DEST)
-    .filter((name) => LAUNCHER.test(name))
-    // Windows shims are a couple of lines of batch that call the real launcher; they carry no
-    // fingerprint and are not the thing being judged.
-    .filter((name) => !/\.(cmd|ps1)$/i.test(name))
-    .map((name) => {
-      try {
-        return { name, text: readFileSync(join(DEST, name), "utf8") };
-      } catch {
-        // Unreadable is not absent: it lands in `unknown` rather than vanishing from the count.
-        return { name, text: null };
-      }
-    });
-} catch (error) {
-  refuse(`cannot read ${DEST}: ${error.code ?? error.message}`);
+function judge() {
+  let launchers = [];
+  try {
+    launchers = readdirSync(DEST)
+      .filter((name) => LAUNCHER.test(name))
+      // Windows shims are a couple of lines of batch that call the real launcher; they carry no
+      // fingerprint and are not the thing being judged.
+      .filter((name) => !/\.(cmd|ps1)$/i.test(name))
+      .map((name) => {
+        try {
+          return { name, text: readFileSync(join(DEST, name), "utf8") };
+        } catch {
+          // Unreadable is not absent: it lands in `unknown` rather than vanishing from the count.
+          return { name, text: null };
+        }
+      });
+  } catch (error) {
+    return refusal(`cannot read ${DEST}: ${error.code ?? error.message}`);
+  }
+
+  let registryText = "";
+  try {
+    registryText = readFileSync(REGISTRY, "utf8");
+  } catch {
+    // Absent is a legitimate host state; it fingerprints as the empty registry below.
+  }
+
+  const parsed = parseRegistry(registryText);
+  if (!parsed.ok) {
+    // Refuse rather than compare against a guess: every launcher would read stale, which is a lie about
+    // the launchers and hides the real problem, which is the registry.
+    return refusal(`registry ${REGISTRY} is not usable`, parsed.errors);
+  }
+  return { refused: false, report: stalenessOf({ launchers, registryFingerprint: fingerprint(parsed.registry) }) };
 }
 
-let registryText = "";
-try {
-  registryText = readFileSync(REGISTRY, "utf8");
-} catch {
-  // Absent is a legitimate host state; it fingerprints as the empty registry below.
-}
-
-const parsed = parseRegistry(registryText);
-if (!parsed.ok) {
-  // Refuse rather than compare against a guess: every launcher would read stale, which is a lie about
-  // the launchers and hides the real problem, which is the registry.
-  refuse(`registry ${REGISTRY} is not usable`, parsed.errors);
-}
-
-const result = stalenessOf({ launchers, registryFingerprint: fingerprint(parsed.registry) });
+const { refused, report } = judge();
 
 if (asJson) {
-  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-} else {
-  for (const row of result.current) process.stdout.write(`  ok    ${row.name}\n`);
-  for (const row of result.stale) {
+  process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+} else if (!refused) {
+  for (const row of report.current) process.stdout.write(`  ok    ${row.name}\n`);
+  for (const row of report.stale) {
     process.stdout.write(`  STALE ${row.name}  built from ${row.installed}, registry is ${row.expected}\n`);
   }
-  for (const row of result.unknown) {
+  for (const row of report.unknown) {
     process.stdout.write(`  ??    ${row.name}  no registry fingerprint — installed before this existed?\n`);
   }
-  process.stdout.write(`\n${result.summary}\n`);
+  process.stdout.write(`\n${report.summary}\n`);
 }
 
-process.exit(strict && !result.ok ? 1 : 0);
+// An exit CODE, never process.exit(): stdout to a pipe is asynchronous on POSIX, and exiting at once cuts
+// off a report still queued (review of 87cf786). Node exits when the writes are done.
+process.exitCode = strict && !report.ok ? 1 : 0;
