@@ -1,0 +1,5 @@
+2026-10-22T16:47:00.302Z [user-scope] started pid=586 ppid=519 parent="claude --dangerously-load-development-channels server:aify-comms-channel" AIFY_CHANNEL_ROUTE=C-dev-flag-plugin-enabled AIFY_SERVER_URL=http://endpoint.witness:1
+2026-10-22T16:47:00.304Z [user-scope] in server/discover
+2026-10-22T16:47:00.321Z [user-scope] in initialize
+2026-10-22T16:47:00.361Z [user-scope] in notifications/initialized
+2026-10-22T16:47:05.365Z [user-scope] pushed the witness event
