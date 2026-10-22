@@ -1,0 +1,2 @@
+aify channel: ~/.claude.json still has a user-scope aify-comms-channel; the plugin would run a second copy
+dev

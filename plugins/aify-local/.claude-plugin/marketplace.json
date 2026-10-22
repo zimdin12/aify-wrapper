@@ -1,0 +1,12 @@
+{
+  "name": "aify-local",
+  "description": "aify's own Claude Code plugins, installed from the aify-wrapper package on this host",
+  "owner": { "name": "aify" },
+  "plugins": [
+    {
+      "name": "aify-channel",
+      "source": "./plugins/aify-channel",
+      "description": "Delivers aify-comms messages into the session as a channel, without the development-channels prompt"
+    }
+  ]
+}

@@ -188,6 +188,32 @@ This matters because the contract below was always generic -- every variable is 
 this package has no such coupling at all: zero dependencies, and every mention of aify-comms in it is a
 comment.
 
+## The channel without the development-channels prompt
+
+`claude-aify` loads aify-comms' channel one of two ways. Today's is the development channel
+(`--dangerously-load-development-channels server:aify-comms-channel`), which shows a warning dialog at
+every start. The other is the `aify-channel` plugin this package ships (`plugins/aify-local`), started
+with `--channels plugin:aify-channel@aify-local`, which shows none: Claude Code admits a plugin channel
+without the dialog once managed settings list it in `allowedChannelPlugins`.
+
+```bash
+node lib/channel-install.mjs install   # policy merge, plugin install, then the old user-scope server removed
+node lib/channel-install.mjs check     # the route claude-aify would take, and why
+node lib/channel-install.mjs remove    # our policy entry and the plugin removed
+```
+
+On Windows the policy is the per-user value `HKCU\SOFTWARE\Policies\ClaudeCode` → `Settings`, which
+needs no admin. The install **merges** into it, because that value is the user's whole per-user policy
+and `allowedChannelPlugins` replaces Anthropic's default channel list. When an admin policy is in charge,
+the install reports that and writes nothing. On Linux and macOS the policy is an admin file, so the install
+only reports.
+
+The launcher takes the plugin route only when the policy admits it, it is installed and enabled, and
+`~/.claude.json` no longer has the user-scope `aify-comms-channel` server: that server would start a second
+copy of the channel, racing the first for the same agent's runs. Anything less means the development
+channel, which still works. Re-running aify-comms' installer puts that server back, and the launcher
+falls back to the development route until `channel-install.mjs install` runs again.
+
 ## The contract
 
 Six inputs, read at launch. Every one falls back to the legacy `AIFY_*` name, so an existing fleet

@@ -1,0 +1,2 @@
+Added stdio MCP server aify-comms-channel with command: node /bridge/claude-channel.js to user config
+File modified: /root/witness/.claude.json

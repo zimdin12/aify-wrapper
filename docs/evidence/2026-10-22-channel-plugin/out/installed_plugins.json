@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "plugins": {
+    "aify-channel@aify-local": [
+      {
+        "scope": "user",
+        "installPath": "/root/witness/.claude/plugins/cache/aify-local/aify-channel/1.0.0",
+        "version": "1.0.0",
+        "installedAt": "2026-10-22T16:45:45.012Z",
+        "lastUpdated": "2026-10-22T16:45:45.012Z"
+      }
+    ]
+  }
+}

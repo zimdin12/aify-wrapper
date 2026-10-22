@@ -15,6 +15,7 @@
     "lib/",
     "bin/",
     "herdr-plugin/",
+    "plugins/",
     "docs/",
     "render.sh",
     "install.sh",
