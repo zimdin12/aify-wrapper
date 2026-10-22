@@ -84,6 +84,15 @@ try {
   check("pretty-printed-merged", prettyRead === pretty && prettyMerged.action === "write" && prettyAfter?.model === "y"
     && JSON.stringify(prettyAfter.permissions) === JSON.stringify(JSON.parse(pretty).permissions) && ours(prettyAfter), JSON.stringify(prettyAfter));
 
+  // 8b. a value named `settings` (another case) is the operator's policy: merged into, and its name kept.
+  reg("delete", KEY, "/v", "Settings", "/f");
+  reg("add", KEY, "/v", "settings", "/t", "REG_SZ", "/d", JSON.stringify({ model: "lower" }), "/f");
+  const lowerPlan = install();
+  const lowerAfter = (() => { try { return JSON.parse(readRegistrySettings(KEY)); } catch { return null; } })();
+  const lowerNames = reg("query", KEY).stdout.split(/\r?\n/).filter((l) => /REG_/.test(l)).map((l) => l.trim().split(/\s+/)[0]);
+  check("lowercase-name-merged-and-kept", lowerPlan.action === "write" && lowerAfter?.model === "lower" && ours(lowerAfter)
+    && JSON.stringify(lowerNames.filter((n) => n.toLowerCase() === "settings")) === JSON.stringify(["settings"]), `${JSON.stringify(lowerAfter)} names=${lowerNames.join(",")}`);
+
   // 9. the real admin key, read only: absent on this host is null, not unreadable.
   const hklm = policySources("win32", process.env)[0].key;
   check("real-hklm-read-absent", readRegistrySettings(hklm) === null, hklm);

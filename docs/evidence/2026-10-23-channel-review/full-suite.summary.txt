@@ -1,0 +1,9 @@
+# tests 958
+# pass 891
+# fail 1
+# cancelled 0
+# skipped 66
+npm-exit=1
+# the one failure: codex-words-refuse-only-a-codex-install.test.js "a server name codex cannot take does not stop a pi install"
+# ("wrote .../out/pi-aify" then "cp: cannot stat .../out/pi-aify"), 20.1 s; that file touches neither changed lib file.
+# Run alone afterwards, three times: pass 7 fail 0 each. UNATTRIBUTED.

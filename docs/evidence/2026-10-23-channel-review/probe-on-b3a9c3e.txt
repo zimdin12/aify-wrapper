@@ -1,0 +1,16 @@
+scratch key HKCU\Software\aify-test-74e92f52
+PASS absent-before
+PASS absent-written {"channelsEnabled":true,"allowedChannelPlugins":[{"marketplace":"aify-local","plugin":"aify-channel"}]}
+PASS idempotent
+PASS unicode-round-trip "{\"model\":\"x\",\"naïve ключ\":\"quote \\\" and 'single' and \\\\ back\",\"allowedChannelPlugins\":[{\"marketplace\":\"other\",\"plugin\":\"theirs\"}],\"channelsEnabled\":false}"
+PASS foreign-kept {"model":"x","naïve ключ":"quote \" and 'single' and \\ back","allowedChannelPlugins":[{"marketplace":"other","plugin":"theirs"},{"marketplace":"aify-local","plugin":"aify-channel"}],"channelsEnabled":true}
+PASS sibling-value-kept
+PASS malformed-refused the per-user policy was left as it is: the policy is not valid JSON: Expected property name or '}' in JSON at position 1 (line 1 column 2)
+PASS other-type-not-overwritten refuse: the per-user policy was left as it is: the policy could not be read: HKCU\Software\aify-test-74e92f52 Settings is not a plain string (REG_SZ)
+PASS admin-refused an admin policy (HKLM\SOFTWARE\Policies\ClaudeCode) is in charge and does not admit the channel; the per-user value would be ignored
+PASS pretty-printed-merged {"model":"y","permissions":{"deny":[["x"]]},"channelsEnabled":true,"allowedChannelPlugins":[{"marketplace":"aify-local","plugin":"aify-channel"}]}
+FAIL lowercase-name-merged-and-kept null names=Other,settings
+PASS real-hklm-read-absent HKLM\SOFTWARE\Policies\ClaudeCode
+PASS no-temp-file-left
+PASS cleanup present-before=true absent-after=true
+exit=1

@@ -1,0 +1,9 @@
+baseline (0, [])
+KILLED R1 Settings matched with case exit 1 | not ok 23 - the value name is matched as Windows matches it, without case; two spellings refuse
+KILLED R2 two spellings not refused exit 1 | not ok 23 - the value name is matched as Windows matches it, without case; two spellings refuse
+KILLED R3 script taken from anywhere in the arguments exit 1 | not ok 2 - a gated pathname only in a non-script argument is not what the server runs: no plugin route
+KILLED R4 a server's own route ignored exit 1 | not ok 3 - a legacy server that sets AIFY_CHANNEL_ROUTE itself would produce beside the plugin: no plugin route
+KILLED R5 the plugin server's own route ignored exit 1 | not ok 4 - the plugin's own server setting AIFY_CHANNEL_ROUTE is refused the same way
+KILLED R6 the route variable matched with case exit 1 | not ok 3 - a legacy server that sets AIFY_CHANNEL_ROUTE itself would produce beside the plugin: no plugin route
+restored 25171f0fe3cb25a6 b29a93b6a688c835
+exit=0
