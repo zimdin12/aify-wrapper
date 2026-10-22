@@ -1,0 +1,95 @@
+[?9001h[?1004h[?25l[2J[m[H]0;claude[?25h[?25l[?2004h[?2031h[?1004h[>0q[?u]7501;?[>4m[?2031l[?2004l[?2004h[?2031h[?1004h]0;✳ Claude Code[?1049h[2J[?1000h[?1002h[?1003h[?1006h[K[38;2;215;119;87m
+ ▐[48;2;0;0;0m▛███▛█[m   [1mClaude Code[22m [38;2;153;153;153mv2.1.307[K[38;2;215;119;87m
+▝▜[48;2;0;0;0m█████[49m█▀  [38;2;153;153;153mOpus 5.5 with high effort · Claude Max[K[38;2;215;119;87m
+ ▝▝   ▝▝   [38;2;153;153;153mC:\Docker\apg-ab-arms\ws-7f2a[K[m
+[K
+  [1mUpdated to latest. Got 4 features, 22 bugfixes, and 12 other changes.[22m[K
+  [38;2;153;153;153mcode.claude.com/docs/en/changelog for details[K[m
+[K[2m
+▎[22m [38;2;153;153;153mChannels (experimental) messages from plugin:aify-channel@aify-local inject directly in this session · restart without --channels to stop[K[m[2m
+▎[22m [38;2;255;193;7mplugin:aify-channel@aify-local · plugin not installed[K[m[2m
+▎[22m [38;2;255;193;7mplugin:aify-channel@aify-local · not on the approved channels allowlist[K[m
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[142X[38;2;153;153;153m[142C● high · /effort  [38;2;136;136;136m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[m❯ [2mTry "how do I log an error?"[22m[K[38;2;136;136;136m
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[m  [38;2;255;107;128m⏵⏵ bypass permissions on [38;2;153;153;153m(shift+tab to cycle) · ← for agents[K[46;3H[?25h[m[>0q[?25l[38;2;215;119;87m[48;2;0;0;0m[2;3H▟[3C▟[46;3H[?25h[m[?25l[38;2;215;119;87m[48;2;0;0;0m[2;3H█▟[2C█▟[46;3H[?25h[m[?25l[38;2;215;119;87m[48;2;0;0;0m[2;3H▟█[2C▟█[46;3H[?25h[m[?25l[38;2;215;119;87m[2;1H▗▟[48;2;0;0;0m▛[3C▛[49m[1C▄
+ [7C▘[46;3H[?25h[m[?25l[38;2;215;119;87m[2;1H ▐[m[6C [38;2;215;119;87m
+[line redacted before publication: an account usage notice with a usage percentage and a time zone]
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K
+[K[H[?25h[?1016l[>4m[?2031l[?2004l]0;
