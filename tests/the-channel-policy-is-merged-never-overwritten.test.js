@@ -6,14 +6,14 @@
 // the operator allows (operator's ruling, 2026-10-22). An admin source in charge makes the per-user value
 // ignored: the writer reports it and writes nothing. Removal takes out only our entry.
 //
-// Every adapter here runs against a recording fake: no test touches the real registry.
+// Every adapter here runs against a recording fake: no test touches the real registry. The registry reader and
+// writer have their own file, the-windows-policy-is-read-and-written-exactly.test.js.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { admitsOurChannel, CHANNEL_SPEC, effectivePolicy, OUR_ENTRY, parsePolicy, planInstall, policySources,
-  readRegistrySettings, readSource, removeRegistrySettings, withOurChannel, withoutOurChannel,
-  writeRegistrySettings } from "../lib/channel-policy.mjs";
+  readSource, removeRegistrySettings, withOurChannel, withoutOurChannel } from "../lib/channel-policy.mjs";
 
 const OTHER = { marketplace: "claude-plugins-official", plugin: "telegram" };
 const HKCU = "HKCU\\SOFTWARE\\Policies\\ClaudeCode";
@@ -71,8 +71,9 @@ const reader = (values) => (source) => values[source.key ?? source.path] ?? null
 
 test("on Windows an admin source outranks the per-user value", () => {
   const sources = policySources("win32");
-  assert.deepEqual(sources.map((s) => s.admin), [true, true, false]);
-  assert.equal(sources[2].key, HKCU);
+  assert.deepEqual(sources.map((s) => s.admin), [true, true, true, false]);
+  assert.deepEqual(sources.map((s) => s.kind), ["registry", "file", "dir", "registry"]);
+  assert.equal(sources[3].key, HKCU);
   const fileText = JSON.stringify({ model: "x" });
   const answer = effectivePolicy("win32", reader({ [sources[1].path]: fileText, [HKCU]: "{}" }));
   assert.deepEqual(answer.source, sources[1]);
@@ -116,28 +117,8 @@ function recorder(result) {
   return { calls, run };
 }
 
-test("the registry reader takes the Settings value out of reg's listing, and absent is null", () => {
-  const text = JSON.stringify({ allowedChannelPlugins: [OUR_ENTRY] });
-  const found = recorder({ status: 0, stdout: `\r\n${HKCU}\r\n    Settings    REG_SZ    ${text}\r\n\r\n` });
-  assert.equal(readRegistrySettings(HKCU, found.run), text);
-  assert.equal(found.calls[0].command, "reg");
-  assert.deepEqual(found.calls[0].args, ["query", `"${HKCU}"`, "/v", "Settings"]);
-  assert.equal(readRegistrySettings(HKCU, recorder({ status: 1, stdout: "" }).run), null);
-  assert.equal(readRegistrySettings(HKCU, recorder({ status: 0, stdout: "    Other    REG_SZ    x\r\n" }).run), null);
-  assert.equal(readSource({ kind: "registry", key: HKCU }, { run: found.run }), text);
-  assert.equal(readSource({ kind: "file", path: "/nope" }, { readFile: () => { throw new Error("ENOENT"); } }), null);
+test("a policy file is read as text, and the per-user value is deleted with reg (the registry reader and writer: the-windows-policy-is-read-and-written-exactly)", () => {
   assert.equal(readSource({ kind: "file", path: "/p" }, { readFile: (p) => `read ${p}` }), "read /p");
-});
-
-test("the registry writer passes the JSON in the environment, never on the command line", () => {
-  const text = JSON.stringify({ allowedChannelPlugins: [OUR_ENTRY], note: "it's \"quoted\"" });
-  const ok = recorder({ status: 0 });
-  assert.deepEqual(writeRegistrySettings(HKCU, text, ok.run), { ok: true });
-  const call = ok.calls[0];
-  assert.equal(call.options.env.AIFY_CHANNEL_POLICY, text);
-  assert.ok(!call.args.join(" ").includes("allowedChannelPlugins"), call.args.join(" "));
-  assert.match(call.args.join(" "), /HKCU:\\SOFTWARE\\Policies\\ClaudeCode/);
-  assert.equal(writeRegistrySettings(HKCU, text, recorder({ status: 1, stderr: "denied" }).run).reason, "denied");
   const removed = recorder({ status: 0 });
   assert.deepEqual(removeRegistrySettings(HKCU, removed.run), { ok: true });
   assert.deepEqual(removed.calls[0].args, ["delete", HKCU, "/v", "Settings", "/f"]);

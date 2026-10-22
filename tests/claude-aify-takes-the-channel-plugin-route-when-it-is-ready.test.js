@@ -31,14 +31,20 @@ const posix = (p) => p.split(String.fromCharCode(92)).join("/");
 const ROUTE_MODULES = Object.fromEntries(["channel-route-cli.mjs", "channel-route.mjs", "channel-policy.mjs", "main-module.mjs"]
   .map((name) => [`wrapper/lib/${name}`, fs.readFileSync(path.join(ROOT, "lib", name), "utf8")]));
 
-/** A reg.cmd that answers the per-user policy query with `policy` and finds nothing else. */
+/**
+ * A reg.cmd that answers `reg export` of the per-user policy key with `policy` (a .reg file, ASCII, as the reader
+ * accepts it without a BOM) and finds nothing else. `policy` must hold no cmd metacharacter.
+ */
 const regStub = (policy) => [
   "@echo off",
-  `if /I %2=="HKCU\\SOFTWARE\\Policies\\ClaudeCode" (`,
-  "  echo.",
-  `  echo     Settings    REG_SZ    ${policy}`,
+  `if /I "%1"=="export" if /I %2=="HKCU\\SOFTWARE\\Policies\\ClaudeCode" (`,
+  "  > %3 echo Windows Registry Editor Version 5.00",
+  "  >> %3 echo.",
+  "  >> %3 echo [HKEY_CURRENT_USER\\SOFTWARE\\Policies\\ClaudeCode]",
+  `  >> %3 echo "Settings"="${policy.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`,
   "  exit /b 0",
   ")",
+  "echo ERROR: The system was unable to find the specified registry key or value. 1>&2",
   "exit /b 1",
   "",
 ].join("\r\n");
