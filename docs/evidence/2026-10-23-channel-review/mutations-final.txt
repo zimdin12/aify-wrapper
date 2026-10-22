@@ -1,0 +1,22 @@
+baseline (0, [])
+KILLED S1 Settings matched with case exit 1 | not ok 23 - S1: the canonical Settings is read, a sibling name is not, and a case-varied non-string refuses with no write ; not ok 37 - the value name is matched as Windows matches it, without case; two spellings refuse
+KILLED S2 drop-ins do not answer for an admitting base exit 1 | not ok 24 - S2: an admitting base file with an overriding drop-in is not the base's policy: the install refuses ; not ok 25 - S2: an admitting base file with an unreadable drop-in directory refuses
+KILLED S2 empty HKLM read as absent exit 1 | not ok 26 - S2: an empty HKLM Settings is malformed admin policy, never absence; an empty file is no policy
+KILLED S3 a missing dev script still a provider exit 1 | not ok 28 - S3: a named record that cannot produce is refused with repair, not the development route ; not ok 31 - S3 helpers: the --mcp-config values, the strict provider, the development provider
+KILLED S3 a record with no command still a provider exit 1 | not ok 28 - S3: a named record that cannot produce is refused with repair, not the development route
+KILLED S3 a dev provider routed to the plugin still a provider exit 1 | not ok 28 - S3: a named record that cannot produce is refused with repair, not the development route
+KILLED S3 a path Claude expands read as a missing file exit 1 | not ok 29 - S3: a usable provider, or a form this launcher does not read, keeps the development route
+KILLED S3 an empty strict MCP input keeps dev exit 1 | not ok 22 - the launcher's own inputs: another service, or arguments that bring their own channels, keep the development route ; not ok 30 - S3: the caller's own --strict-mcp-config with no usable provider is refused; with one, or unreadable input, dev
+KILLED S4 script taken from anywhere in the arguments exit 1 | not ok 2 - a gated pathname only in a non-script argument is not what the server runs: no plugin route ; not ok 5 - a preceding old worker is what node runs, whatever gated path follows it
+KILLED S5 a consumer's own route ignored exit 1 | not ok 3 - a legacy server that sets another AIFY_CHANNEL_ROUTE itself would produce beside the plugin: no plugin route
+KILLED S5 the plugin server's own route ignored exit 1 | not ok 4 - the plugin's own server setting another AIFY_CHANNEL_ROUTE is refused the same way; the matching one is not
+KILLED S5 a matching route treated as a conflict exit 1 | not ok 3 - a legacy server that sets another AIFY_CHANNEL_ROUTE itself would produce beside the plugin: no plugin route ; not ok 4 - the plugin's own server setting another AIFY_CHANNEL_ROUTE is refused the same way; the matching one is not
+KILLED S6 extra manifest servers accepted exit 1 | not ok 33 - S6: a second consumer in the plugin's manifest, or a plugin .mcp.json, declines the plugin route
+KILLED S6 a plugin .mcp.json accepted exit 1 | not ok 33 - S6: a second consumer in the plugin's manifest, or a plugin .mcp.json, declines the plugin route
+KILLED S6 an unreadable file read as absent exit 1 | not ok 34 - S6: a present file that cannot be read is not absent: the plugin route is declined
+KILLED S6 an install for another scope accepted exit 1 | not ok 35 - S6: a plugin installed only for another scope, or disabled by a project or local setting, declines
+KILLED S6 project and local settings not read exit 1 | not ok 34 - S6: a present file that cannot be read is not absent: the plugin route is declined ; not ok 35 - S6: a plugin installed only for another scope, or disabled by a project or local setting, declines
+restored channel-route.mjs 80d103de55331c42
+restored channel-route-cli.mjs 4ae88e68e04ea946
+restored channel-policy.mjs 33f16d04a716bfca
+exit=0

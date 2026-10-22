@@ -1,0 +1,325 @@
+
+> aify-wrapper@0.9.3 test
+> node tests/run-in-a-temp-root.mjs tests/the-route-declines-what-it-cannot-resolve.test.js tests/a-channel-server-is-judged-by-what-it-runs.test.js
+
+TAP version 13
+# (node:47952) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Docker/aify-wrapper-wt-winproof/tests/a-channel-server-is-judged-by-what-it-runs.test.js is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to C:\\Docker\\aify-wrapper-wt-winproof\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: healthy: node running the gated script, with only its own service variables, takes the plugin route
+ok 1 - healthy: node running the gated script, with only its own service variables, takes the plugin route
+  ---
+  duration_ms: 1.8108
+  type: 'test'
+  ...
+# Subtest: a gated pathname only in a non-script argument is not what the server runs: no plugin route
+ok 2 - a gated pathname only in a non-script argument is not what the server runs: no plugin route
+  ---
+  duration_ms: 0.8903
+  type: 'test'
+  ...
+# Subtest: a legacy server that sets another AIFY_CHANNEL_ROUTE itself would produce beside the plugin: no plugin route
+not ok 3 - a legacy server that sets another AIFY_CHANNEL_ROUTE itself would produce beside the plugin: no plugin route
+  ---
+  duration_ms: 0.7417
+  type: 'test'
+  location: 'C:\\Docker\\aify-wrapper-wt-winproof\\tests\\a-channel-server-is-judged-by-what-it-runs.test.js:51:1'
+  failureType: 'testCodeFailure'
+  error: '{"AIFY_CHANNEL_ROUTE":"dev"}'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: 'the user server aify-comms-channel sets AIFY_CHANNEL_ROUTE itself, so the route this launcher exports does not reach it'
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Docker/aify-wrapper-wt-winproof/tests/a-channel-server-is-judged-by-what-it-runs.test.js:55:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: the plugin's own server setting another AIFY_CHANNEL_ROUTE is refused the same way; the matching one is not
+not ok 4 - the plugin's own server setting another AIFY_CHANNEL_ROUTE is refused the same way; the matching one is not
+  ---
+  duration_ms: 0.8235
+  type: 'test'
+  location: 'C:\\Docker\\aify-wrapper-wt-winproof\\tests\\a-channel-server-is-judged-by-what-it-runs.test.js:61:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly deep-equal:
+    + actual - expected
+    
+      {
+    +   reason: "the installed plugin's server sets AIFY_CHANNEL_ROUTE itself, so it would not follow the route; re-run channel-install.mjs install",
+    +   route: 'dev'
+    -   reason: '',
+    -   route: 'plugin'
+      }
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    route: 'plugin'
+    reason: ''
+  actual:
+    route: 'dev'
+    reason: "the installed plugin's server sets AIFY_CHANNEL_ROUTE itself, so it would not follow the route; re-run channel-install.mjs install"
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Docker/aify-wrapper-wt-winproof/tests/a-channel-server-is-judged-by-what-it-runs.test.js:66:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: a preceding old worker is what node runs, whatever gated path follows it
+ok 5 - a preceding old worker is what node runs, whatever gated path follows it
+  ---
+  duration_ms: 0.3045
+  type: 'test'
+  ...
+# Subtest: the entry script and the server's own route, read directly
+ok 6 - the entry script and the server's own route, read directly
+  ---
+  duration_ms: 0.1446
+  type: 'test'
+  ...
+# (node:60480) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Docker/aify-wrapper-wt-winproof/tests/the-route-declines-what-it-cannot-resolve.test.js is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to C:\\Docker\\aify-wrapper-wt-winproof\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: S1: the canonical Settings is read, a sibling name is not, and a case-varied non-string refuses with no write
+ok 7 - S1: the canonical Settings is read, a sibling name is not, and a case-varied non-string refuses with no write
+  ---
+  duration_ms: 1.7936
+  type: 'test'
+  ...
+# Subtest: S2: an admitting base file with an overriding drop-in is not the base's policy: the install refuses
+not ok 8 - S2: an admitting base file with an overriding drop-in is not the base's policy: the install refuses
+  ---
+  duration_ms: 0.5907
+  type: 'test'
+  location: 'C:\\Docker\\aify-wrapper-wt-winproof\\tests\\the-route-declines-what-it-cannot-resolve.test.js:54:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    'file' !== 'dir'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'dir'
+  actual: 'file'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Docker/aify-wrapper-wt-winproof/tests/the-route-declines-what-it-cannot-resolve.test.js:56:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: S2: an admitting base file with an unreadable drop-in directory refuses
+not ok 9 - S2: an admitting base file with an unreadable drop-in directory refuses
+  ---
+  duration_ms: 3.8353
+  type: 'test'
+  location: 'C:\\Docker\\aify-wrapper-wt-winproof\\tests\\the-route-declines-what-it-cannot-resolve.test.js:60:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The expression evaluated to a falsy value:
+    
+      assert.ok(effectivePolicy("win32", read, PF).text?.unreadable)
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Docker/aify-wrapper-wt-winproof/tests/the-route-declines-what-it-cannot-resolve.test.js:62:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: S2: an empty HKLM Settings is malformed admin policy, never absence; an empty file is no policy
+not ok 10 - S2: an empty HKLM Settings is malformed admin policy, never absence; an empty file is no policy
+  ---
+  duration_ms: 0.1415
+  type: 'test'
+  location: 'C:\\Docker\\aify-wrapper-wt-winproof\\tests\\the-route-declines-what-it-cannot-resolve.test.js:66:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of null (reading 'key')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Docker/aify-wrapper-wt-winproof/tests/the-route-declines-what-it-cannot-resolve.test.js:68:29)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: S2 positive: an admitting base file with no drop-ins is the admin policy, and nothing is written
+ok 11 - S2 positive: an admitting base file with no drop-ins is the admin policy, and nothing is written
+  ---
+  duration_ms: 0.2233
+  type: 'test'
+  ...
+# Subtest: S3: a named record that cannot produce is refused with repair, not the development route
+not ok 12 - S3: a named record that cannot produce is refused with repair, not the development route
+  ---
+  duration_ms: 0.7258
+  type: 'test'
+  location: 'C:\\Docker\\aify-wrapper-wt-winproof\\tests\\the-route-declines-what-it-cannot-resolve.test.js:93:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    its script is missing: {"route":"dev","reason":"the managed policy does not admit the aify-channel plugin"}
+    
+    'dev' !== 'none'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'none'
+  actual: 'dev'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Docker/aify-wrapper-wt-winproof/tests/the-route-declines-what-it-cannot-resolve.test.js:100:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: S3: a usable provider, or a form this launcher does not read, keeps the development route
+ok 13 - S3: a usable provider, or a form this launcher does not read, keeps the development route
+  ---
+  duration_ms: 0.2541
+  type: 'test'
+  ...
+# Subtest: S3: the caller's own --strict-mcp-config with no usable provider is refused; with one, or unreadable input, dev
+not ok 14 - S3: the caller's own --strict-mcp-config with no usable provider is refused; with one, or unreadable input, dev
+  ---
+  duration_ms: 0.4116
+  type: 'test'
+  location: 'C:\\Docker\\aify-wrapper-wt-winproof\\tests\\the-route-declines-what-it-cannot-resolve.test.js:111:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    'dev' !== 'none'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'none'
+  actual: 'dev'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Docker/aify-wrapper-wt-winproof/tests/the-route-declines-what-it-cannot-resolve.test.js:116:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: S6 healthy: the rendered shape on a readable machine takes the plugin route
+ok 15 - S6 healthy: the rendered shape on a readable machine takes the plugin route
+  ---
+  duration_ms: 0.8825
+  type: 'test'
+  ...
+# Subtest: S6: a second consumer in the plugin's manifest, or a plugin .mcp.json, declines the plugin route
+not ok 16 - S6: a second consumer in the plugin's manifest, or a plugin .mcp.json, declines the plugin route
+  ---
+  duration_ms: 0.5073
+  type: 'test'
+  location: 'C:\\Docker\\aify-wrapper-wt-winproof\\tests\\the-route-declines-what-it-cannot-resolve.test.js:146:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /exactly the one server/. Input:
+    
+    ''
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: ''
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Docker/aify-wrapper-wt-winproof/tests/the-route-declines-what-it-cannot-resolve.test.js:149:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: S6: a present file that cannot be read is not absent: the plugin route is declined
+not ok 17 - S6: a present file that cannot be read is not absent: the plugin route is declined
+  ---
+  duration_ms: 0.4075
+  type: 'test'
+  location: 'C:\\Docker\\aify-wrapper-wt-winproof\\tests\\the-route-declines-what-it-cannot-resolve.test.js:155:1'
+  failureType: 'testCodeFailure'
+  error: '\\h\\.claude.json: {"route":"plugin","reason":""}'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'plugin'
+  actual: 'plugin'
+  operator: 'notStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Docker/aify-wrapper-wt-winproof/tests/the-route-declines-what-it-cannot-resolve.test.js:159:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: S6: a plugin installed only for another scope, or disabled by a project or local setting, declines
+not ok 18 - S6: a plugin installed only for another scope, or disabled by a project or local setting, declines
+  ---
+  duration_ms: 0.2939
+  type: 'test'
+  location: 'C:\\Docker\\aify-wrapper-wt-winproof\\tests\\the-route-declines-what-it-cannot-resolve.test.js:164:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /another scope/. Input:
+    
+    ''
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: ''
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Docker/aify-wrapper-wt-winproof/tests/the-route-declines-what-it-cannot-resolve.test.js:167:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..18
+# tests 18
+# suites 0
+# pass 8
+# fail 10
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 523.6655
+npm-exit=1
