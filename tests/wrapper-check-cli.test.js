@@ -165,6 +165,37 @@ test("an UNUSABLE registry refuses rather than calling every launcher stale", ()
   }
 });
 
+test("--json answers in JSON when it refuses, too", () => {
+  // A refusal used to go to stderr only, so a `--json` reader got an empty stdout and an exit of 0 and
+  // could not tell a refusal from a crash. The exit contract is unchanged: only --strict exits 1.
+  const w = workspace();
+  try {
+    install(w, registryFor({ "aify-comms": { endpoint: NOWHERE, mcp: [] } }));
+    fs.writeFileSync(w.registry, "{not json");
+    for (const [extra, status] of [[[], 0], [["--strict"], 1]]) {
+      const res = runCheck(w, extra);
+      assert.equal(res.status, status, `${extra}: ${res.stderr}`);
+      const report = JSON.parse(res.stdout);
+      assert.equal(report.ok, false);
+      assert.match(report.summary, /registry .* is not usable/);
+      assert.ok(report.errors.some((e) => /not valid JSON/.test(e)), JSON.stringify(report.errors));
+      assert.deepEqual([report.current, report.stale, report.unknown], [[], [], []]);
+    }
+
+    const missing = spawnSync(
+      process.execPath,
+      [CHECK, "--dest", path.join(w.dir, "absent"), "--registry", w.registry, "--json"],
+      { encoding: "utf8", timeout: 60_000 },
+    );
+    assert.equal(missing.status, 0, missing.stderr);
+    const report = JSON.parse(missing.stdout);
+    assert.equal(report.ok, false);
+    assert.match(report.summary, /cannot read .*absent/);
+  } finally {
+    w.cleanup();
+  }
+});
+
 test("CONTRACT: the checker and the installer agree on where launchers go", () => {
   // The first version of this read the machine's real ~/.local/bin and failed on any host that had
   // never run an install -- a public repo whose suite only passes on the author's laptop is broken,

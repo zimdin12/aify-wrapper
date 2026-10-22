@@ -2,7 +2,7 @@
 // Are the launchers on this host still built from the registry this host has?
 //
 //   aify-wrapper-check              human-readable
-//   aify-wrapper-check --json       {ok, summary, current, stale, unknown}
+//   aify-wrapper-check --json       {ok, summary, current, stale, unknown}, plus errors when it refuses
 //   aify-wrapper-check --strict     exit 1 when anything is stale OR unreadable
 //   aify-wrapper-check --dest <dir> --registry <path>
 //
@@ -32,6 +32,20 @@ const REGISTRY = flag("--registry", join(homedir(), ".aify", "services.json"));
 const asJson = args.includes("--json");
 const strict = args.includes("--strict");
 
+/**
+ * Refuse to judge, and say why: on stderr, and under --json also as the report on stdout, so a JSON reader
+ * gets an answer rather than an empty stdout it cannot tell from a crash. Only --strict exits 1.
+ */
+function refuse(summary, errors = []) {
+  process.stderr.write(`${summary}${errors.length ? ":" : ""}\n`);
+  for (const problem of errors) process.stderr.write(`  - ${problem}\n`);
+  if (asJson) {
+    const report = { ok: false, current: [], stale: [], unknown: [], summary, errors };
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  }
+  process.exit(strict ? 1 : 0);
+}
+
 /** `<something>-aify`, which is the shape every launcher this package installs has. */
 const LAUNCHER = /-aify(\.[a-z0-9]+)?$/i;
 
@@ -51,8 +65,7 @@ try {
       }
     });
 } catch (error) {
-  process.stderr.write(`cannot read ${DEST}: ${error.code ?? error.message}\n`);
-  process.exit(strict ? 1 : 0);
+  refuse(`cannot read ${DEST}: ${error.code ?? error.message}`);
 }
 
 let registryText = "";
@@ -64,11 +77,9 @@ try {
 
 const parsed = parseRegistry(registryText);
 if (!parsed.ok) {
-  process.stderr.write(`registry ${REGISTRY} is not usable:\n`);
-  for (const problem of parsed.errors) process.stderr.write(`  - ${problem}\n`);
   // Refuse rather than compare against a guess: every launcher would read stale, which is a lie about
   // the launchers and hides the real problem, which is the registry.
-  process.exit(strict ? 1 : 0);
+  refuse(`registry ${REGISTRY} is not usable`, parsed.errors);
 }
 
 const result = stalenessOf({ launchers, registryFingerprint: fingerprint(parsed.registry) });
