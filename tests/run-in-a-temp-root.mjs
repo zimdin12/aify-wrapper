@@ -66,6 +66,20 @@ const inherited = withoutAgentSession(process.env);
 for (const name of Object.keys(inherited)) if (/^(AIFY_)?HERDR_/i.test(name)) delete inherited[name];
 const env = { ...inherited, TMPDIR: root, TEMP: root, TMP: root };
 
+// AND NOT THE OPERATOR'S HOME. The launchers, the checker and the helpers default to ~/.aify (registry, definitions,
+// leases, ledger), ~/.claude and ~/.codex, so a test that forgets to seal its child reads the operator's live state.
+// None does today (2026-10-22: a full run with a poisoned home and HERMES_HOME passed, and a watched empty home
+// received no file); this keeps the next one from depending on it. The sibling checkout is found under the real home,
+// so it is resolved first. The pointers below are the variables the code reads in place of a home default; HERMES_HOME is set
+// rather than removed because its Windows default is under LOCALAPPDATA, outside HOME.
+const home = path.join(root, 'home');
+fs.mkdirSync(home);
+const siblingEnv = path.join(os.homedir(), 'projects', 'aify-env');
+if (!env.AIFY_ENV_REPO && fs.existsSync(siblingEnv)) env.AIFY_ENV_REPO = siblingEnv;
+for (const name of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'CODEX_SESSIONS_DIR', 'AIFY_SERVICE_REGISTRY',
+  'AIFY_AGENT_DEFINITIONS_DIR', 'AIFY_AGENT_LEASE_DIR', 'XDG_CONFIG_HOME', 'XDG_STATE_HOME']) delete env[name];
+Object.assign(env, { HOME: home, USERPROFILE: home, HERMES_HOME: path.join(home, '.hermes') });
+
 // `npm test -- <file>...` runs only those files, under the same temp root and the same stripped session: running
 // one file with a bare `node --test` inherits the terminal's agent session and its TEMP, which is what this
 // runner exists to prevent. A named file that does not exist is refused rather than quietly running nothing.
