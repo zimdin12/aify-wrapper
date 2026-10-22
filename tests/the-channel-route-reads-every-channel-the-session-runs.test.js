@@ -106,7 +106,7 @@ test("a configuration present but unreadable: the development route, never a gue
 
 test("channel servers are found by name or by script; other servers are not", () => {
   assert.deepEqual(channelServers({ a: { command: "node", args: ["/x/claude-channel.js"] }, b: { command: "node", args: ["/x/server.js"] } }),
-    [{ name: "a", script: "/x/claude-channel.js", route: undefined }]);
+    [{ name: "a", entry: "/x/claude-channel.js", form: "node", script: "/x/claude-channel.js", route: undefined }]);
   assert.deepEqual(channelServers(undefined), []);
   assert.ok(samePath("C:\\Users\\A\\x", "c:/users/a/x/", "win32"));
   assert.ok(!samePath("C:/Users/A/x", "c:/users/a/x", "linux"));
@@ -125,7 +125,7 @@ test("on the machine: Claude's own files, CLAUDE_CONFIG_DIR honoured, the folder
     [path.join(home, ".claude.json")]: JSON.stringify({ mcpServers: JSON.parse(servers(entry(BRIDGE, USER_SCOPE_ENTRY))).mcpServers,
       projects: { [cwd]: { mcpServers: JSON.parse(servers(entry(OLD_BRIDGE, USER_SCOPE_ENTRY))).mcpServers } } }),
   };
-  const readFile = (file) => { if (file in files) return files[file]; throw new Error(`ENOENT ${file}`); };
+  const readFile = (file) => { if (file in files) return files[file]; throw Object.assign(new Error(`ENOENT ${file}`), { code: "ENOENT" }); };
   const policy = (source) => (source.admin ? withOurChannel("").text : null);
   const here = (over) => routeHere({ platform: "linux", home, env: {}, bridgeDir: BRIDGE, read: policy, readFile, ...over });
   assert.match(here({ cwd }).reason, /local server/, "the folder's local scope runs an old bridge");
@@ -139,7 +139,8 @@ test("the launcher's own inputs: another service, or arguments that bring their 
   assert.equal(routeFor({ service: "other", args: [], sessionConfig: "", here }).route, "dev");
   for (const arg of ["--mcp-config", "--mcp-config=/x", "--strict-mcp-config", "--channels", "--plugin-dir=/p", "--dangerously-load-development-channels"]) {
     assert.ok(namesItsOwnChannels(["-p", arg]), arg);
-    assert.equal(routeFor({ service: "aify-comms", args: [arg], sessionConfig: "", here }).route, "dev", arg);
+    // A bare --strict-mcp-config leaves the session no MCP server at all: refused (a-channel-server-is-judged-...).
+    assert.equal(routeFor({ service: "aify-comms", args: [arg], sessionConfig: "", here }).route, arg === "--strict-mcp-config" ? "none" : "dev", arg);
   }
   assert.ok(!namesItsOwnChannels(["do --channels-like things", "--model"]));
   let seen;

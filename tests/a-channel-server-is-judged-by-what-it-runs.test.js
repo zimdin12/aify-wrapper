@@ -48,19 +48,32 @@ test("a gated pathname only in a non-script argument is not what the server runs
   assert.equal(channelServers({ s: { command: "node", args: ["/x/other.js", "--note", at(USER_SCOPE_ENTRY)] } })[0]?.script, null);
 });
 
-test("a legacy server that sets AIFY_CHANNEL_ROUTE itself would produce beside the plugin: no plugin route", () => {
-  for (const env of [{ AIFY_CHANNEL_ROUTE: "dev" }, { aify_channel_route: "dev" }, { AIFY_CHANNEL_ROUTE: "" }, { AIFY_CHANNEL_ROUTE: "plugin" }]) {
+test("a legacy server that sets another AIFY_CHANNEL_ROUTE itself would produce beside the plugin: no plugin route", () => {
+  for (const env of [{ AIFY_CHANNEL_ROUTE: "dev" }, { aify_channel_route: "dev" }, { AIFY_CHANNEL_ROUTE: "" }]) {
     const decision = decideRoute(facts({ command: "node", args: [at(USER_SCOPE_ENTRY)], env }));
     assert.equal(decision.route, "dev", `${JSON.stringify(env)}: ${JSON.stringify(decision)}`);
-    assert.match(decision.reason, /sets AIFY_CHANNEL_ROUTE itself, so the route this launcher exports does not reach it/, JSON.stringify(env));
+    assert.match(decision.reason, /sets AIFY_CHANNEL_ROUTE=.* itself, so it would produce beside the plugin/, JSON.stringify(env));
   }
+  // Positive control: a route that matches the one taken changes nothing.
+  assert.deepEqual(decideRoute(facts({ command: "node", args: [at(USER_SCOPE_ENTRY)], env: { AIFY_CHANNEL_ROUTE: "plugin" } })), { route: "plugin", reason: "" });
 });
 
-test("the plugin's own server setting AIFY_CHANNEL_ROUTE is refused the same way", () => {
+test("the plugin's own server setting another AIFY_CHANNEL_ROUTE is refused the same way; the matching one is not", () => {
   const decision = decideRoute(facts({ command: "node", args: [at(USER_SCOPE_ENTRY)] },
     { command: "node", args: [at(PLUGIN_ENTRY)], env: { AIFY_CHANNEL_ROUTE: "dev" } }));
   assert.equal(decision.route, "dev", JSON.stringify(decision));
   assert.match(decision.reason, /sets AIFY_CHANNEL_ROUTE itself/);
+  assert.deepEqual(decideRoute(facts({ command: "node", args: [at(USER_SCOPE_ENTRY)] },
+    { command: "node", args: [at(PLUGIN_ENTRY)], env: { AIFY_CHANNEL_ROUTE: "plugin" } })), { route: "plugin", reason: "" });
+});
+
+test("a preceding old worker is what node runs, whatever gated path follows it", () => {
+  const OLD = path.join("/old", "mcp", "stdio", USER_SCOPE_ENTRY);
+  const files = { ...FILES, [OLD]: "// an old, ungated worker\n" };
+  for (const first of ["/x/other.js", OLD]) {
+    const decision = decideRoute({ ...facts({ command: "node", args: [first, at(USER_SCOPE_ENTRY)] }), readScript: (f) => files[f] ?? null });
+    assert.equal(decision.route, "dev", `${first}: ${JSON.stringify(decision)}`);
+  }
 });
 
 test("the entry script and the server's own route, read directly", () => {
