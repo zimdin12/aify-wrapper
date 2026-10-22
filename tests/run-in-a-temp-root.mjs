@@ -64,21 +64,32 @@ const inherited = withoutAgentSession(process.env);
 // AIFY_HERDR_* TOO: the launchers' own Herdr wiring (the ledger, the invocation, the isolated marker) leaked
 // through a HERDR_-only filter (found 2026-10-11 running files from an agent pane).
 for (const name of Object.keys(inherited)) if (/^(AIFY_)?HERDR_/i.test(name)) delete inherited[name];
-const env = { ...inherited, TMPDIR: root, TEMP: root, TMP: root };
+const env = { ...inherited };
+const sealed = { TMPDIR: root, TEMP: root, TMP: root };
 
 // AND NOT THE OPERATOR'S HOME. The launchers, the checker and the helpers default to ~/.aify (registry, definitions,
 // leases, ledger), ~/.claude and ~/.codex, so a test that forgets to seal its child reads the operator's live state.
 // None does today (2026-10-22: a full run with a poisoned home and HERMES_HOME passed, and a watched empty home
 // received no file); this keeps the next one from depending on it. The sibling checkout is found under the real home,
 // so it is resolved first. The pointers below are the variables the code reads in place of a home default; HERMES_HOME is set
-// rather than removed because its Windows default is under LOCALAPPDATA, outside HOME.
+// rather than removed, and LOCALAPPDATA and APPDATA are sealed too, because hermes' Windows root (hermesRoots) and
+// herdr's visible bin are under LOCALAPPDATA, outside HOME.
 const home = path.join(root, 'home');
 fs.mkdirSync(home);
 const siblingEnv = path.join(os.homedir(), 'projects', 'aify-env');
 if (!env.AIFY_ENV_REPO && fs.existsSync(siblingEnv)) env.AIFY_ENV_REPO = siblingEnv;
-for (const name of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'CODEX_SESSIONS_DIR', 'AIFY_SERVICE_REGISTRY',
-  'AIFY_AGENT_DEFINITIONS_DIR', 'AIFY_AGENT_LEASE_DIR', 'XDG_CONFIG_HOME', 'XDG_STATE_HOME']) delete env[name];
-Object.assign(env, { HOME: home, USERPROFILE: home, HERMES_HOME: path.join(home, '.hermes') });
+Object.assign(sealed, {
+  HOME: home, USERPROFILE: home, HERMES_HOME: path.join(home, '.hermes'),
+  LOCALAPPDATA: path.join(home, 'AppData', 'Local'), APPDATA: path.join(home, 'AppData', 'Roaming'),
+});
+for (const dir of [sealed.LOCALAPPDATA, sealed.APPDATA]) fs.mkdirSync(dir, { recursive: true });
+const overrides = ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'CODEX_SESSIONS_DIR', 'AIFY_SERVICE_REGISTRY',
+  'AIFY_AGENT_DEFINITIONS_DIR', 'AIFY_AGENT_LEASE_DIR', 'XDG_CONFIG_HOME', 'XDG_STATE_HOME'];
+// IN EVERY SPELLING. Windows reads environment names without regard to case, so an inherited `claude_config_dir` is the
+// child's CLAUDE_CONFIG_DIR, and a child handed `userprofile` beside `USERPROFILE` may read either.
+const dropped = new Set([...overrides, ...Object.keys(sealed)].map((name) => name.toUpperCase()));
+for (const name of Object.keys(env)) if (dropped.has(name.toUpperCase())) delete env[name];
+Object.assign(env, sealed);
 
 // `npm test -- <file>...` runs only those files, under the same temp root and the same stripped session: running
 // one file with a bare `node --test` inherits the terminal's agent session and its TEMP, which is what this
