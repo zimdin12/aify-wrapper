@@ -1,0 +1,9 @@
+# tests 952
+# suites 0
+# pass 886
+# fail 0
+# cancelled 0
+# skipped 66
+# todo 0
+# duration_ms 744456.6421
+npm-exit=0
