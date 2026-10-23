@@ -26,7 +26,7 @@ const facts = (server, manifestServer = { command: "node", args: [at(PLUGIN_ENTR
   policyText: withOurChannel("").text,
   installedText: JSON.stringify({ plugins: { [PLUGIN_ID]: [{ scope: "user", installPath: "/cache" }] } }),
   settingsText: "{}",
-  manifestText: JSON.stringify({ mcpServers: { [CHANNEL_SERVER]: manifestServer } }),
+  manifestText: JSON.stringify({ name: "aify-channel", mcpServers: { [CHANNEL_SERVER]: manifestServer } }),
   readScript: (file) => FILES[file] ?? null,
   configs: [user(server)],
 });

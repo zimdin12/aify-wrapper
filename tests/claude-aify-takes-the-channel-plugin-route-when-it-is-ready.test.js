@@ -70,7 +70,8 @@ function run(files, { args = ["--safe", "do x"], env = {} } = {}) {
   const copy = path.join(keep, "mcp.json");
   const result = launch("claude", args, {
     files,
-    env: { ...(process.env.ComSpec ? { ComSpec: process.env.ComSpec } : {}), ...env },
+    // A known Program Files holding no ClaudeCode admin policy: an unknown one would decline the plugin route (CR5).
+    env: { ...(process.env.ComSpec ? { ComSpec: process.env.ComSpec } : {}), ProgramFiles: path.join(keep, "no-program-files"), ...env },
     edit: (text) => text.replace("  # Strict mode (AIFY_CLAUDE_STRICT_MCP=1): only the config above is visible",
       `  cp "$AIFY_MCP_CONFIG" "${posix(copy)}"\n  # Strict mode (AIFY_CLAUDE_STRICT_MCP=1): only the config above is visible`),
   });
@@ -107,6 +108,17 @@ test("ready: --channels with the plugin, the route and the endpoint exported for
   assert.equal(started.AIFY_CHANNEL_ROUTE, "plugin");
   assert.equal(started.AIFY_SERVER_URL, "http://127.0.0.2:1");
   assert.equal(started.CLAUDE_MCP_SERVER_URL, "http://127.0.0.2:1");
+});
+
+test("strict mode on a bridge without claude-channel.js: refused with the repair, and Claude never starts", () => {
+  const partial = { ...ROUTE_MODULES, "bridge/claude-channel-plugin.mjs": GATED_BRIDGE["bridge/claude-channel-plugin.mjs"], ...userScopeServer() };
+  const { run: r, args } = run(partial, { env: { AIFY_CLAUDE_STRICT_MCP: "1" } });
+  assert.equal(r.status, 78, r.stderr);
+  assert.match(r.stderr, /strict mode runs .*claude-channel\.js, which is missing/);
+  assert.deepEqual(args, [], "claude was started");
+  const healthy = run({ ...ROUTE_MODULES, ...GATED_BRIDGE, ...userScopeServer() }, { env: { AIFY_CLAUDE_STRICT_MCP: "1" } });
+  assert.equal(healthy.run.status, 0, healthy.run.stderr);
+  assert.deepEqual(healthy.args.slice(0, 2), DEV, "the same strict launch with the script keeps the development channel");
 });
 
 for (const [name, files, opts] of [

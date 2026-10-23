@@ -36,7 +36,7 @@ const ready = (over = {}) => ({
   policyText: withOurChannel("").text,
   installedText: JSON.stringify({ plugins: { [PLUGIN_ID]: [{ scope: "user", installPath: "/cache" }] } }),
   settingsText: "{}",
-  manifestText: JSON.stringify({ mcpServers: { [CHANNEL_SERVER]: { command: "node", args: [entry(BRIDGE, PLUGIN_ENTRY)] } } }),
+  manifestText: JSON.stringify({ name: "aify-channel", mcpServers: { [CHANNEL_SERVER]: { command: "node", args: [entry(BRIDGE, PLUGIN_ENTRY)] } } }),
   readScript: reader({ ...NEW, ...OLD }),
   configs: [user(servers(entry(BRIDGE, USER_SCOPE_ENTRY)))],
   ...over,
@@ -63,7 +63,7 @@ for (const [name, over, said] of [
   ["no policy", { policyText: null }, /policy/],
   ["not installed", { installedText: null }, /not installed/],
   ["disabled", { settingsText: JSON.stringify({ enabledPlugins: { [PLUGIN_ID]: false } }) }, /disabled/],
-  ["the plugin runs another bridge", { manifestText: JSON.stringify({ mcpServers: { [CHANNEL_SERVER]: { command: "node", args: [entry(OLD_BRIDGE, PLUGIN_ENTRY)] } } }) }, /does not run/],
+  ["the plugin runs another bridge", { manifestText: JSON.stringify({ name: "aify-channel", mcpServers: { [CHANNEL_SERVER]: { command: "node", args: [entry(OLD_BRIDGE, PLUGIN_ENTRY)] } } }) }, /does not run/],
   ["a partial copy: the plugin entry without a gated claude-channel.js", { readScript: reader({ [entry(BRIDGE, PLUGIN_ENTRY)]: ENTRY, [entry(BRIDGE, USER_SCOPE_ENTRY)]: "old" }) }, /claude-channel\.js does not declare/],
   ["a downgrade: no plugin entry at all", { readScript: reader({ [entry(BRIDGE, USER_SCOPE_ENTRY)]: GATED }) }, /claude-channel-plugin\.mjs is missing/],
   ["a gate version this launcher does not know", { readScript: reader({ [entry(BRIDGE, PLUGIN_ENTRY)]: ENTRY, [entry(BRIDGE, USER_SCOPE_ENTRY)]: "export const CHANNEL_PRODUCER_GATE = 2;" }) }, /declare producer gate 1/],
@@ -106,7 +106,7 @@ test("a configuration present but unreadable: the development route, never a gue
 
 test("channel servers are found by name or by script; other servers are not", () => {
   assert.deepEqual(channelServers({ a: { command: "node", args: ["/x/claude-channel.js"] }, b: { command: "node", args: ["/x/server.js"] } }),
-    [{ name: "a", entry: "/x/claude-channel.js", form: "node", script: "/x/claude-channel.js", route: undefined }]);
+    [{ name: "a", entry: "/x/claude-channel.js", form: "node", script: "/x/claude-channel.js", role: "user", route: undefined, ambiguous: false }]);
   assert.deepEqual(channelServers(undefined), []);
   assert.ok(samePath("C:\\Users\\A\\x", "c:/users/a/x/", "win32"));
   assert.ok(!samePath("C:/Users/A/x", "c:/users/a/x", "linux"));

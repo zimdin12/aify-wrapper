@@ -29,17 +29,51 @@ test("S1: the canonical Settings is read, a sibling name is not, and a case-vari
   const dword = settingsFromRegExport(exportText(HEADER, `"settings"=dword:00000001`), HKCU);
   assert.ok(dword?.unreadable, JSON.stringify(dword));
   const writes = [];
+  // A known Program Files holding no admin policy, so the refusal reached is the DWORD's, never the missing location's.
   const result = installChannel({
-    bridgeDir: "/b", platform: "win32", home: "/h",
-    read: (s) => (s.key === HKCU ? dword : s.kind === "unknown" ? null : null),
+    bridgeDir: "/b", platform: "win32", home: "/h", env: PF,
+    read: (s) => (s.key === HKCU ? dword : null),
     write: (...args) => { writes.push(args); return { ok: true }; },
     readScript: (f) => (f.endsWith(PLUGIN_ENTRY) ? "import" : "export const CHANNEL_PRODUCER_GATE = 1;\n"),
     writeFiles: () => { throw new Error("must not render"); }, claude: () => { throw new Error("must not run claude"); },
   });
   assert.equal(result.ok, false);
-  // Without ProgramFiles the admin file's location is unknown and the install refuses earlier, which is also no write.
-  if (process.env.ProgramFiles) assert.match(result.reason, /not a plain string/);
+  assert.match(result.reason, /not a plain string/);
   assert.deepEqual(writes, [], "a refusal records no write");
+  // The environment it is given decides where admin policy lives: with none, the location is unknown and it refuses
+  // there instead, also with no write. (Windows hands every process a ProgramFiles, so only `env` can say none.)
+  const unknown = installChannel({
+    bridgeDir: "/b", platform: "win32", home: "/h", env: {},
+    read: (s) => (s.key === HKCU ? dword : null),
+    write: (...args) => { writes.push(args); return { ok: true }; },
+    readScript: (f) => (f.endsWith(PLUGIN_ENTRY) ? "import" : "export const CHANNEL_PRODUCER_GATE = 1;\n"),
+    writeFiles: () => { throw new Error("must not render"); }, claude: () => { throw new Error("must not run claude"); },
+  });
+  assert.match(unknown.reason, /cannot tell whether an admin policy exists/);
+  assert.deepEqual(writes, [], "neither refusal records a write");
+});
+
+test("S1 history: a case-varied Settings with foreign content, beside a sibling value, is read, merged and written whole", () => {
+  const foreign = JSON.stringify({ permissions: { deny: ["Bash(rm:*)"] }, allowedChannelPlugins: [{ marketplace: "corp", plugin: "x" }] });
+  const exported = exportText(HEADER, `"settings"=${JSON.stringify(foreign)}`, `"SettingsBackup"="{}"`);
+  const before = settingsFromRegExport(exported, HKCU);
+  assert.equal(before, foreign, "the lowercase spelling is the Settings value, the sibling is not");
+  let stored = before;
+  const writes = [];
+  const result = installChannel({
+    bridgeDir: "/b", platform: "win32", home: "/h", env: PF,
+    read: (s) => (s.key === HKCU ? stored : null),
+    write: (key, text) => { writes.push([key, text]); stored = text; return { ok: true }; },
+    readScript: (f) => (f.endsWith(PLUGIN_ENTRY) ? "import" : "export const CHANNEL_PRODUCER_GATE = 1;\n"),
+    writeFiles: () => {}, claude: () => ({ ok: true, out: "" }), route: () => ({ route: "plugin", reason: "" }),
+  });
+  assert.equal(result.ok, true, result.reason);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0][0], HKCU, "only the per-user key is written");
+  const merged = JSON.parse(writes[0][1]);
+  assert.deepEqual(merged.permissions, { deny: ["Bash(rm:*)"] }, "foreign policy content is kept");
+  assert.ok(merged.allowedChannelPlugins.some((e) => e.marketplace === "corp"), "a foreign allowlist entry is kept");
+  assert.ok(merged.allowedChannelPlugins.some((e) => e.plugin === "aify-channel"), "ours is added");
 });
 
 // ---- S2: the admin source Claude applies, composed and present by its own rules ----
@@ -150,7 +184,7 @@ const machine = (over = {}) => ({
   [at(PLUGIN_ENTRY)]: 'import { runChannel } from "./claude-channel.js";\n',
   [at(USER_SCOPE_ENTRY)]: GATED,
   [path.join(home, ".claude", "plugins", "installed_plugins.json")]: JSON.stringify({ plugins: { [PLUGIN_ID]: [{ scope: "user", installPath: CACHE }] } }),
-  [path.join(CACHE, ".claude-plugin", "plugin.json")]: JSON.stringify({ mcpServers: { [CHANNEL_SERVER]: { command: "node", args: [at(PLUGIN_ENTRY)] } } }),
+  [path.join(CACHE, ".claude-plugin", "plugin.json")]: JSON.stringify({ name: "aify-channel", mcpServers: { [CHANNEL_SERVER]: { command: "node", args: [at(PLUGIN_ENTRY)] } } }),
   [path.join(home, ".claude.json")]: JSON.stringify({ mcpServers: { [CHANNEL_SERVER]: { command: "node", args: [at(USER_SCOPE_ENTRY)] } } }),
   ...over,
 });
@@ -159,12 +193,25 @@ const hereOn = (files, denied = []) => routeHere({
   readFile: (f) => (denied.includes(f) ? EACCES() : f in files ? files[f] : ENOENT()),
 });
 
+test("S2 histories through routeHere: an admitting base with a drop-in declines the plugin route; with none it is taken", () => {
+  const files = machine();
+  const route = (dropIns) => routeHere({
+    platform: "linux", home, env: {}, cwd, bridgeDir: BRIDGE, read: sourcesRead({ base: ADMITS, dropIns }),
+    readFile: (f) => (f in files ? files[f] : ENOENT()),
+  });
+  const mixed = route(() => ["20-channels-off.json"]);
+  assert.notEqual(mixed.route, "plugin", JSON.stringify(mixed));
+  assert.match(mixed.reason, /managed policy/);
+  assert.deepEqual(route(() => ["notes.txt"]), { route: "plugin", reason: "" });
+  assert.deepEqual(route(null), { route: "plugin", reason: "" });
+});
+
 test("S6 healthy: the rendered shape on a readable machine takes the plugin route", () => {
   assert.deepEqual(hereOn(machine()), { route: "plugin", reason: "" });
 });
 
 test("S6: a second consumer in the plugin's manifest, or a plugin .mcp.json, declines the plugin route", () => {
-  const extra = machine({ [path.join(CACHE, ".claude-plugin", "plugin.json")]: JSON.stringify({ mcpServers: {
+  const extra = machine({ [path.join(CACHE, ".claude-plugin", "plugin.json")]: JSON.stringify({ name: "aify-channel", mcpServers: {
     [CHANNEL_SERVER]: { command: "node", args: [at(PLUGIN_ENTRY)] }, old: { command: "node", args: ["/old/claude-channel.js"] } } }) });
   assert.match(hereOn(extra).reason, /exactly the one server/);
   const mcp = machine({ [path.join(CACHE, ".mcp.json")]: JSON.stringify({ mcpServers: {} }) });

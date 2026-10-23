@@ -690,6 +690,10 @@ if [ "${AIFY_CLAUDE_STRICT_MCP:-0}" != "1" ]; then
     node "$AIFY_WRAPPER_DIR_FWD/lib/channel-route-cli.mjs" "${CLAUDE_ARGS[@]}" 2>/dev/null)" || _aify_route_text=dev
   AIFY_CHANNEL_ROUTE="$(printf '%s\n' "$_aify_route_text" | sed -n 1p)"
   AIFY_CHANNEL_REASON="$(printf '%s\n' "$_aify_route_text" | sed -n 2p)"
+elif [ ! -r "$AIFY_BRIDGE_DIR_FWD/claude-channel.js" ]; then
+  # Strict mode writes its own channel server below, running this bridge's claude-channel.js: without it, deaf.
+  AIFY_CHANNEL_ROUTE=none
+  AIFY_CHANNEL_REASON="strict mode runs $AIFY_BRIDGE_DIR_FWD/claude-channel.js, which is missing"
 fi
 case "$AIFY_CHANNEL_ROUTE" in
   plugin)
