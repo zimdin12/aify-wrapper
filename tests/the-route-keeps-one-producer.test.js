@@ -173,3 +173,15 @@ test("the role, producer and route helpers say what aify-comms' producer gate do
   assert.deepEqual(ownRoutes({ env: { aify_channel_route: "plugin", AIFY_CHANNEL_ROUTE: "dev", OTHER: "x" } }), ["plugin", "dev"]);
   assert.equal(devConflict([], { installedText: null, manifestText: null }), "", "nothing installed, nothing configured: no conflict");
 });
+
+test("CR1: an unreadable configuration still never leaves the installed plugin producing beside the development channel", () => {
+  const unreadableProject = { scope: "project", text: { unreadable: "EACCES" }, servers: (p) => p.mcpServers };
+  const split = decideRoute(facts({
+    configs: [scope("user", { [CHANNEL_SERVER]: legacy({ AIFY_CHANNEL_ROUTE: "dev" }) }), unreadableProject],
+    manifestText: manifest({ command: "node", args: [at(BRIDGE, PLUGIN_ENTRY)], env: { AIFY_CHANNEL_ROUTE: "plugin" } }),
+  }));
+  assert.equal(split.route, "none", JSON.stringify(split));
+  assert.match(split.reason, /would produce beside the development channel/);
+  const plain = decideRoute(facts({ configs: [scope("user", { [CHANNEL_SERVER]: legacy() }), unreadableProject] }));
+  assert.equal(plain.route, "dev", `no known conflicting plugin keeps the accepted default: ${JSON.stringify(plain)}`);
+});
