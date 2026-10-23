@@ -1,0 +1,11 @@
+npm exit=1
+# tests 988
+# pass 916
+# fail 6
+# skipped 66
+not ok 374 - no export is named by no test
+not ok 804 - strict mode is untouched: an opted-in session service is not a strict one
+not ok 853 - a host that opted NOTHING in gets exactly the two servers it gets today
+not ok 854 - an opted-in service is carried, with ITS endpoint in ITS declared env names
+not ok 855 - the comms pair still resolves its endpoint at LAUNCH, not from the registry
+not ok 856 - the emitted config is valid JSON even when an opted-in path is hostile

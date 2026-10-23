@@ -1,0 +1,2 @@
+    998     941 node /bridges/gate-inverted/claude-channel.js
+    999     941 node /bridges/gate-inverted/claude-channel-plugin.mjs

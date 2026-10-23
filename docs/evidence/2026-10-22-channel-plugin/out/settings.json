@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "aify-local": {
+      "source": {
+        "source": "directory",
+        "path": "/tmp/aify-local"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "aify-channel@aify-local": true
+  }
+}

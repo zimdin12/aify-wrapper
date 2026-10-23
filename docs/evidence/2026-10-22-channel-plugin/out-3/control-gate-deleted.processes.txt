@@ -1,0 +1,2 @@
+    759     703 node /bridges/gate-deleted/claude-channel.js
+    760     703 node /bridges/gate-deleted/claude-channel-plugin.mjs

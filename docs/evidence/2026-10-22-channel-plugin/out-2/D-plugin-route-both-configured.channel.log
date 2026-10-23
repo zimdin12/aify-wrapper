@@ -1,0 +1,10 @@
+2026-10-22T16:48:52.106Z [user-scope] started pid=313 ppid=250 parent="claude --channels plugin:aify-channel@aify-local" AIFY_CHANNEL_ROUTE=plugin AIFY_SERVER_URL=http://endpoint.witness:1
+2026-10-22T16:48:52.107Z [plugin] started pid=314 ppid=250 parent="claude --channels plugin:aify-channel@aify-local" AIFY_CHANNEL_ROUTE=plugin AIFY_SERVER_URL=http://endpoint.witness:1
+2026-10-22T16:48:52.108Z [user-scope] in server/discover
+2026-10-22T16:48:52.109Z [plugin] in server/discover
+2026-10-22T16:48:52.127Z [user-scope] in initialize
+2026-10-22T16:48:52.127Z [plugin] in initialize
+2026-10-22T16:48:52.146Z [user-scope] in notifications/initialized
+2026-10-22T16:48:52.146Z [user-scope] inert: not this route's producer
+2026-10-22T16:48:52.161Z [plugin] in notifications/initialized
+2026-10-22T16:48:57.150Z [plugin] pushed the witness event

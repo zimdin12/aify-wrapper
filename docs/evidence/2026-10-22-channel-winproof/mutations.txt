@@ -1,0 +1,11 @@
+baseline 9c87ea9cdd2f0ca9 (0, [])
+KILLED M1 writer replaces the key (New-Item -Force) exit 1 | not ok 18 - the registry writer opens the key without replacing it, and passes the key and the JSON in the environment
+KILLED M2 every export failure read as absent exit 1 | not ok 16 - the registry reader: a missing key is absent; any other failure is unreadable, never absent
+KILLED M3 a Settings of another type read as absent exit 1 | not ok 14 - a Settings value of another type, or text the parser cannot read, is unreadable and refuses the install
+KILLED M4 escapes not decoded exit 1 | not ok 12 - the export parser returns the Settings string exactly: unicode, quotes, backslashes, newlines ; not ok 15 - the registry reader exports the key and decodes UTF-16, and removes its temporary file
+KILLED M5 an unreadable admin file read as absent exit 1 | not ok 17 - an admin file that exists but cannot be read is unreadable, not absent
+KILLED M6 parsePolicy does not name an unreadable source exit 1 | not ok 14 - a Settings value of another type, or text the parser cannot read, is unreadable and refuses the install
+KILLED M7 drop-in policy files read as absent exit 1 | not ok 20 - an admin drop-in directory holding policy files is present: the install refuses rather than write a value Claude ignores
+KILLED M8 the drop-in directory not an admin source exit 1 | not ok 7 - on Windows an admin source outranks the per-user value ; not ok 20 - an admin drop-in directory holding policy files is present: the install refuses rather than write a value Claude ignores
+restored True
+exit=0

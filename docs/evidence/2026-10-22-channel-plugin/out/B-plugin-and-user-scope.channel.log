@@ -1,0 +1,5 @@
+2026-10-22T16:46:19.457Z [user-scope] started pid=458 ppid=401 parent="claude --channels plugin:aify-channel@aify-local" AIFY_CHANNEL_ROUTE=B-plugin-and-user-scope AIFY_SERVER_URL=http://endpoint.witness:1
+2026-10-22T16:46:19.459Z [user-scope] in server/discover
+2026-10-22T16:46:19.510Z [user-scope] in initialize
+2026-10-22T16:46:19.532Z [user-scope] in notifications/initialized
+2026-10-22T16:46:24.536Z [user-scope] pushed the witness event

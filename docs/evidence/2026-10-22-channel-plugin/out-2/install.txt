@@ -1,0 +1,4 @@
+Adding marketplace…✔ Successfully added marketplace: aify-local (declared in user settings)
+Installing plugin "aify-channel@aify-local"...✔ Successfully installed plugin: aify-channel@aify-local (scope: user)
+Added stdio MCP server aify-comms-channel with command: node /bridge/claude-channel.js to user config
+File modified: /root/witness/.claude.json

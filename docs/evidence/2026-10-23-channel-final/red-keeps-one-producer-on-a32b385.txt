@@ -1,0 +1,49 @@
+not ok 1 - CR1: legacy server routed dev by its own env and the plugin's server routed plugin: refused, not dev with two producers
+ok 2 - CR1 healthy: no overrides takes the plugin route; both consumers routed dev keep the legacy producer alone
+not ok 3 - CR1: a configured server running the plugin's entry is a plugin producer, wherever it lives
+not ok 4 - CR1: an AIFY_CHANNEL_ROUTE spelled twice with different values is refused, not guessed
+not ok 5 - CR2: a named record running the plugin's entry is no development provider; claude-channel.js in its place is
+not ok 6 - CR2: a local record replaces the user record of the same name: a missing local script is no provider
+not ok 7 - CR3: a provider named in disabledMcpServers is disabled; removing the entry is the control
+not ok 8 - CR3: a project setting that disables a server that may be the plugin's declines the plugin route
+not ok 9 - CR4: an unreadable plugin entry is not a ready one, even beside a gated claude-channel.js
+not ok 10 - CR4: a manifest without the rendered name is not the one this package renders
+not ok 11 - CR4: a settings file present but not a JSON object declines; {} and an explicit false are the controls
+not ok 12 - CR5: unknown Program Files declines the plugin route even with an admitting per-user policy
+ok 13 - devProvider keeps the accepted default for forms this launcher does not read
+# tests 13
+# pass 2
+# fail 11
+not ok 1 - CR1: legacy server routed dev by its own env and the plugin's server routed plugin: refused, not dev with two producers
+    error: |-
+      {"route":"dev","reason":"the user server aify-comms-channel sets AIFY_CHANNEL_ROUTE=dev itself, so it would produce beside the plugin"}
+not ok 3 - CR1: a configured server running the plugin's entry is a plugin producer, wherever it lives
+    error: '\\other\\mcp\\stdio: {"route":"plugin","reason":""}'
+    code: 'ERR_ASSERTION'
+not ok 4 - CR1: an AIFY_CHANNEL_ROUTE spelled twice with different values is refused, not guessed
+    error: '{"route":"plugin","reason":""}'
+    code: 'ERR_ASSERTION'
+not ok 5 - CR2: a named record running the plugin's entry is no development provider; claude-channel.js in its place is
+    error: |-
+      {"route":"dev","reason":"the managed policy does not admit the aify-channel plugin"}
+not ok 6 - CR2: a local record replaces the user record of the same name: a missing local script is no provider
+    error: |-
+      {"route":"dev","reason":"the managed policy does not admit the aify-channel plugin"}
+not ok 7 - CR3: a provider named in disabledMcpServers is disabled; removing the entry is the control
+    error: |-
+      {"route":"dev","reason":"the managed policy does not admit the aify-channel plugin"}
+not ok 8 - CR3: a project setting that disables a server that may be the plugin's declines the plugin route
+    error: '{"route":"plugin","reason":""}'
+    code: 'ERR_ASSERTION'
+not ok 9 - CR4: an unreadable plugin entry is not a ready one, even beside a gated claude-channel.js
+    error: |-
+      Expected values to be strictly equal:
+not ok 10 - CR4: a manifest without the rendered name is not the one this package renders
+    error: '{"route":"plugin","reason":""}'
+    code: 'ERR_ASSERTION'
+not ok 11 - CR4: a settings file present but not a JSON object declines; {} and an explicit false are the controls
+    error: '{: {"route":"plugin","reason":""}'
+    code: 'ERR_ASSERTION'
+not ok 12 - CR5: unknown Program Files declines the plugin route even with an admitting per-user policy
+    error: 'an unknown admin location is not absence'
+    code: 'ERR_ASSERTION'

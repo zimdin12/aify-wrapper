@@ -679,6 +679,40 @@ if [ "$CLAUDE_AUTO" = true ]; then
   CLAUDE_PERMISSION_FLAGS+=(--dangerously-skip-permissions)
 fi
 
+# THE CHANNEL'S ROUTE, decided by lib/channel-route-cli.mjs: the aify-channel plugin (no development-channels prompt),
+# today's development channel, or `none`, refused here with the repair rather than started deaf. Strict mode, a service
+# other than the plugin's, and any failure of the check keep the development channel. Exported on every route: each configured channel
+# server reads it to decide whether it claims messages (aify-comms mcp/stdio/channel-producer.mjs).
+AIFY_CHANNEL_ROUTE=dev
+AIFY_CHANNEL_REASON=""
+if [ "${AIFY_CLAUDE_STRICT_MCP:-0}" != "1" ]; then
+  _aify_route_text="$(AIFY_CHANNEL_SERVICE="@@SERVICE_NAME@@" AIFY_BRIDGE_DIR="$AIFY_BRIDGE_DIR_FWD" AIFY_CHANNEL_SESSION_MCP="@@SESSION_MCP_B64@@" \
+    node "$AIFY_WRAPPER_DIR_FWD/lib/channel-route-cli.mjs" "${CLAUDE_ARGS[@]}" 2>/dev/null)" || _aify_route_text=dev
+  AIFY_CHANNEL_ROUTE="$(printf '%s\n' "$_aify_route_text" | sed -n 1p)"
+  AIFY_CHANNEL_REASON="$(printf '%s\n' "$_aify_route_text" | sed -n 2p)"
+elif [ ! -r "$AIFY_BRIDGE_DIR_FWD/claude-channel.js" ]; then
+  # Strict mode writes its own channel server below, running this bridge's claude-channel.js: without it, deaf.
+  AIFY_CHANNEL_ROUTE=none
+  AIFY_CHANNEL_REASON="strict mode runs $AIFY_BRIDGE_DIR_FWD/claude-channel.js, which is missing"
+fi
+case "$AIFY_CHANNEL_ROUTE" in
+  plugin)
+    AIFY_CHANNEL_FLAGS=(--channels plugin:aify-channel@aify-local)
+    # The plugin's server has no env block of its own: it reads the endpoint from what Claude inherits.
+    export AIFY_SERVER_URL="$HARNESS_ENDPOINT" CLAUDE_MCP_SERVER_URL="$HARNESS_ENDPOINT"
+    ;;
+  none)
+    echo "[claude-aify] this session would start with no channel: $AIFY_CHANNEL_REASON" >&2
+    echo "              Re-run the service's installer (install.sh --client claude) to configure its channel server." >&2
+    exit "$HARNESS_EXIT_CONFIG"
+    ;;
+  *)
+    AIFY_CHANNEL_ROUTE=dev
+    AIFY_CHANNEL_FLAGS=(--dangerously-load-development-channels server:@@SERVICE_NAME@@-channel)
+    ;;
+esac
+export AIFY_CHANNEL_ROUTE
+
 # MCP server config: default is "load the operator's full ~/.claude.json
 # mcpServers list" (the install_claude_config function has already merged
 # aify-comms + aify-comms-channel into that file at install time, so the
@@ -954,6 +988,6 @@ fi
 
 aify_lifetime_start "${CLAUDE_AIFY_AGENT_ID:-}" claude "$AIFY_SESSION_MODE" || exit $?
 AIFY_RUNTIME_RUNNING=1
-claude --dangerously-load-development-channels server:@@SERVICE_NAME@@-channel "${CLAUDE_MCP_FLAGS[@]}" "${CLAUDE_PERMISSION_FLAGS[@]}" "${CLAUDE_ARGS[@]}"
+claude "${AIFY_CHANNEL_FLAGS[@]}" "${CLAUDE_MCP_FLAGS[@]}" "${CLAUDE_PERMISSION_FLAGS[@]}" "${CLAUDE_ARGS[@]}"
 STATUS=$?
 exit "$STATUS"

@@ -1,0 +1,2 @@
+{"name": "aify-channel", "version": "1.0.0", "description": "witness",
+ "mcpServers": {"aify-comms-channel": {"command": "node", "args": ["/bridge/claude-channel.js"], "env": {"AIFY_CHANNEL_SOURCE": "plugin"}}}}

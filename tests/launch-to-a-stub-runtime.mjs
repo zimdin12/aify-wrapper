@@ -135,11 +135,12 @@ export function launch(client, args, { rewriting = true, reader = true, definiti
     ...(rewriting ? {} : { MSYS_NO_PATHCONV: "1", MSYS2_ARG_CONV_EXCL: "*" }),
   };
   // `files` are written under the run's own directory before it starts, `<home>` naming its HOME; `cwd` is
-  // where the launcher runs, relative to that directory.
+  // where the launcher runs, relative to that directory. A file's text may be a function of the run's
+  // {dir, home, bridge}, for contents that name its absolute paths.
   for (const [rel, text] of Object.entries(files)) {
     const to = path.join(w.dir, rel.replace(/^<home>/, path.relative(w.dir, w.home)));
     fs.mkdirSync(path.dirname(to), { recursive: true });
-    fs.writeFileSync(to, text);
+    fs.writeFileSync(to, typeof text === "function" ? text({ dir: w.dir, home: w.home, bridge: path.join(w.dir, "bridge") }) : text);
   }
   const workdir = cwd === undefined ? undefined : path.join(w.dir, cwd);
   if (workdir) fs.mkdirSync(workdir, { recursive: true });

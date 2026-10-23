@@ -1,0 +1,12 @@
+ok 1 - the development server configured, no plugin: the development channel, and the route exported
+ok 2 - no channel server configured and no plugin: refused with the repair, and Claude never starts
+ok 3 - ready: --channels with the plugin, the route and the endpoint exported for its server
+not ok 4 - strict mode on a bridge without claude-channel.js: refused with the repair, and Claude never starts
+ok 5 - ready, but the user-scope server runs a channel that predates the gate: the development channel
+ok 6 - ready, but strict mode, which supplies its own channel server: the development channel
+ok 7 - ready, but the arguments bring their own MCP config: the development channel
+# tests 7
+# pass 6
+# fail 1
+  error: |-
+    0 !== 78

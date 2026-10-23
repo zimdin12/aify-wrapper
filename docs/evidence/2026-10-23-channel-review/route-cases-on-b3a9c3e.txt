@@ -1,0 +1,4 @@
+healthy: plugin
+pathname only in a non-script arg: plugin
+legacy server with explicit route=dev: plugin
+exit=0

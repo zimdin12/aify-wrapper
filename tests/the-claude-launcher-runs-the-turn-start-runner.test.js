@@ -28,6 +28,10 @@ test("THE LAUNCHER'S SETTINGS run the turn-start runner on UserPromptSubmit, syn
       "--render-only", out, "--bridge-dir", bridge], { encoding: "utf8", timeout: 120_000 });
     assert.equal(rendered.status, 0, `render failed: ${rendered.stdout}\n${rendered.stderr}`);
 
+    // A host aify-comms' installer has run on: its channel server is configured and its script is in the bridge, so the
+    // launcher has a channel to load (a configured server whose script is missing is refused, lib/channel-route.mjs).
+    fs.writeFileSync(path.join(bridge, "claude-channel.js"), "// the installed channel server\n");
+    fs.writeFileSync(path.join(home, ".claude.json"), JSON.stringify({ mcpServers: { "aify-comms-channel": { command: "node", args: [path.join(bridge, "claude-channel.js")] } } }));
     const settings = path.join(dir, "settings.json");
     fs.writeFileSync(path.join(stubs, "claude"), [
       "#!/bin/sh",

@@ -73,6 +73,9 @@ function strictConfigFor(registry) {
   const home = path.join(dir, "home");
   const captured = path.join(dir, "captured.json");
   for (const d of [out, stubs, home]) fs.mkdirSync(d, { recursive: true });
+  // Strict mode runs the bridge's claude-channel.js and refuses a bridge without one, so the bridge has one.
+  fs.mkdirSync(path.join(dir, "bridge"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "bridge", "claude-channel.js"), "");
 
   const registryFile = path.join(dir, "services.json");
   fs.writeFileSync(registryFile, JSON.stringify(registry));

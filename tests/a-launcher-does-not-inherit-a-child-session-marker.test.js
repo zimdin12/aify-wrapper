@@ -72,7 +72,8 @@ test("the unset happens BEFORE the launcher starts the agent", () => {
     // clean up its temp config. My first version anchored on `exec` and its own anti-vacuity
     // assertion caught that: a scan with no anchor cannot judge order, and would have failed for a
     // reason unrelated to the code under test.
-    const launchAt = lines.findIndex((l) => /^\s*claude\s+--dangerously-load-development-channels\b/.test(l));
+    // The channel's flags are an array since the launcher chooses between two routes (lib/channel-route.mjs).
+    const launchAt = lines.findIndex((l) => /^\s*claude\s+"\$\{AIFY_CHANNEL_FLAGS\[@\]\}"/.test(l));
     assert.ok(unsetAt >= 0, "no unset in the rendered launcher");
     assert.ok(launchAt >= 0, "this test found no launch line, so it cannot judge order -- the scan is broken");
     assert.ok(
