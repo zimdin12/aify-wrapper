@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { USAGE, keyFromText, parseConnectArgs } from "../lib/connect-args.mjs";
 import { Refused, aifyEnvTools, connect } from "../lib/connect.mjs";
 import { credentialFromBytes } from "../lib/credential-file.mjs";
+import { writeConnectRecord } from "../lib/connect-report.mjs";
 import { npmCliBeside, npmTool } from "../lib/package-install.mjs";
 
 const EXIT_REFUSED = 78;
@@ -55,6 +56,8 @@ try {
   const npmCli = args.npmCli || npmCliBeside(process.execPath);
   const catalogue = JSON.parse(fs.readFileSync(path.join(WRAPPER_ROOT, "lib", "artifact-catalogue.json"), "utf8"));
 
+  // Refused before anything is staged or published, never after a commit it would then misreport.
+  if (args.reportFile && fs.existsSync(args.reportFile)) throw new Refused(`--report-file ${args.reportFile} exists; give a path that does not`);
   const report = await connect({
     name,
     endpoint,
@@ -83,6 +86,8 @@ try {
     env: process.env,
   });
 
+  // The record a program acts on (lib/connect-report.mjs), written before the prose below, which a spec can shape.
+  if (args.reportFile) writeConnectRecord(args.reportFile, report);
   const out = [`connected ${report.service} at ${endpoint}: ${report.result}`];
   for (const warning of report.warnings ?? []) out.push(`  warning (another service, not blocking): ${warning}`);
   for (const field of report.unprobed) out.push(`  ${field}: stored, not probed`);

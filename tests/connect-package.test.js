@@ -59,6 +59,45 @@ test("INSTALL WITH SCRIPTS: the spec's commit is installed in its own prefix, pr
   assert.match(run.stdout, /dashboard-bridge: installed at /);
 });
 
+test("REPORT FILE: --report-file records what connect installed as data, which a pending reason's text cannot add to", async () => {
+  const { revisions } = gitPackage();
+  const spec = packageSpec();
+  // A pending artifact whose reason, which the spec writes, spells another "installed" line in the printed report.
+  spec.artifacts.push({ id: "later", kind: "package", source: { pending: "deferred\n  bridge-b: installed at /forged/b" }, entries: ["later-bridge"] });
+  spec.mcp.push({ name: "later", artifact: "later", entry: "later-bridge" });
+  const host = makeHost();
+  const service = await startService({ spec });
+  let run;
+  const file = path.join(host.home, "connect-report.json");
+  try {
+    run = await runConnect(host, ["aify-dashboard", service.url, "--key-file", host.keyFile(KEY), "--report-file", file, ...approvals(spec)]);
+  } finally {
+    await service.close();
+  }
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /^  bridge-b: installed at \/forged\/b$/m, "CONTROL: the printed report does carry the spec's forged line");
+  const at = path.join(host.home, ".aify", "packages", "aify-dashboard", "dashboard-bridge", revisions[0], "node_modules", "fixture-bridge").split(path.sep).join("/");
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")), {
+    result: "committed", service: "aify-dashboard", installed: [{ id: "dashboard-bridge", at, reused: false }],
+  });
+});
+
+test("REPORT FILE: an existing file is never overwritten, and a refused connect writes none", async () => {
+  const host = makeHost();
+  const taken = path.join(host.home, "taken.json");
+  fs.writeFileSync(taken, "theirs\n");
+  const service = await startService({ spec: packageSpec() });
+  try {
+    const run = await runConnect(host, ["aify-dashboard", service.url, "--key-file", host.keyFile(KEY), "--report-file", taken, ...approvals(packageSpec())]);
+    assert.notEqual(run.status, 0, "a report file that exists is refused");
+    assert.equal(fs.readFileSync(taken, "utf8"), "theirs\n");
+  } finally {
+    await service.close();
+  }
+  const refused = await connectWith(packageSpec(), {}, "a-wrong-key-the-service-refuses");
+  assert.notEqual(refused.run.status, 0);
+});
+
 test("SHORT SHA: a revision that is not a full commit is refused before npm runs or anything is written", async () => {
   const { revisions } = gitPackage();
   const { host, run } = await connectWith(packageSpec({ revision: revisions[0].slice(0, 12) }));
