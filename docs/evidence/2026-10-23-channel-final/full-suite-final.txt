@@ -1,0 +1,5 @@
+npm exit=0
+# tests 989
+# pass 923
+# fail 0
+# skipped 66

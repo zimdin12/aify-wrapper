@@ -1,0 +1,20 @@
+not ok 1 - S1: the canonical Settings is read, a sibling name is not, and a case-varied non-string refuses with no write
+ok 2 - S1 history: a case-varied Settings with foreign content, beside a sibling value, is read, merged and written whole
+ok 3 - S2: an admitting base file with an overriding drop-in is not the base's policy: the install refuses
+ok 4 - S2: an admitting base file with an unreadable drop-in directory refuses
+ok 5 - S2: an empty HKLM Settings is malformed admin policy, never absence; an empty file is no policy
+ok 6 - S2 positive: an admitting base file with no drop-ins is the admin policy, and nothing is written
+ok 7 - S3: a named record that cannot produce is refused with repair, not the development route
+ok 8 - S3: a usable provider, or a form this launcher does not read, keeps the development route
+ok 9 - S3: the caller's own --strict-mcp-config with no usable provider is refused; with one, or unreadable input, dev
+ok 10 - S3 helpers: the --mcp-config values, the strict provider, the development provider
+ok 11 - S2 histories through routeHere: an admitting base with a drop-in declines the plugin route; with none it is taken
+ok 12 - S6 healthy: the rendered shape on a readable machine takes the plugin route
+ok 13 - S6: a second consumer in the plugin's manifest, or a plugin .mcp.json, declines the plugin route
+ok 14 - S6: a present file that cannot be read is not absent: the plugin route is declined
+ok 15 - S6: a plugin installed only for another scope, or disabled by a project or local setting, declines
+# tests 15
+# pass 14
+# fail 1
+  error: |-
+    The input did not match the regular expression /cannot tell whether an admin policy exists/. Input:
