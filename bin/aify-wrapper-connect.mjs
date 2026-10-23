@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { USAGE, keyFromText, parseConnectArgs } from "../lib/connect-args.mjs";
 import { Refused, aifyEnvTools, connect } from "../lib/connect.mjs";
 import { credentialFromBytes } from "../lib/credential-file.mjs";
-import { writeConnectRecord } from "../lib/connect-report.mjs";
+import { deliverConnectRecord, reportFileProblem } from "../lib/connect-report.mjs";
 import { npmCliBeside, npmTool } from "../lib/package-install.mjs";
 
 const EXIT_REFUSED = 78;
@@ -57,7 +57,8 @@ try {
   const catalogue = JSON.parse(fs.readFileSync(path.join(WRAPPER_ROOT, "lib", "artifact-catalogue.json"), "utf8"));
 
   // Refused before anything is staged or published, never after a commit it would then misreport.
-  if (args.reportFile && fs.existsSync(args.reportFile)) throw new Refused(`--report-file ${args.reportFile} exists; give a path that does not`);
+  const reportProblem = args.reportFile ? reportFileProblem(args.reportFile) : "";
+  if (reportProblem) throw new Refused(reportProblem);
   const report = await connect({
     name,
     endpoint,
@@ -87,7 +88,7 @@ try {
   });
 
   // The record a program acts on (lib/connect-report.mjs), written before the prose below, which a spec can shape.
-  if (args.reportFile) writeConnectRecord(args.reportFile, report);
+  const recordProblem = args.reportFile ? deliverConnectRecord(args.reportFile, report) : "";
   const out = [`connected ${report.service} at ${endpoint}: ${report.result}`];
   for (const warning of report.warnings ?? []) out.push(`  warning (another service, not blocking): ${warning}`);
   for (const field of report.unprobed) out.push(`  ${field}: stored, not probed`);
@@ -101,6 +102,7 @@ try {
   }
   for (const row of report.launchers) out.push(`  launcher ${row.name}: ${row.state}${row.detail ? ` -- ${row.detail}` : ""}`);
   process.stdout.write(`${out.join("\n")}\n`);
+  if (recordProblem) process.stderr.write(`aify-wrapper-connect: warning: ${recordProblem}\n`);
   process.exit(0);
 } catch (error) {
   process.stderr.write(`aify-wrapper-connect: ${error.message}\n`);

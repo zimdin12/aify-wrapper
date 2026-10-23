@@ -4,10 +4,12 @@
 
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
 import { KEY, approvals, gitPackage, makeHost, runConnect, startService } from "./connect-fixture.mjs";
+import { connectRecord, deliverConnectRecord, reportFileProblem, writeConnectRecord } from "../lib/connect-report.mjs";
 
 /** The dashboard's live shape (1.3.13), with its bridge pointed at the fixture repository. */
 function packageSpec({ revision, entry = "fixture-bridge" } = {}) {
@@ -96,6 +98,60 @@ test("REPORT FILE: an existing file is never overwritten, and a refused connect 
   }
   const refused = await connectWith(packageSpec(), {}, "a-wrong-key-the-service-refuses");
   assert.notEqual(refused.run.status, 0);
+});
+
+test("REPORT FILE: a destination that cannot take the record is refused before anything is published", async () => {
+  const host = makeHost();
+  const service = await startService({ spec: packageSpec() });
+  try {
+    const missing = path.join(host.home, "no-such-dir", "report.json");
+    const run = await runConnect(host, ["aify-dashboard", service.url, "--key-file", host.keyFile(KEY), "--report-file", missing, ...approvals(packageSpec())]);
+    assert.equal(run.status, 78, run.stderr);
+    assert.match(run.stderr, /its directory does not exist/);
+    assert.equal(host.registryBytes().length, 0, "nothing was published");
+    assert.deepEqual(host.refs(), [], "no key was stored");
+  } finally {
+    await service.close();
+  }
+});
+
+test("REPORT FILE: a record that cannot be written after connect committed keeps the committed outcome", async () => {
+  const host = makeHost();
+  const service = await startService({ spec: packageSpec() });
+  try {
+    // A name no filesystem accepts (over 255 characters): it passes the checks before connect, and its write fails after.
+    const unwritable = path.join(host.home, `${"r".repeat(300)}.json`);
+    const run = await runConnect(host, ["aify-dashboard", service.url, "--key-file", host.keyFile(KEY), "--report-file", unwritable, ...approvals(packageSpec())]);
+    assert.equal(run.status, 0, `a committed connect is still committed: ${run.stderr}`);
+    assert.match(run.stdout, /: committed$/m);
+    assert.match(run.stderr, /warning: --report-file .* was not written \(.+\); connect committed regardless/);
+    assert.notEqual(host.registryBytes().length, 0, "CONTROL: connect did publish");
+  } finally {
+    await service.close();
+  }
+});
+
+test("REPORT FILE: the record's own checks (reportFileProblem, deliverConnectRecord)", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "connect-report-"));
+  try {
+    const file = path.join(dir, "r.json");
+    assert.equal(reportFileProblem(file), "", "a fresh path in an existing directory can take the record");
+    fs.writeFileSync(path.join(dir, "taken"), "");
+    assert.match(reportFileProblem(path.join(dir, "taken")), /exists/);
+    assert.match(reportFileProblem(path.join(dir, "gone", "r.json")), /directory does not exist/);
+    assert.match(reportFileProblem(path.join(dir, "taken", "r.json")), /directory/, "a parent that is a file cannot take it");
+    const report = { result: "committed", service: "svc", installed: [{ id: "a", at: "/p/a" }] };
+    // A write that fails after connect committed is a warning that keeps the outcome, never a throw.
+    const failing = () => { throw Object.assign(new Error("no space"), { code: "ENOSPC" }); };
+    assert.match(deliverConnectRecord(file, report, failing), /was not written \(ENOSPC\); connect committed regardless/);
+    assert.equal(fs.existsSync(file), false);
+    assert.deepEqual(connectRecord({ ...report, pending: [{ reason: "x" }] }), { result: "committed", service: "svc", installed: [{ id: "a", at: "/p/a", reused: false }] }, "the record holds only the outcome, the service and what was installed");
+    assert.equal(deliverConnectRecord(file, report), "");
+    assert.throws(() => writeConnectRecord(file, report), { code: "EEXIST" }, "writeConnectRecord never overwrites");
+    assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")).installed, [{ id: "a", at: "/p/a", reused: false }]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("SHORT SHA: a revision that is not a full commit is refused before npm runs or anything is written", async () => {
