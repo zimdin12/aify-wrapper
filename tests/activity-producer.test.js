@@ -106,15 +106,58 @@ test('partial append preserves the prefix and torn bytes, marks loss and never r
   const after = fs.readFileSync(file); assert.deepEqual(after.subarray(0, before.length), before);
   assert.equal(after.length, before.length + 9); assert.notEqual(after.at(-1), 10);
   assert.equal(fs.readFileSync(file.replace('.jsonl', '.loss'), 'utf8'), '?');
-  assert.equal(new ActivitySpool(f.args).append(record()).ok, false, 'retained uncertainty was ignored');
-  assert.deepEqual(fs.readFileSync(file), after);
+  // The old test stopped here with permanent refusal. A loss latch must not veto later records.
+  const later = record();
+  const resumed = instrument(() => assert.equal(new ActivitySpool(f.args).append(later).ok, true, 'loss marker blocked a later event'));
+  const resumedWrites = resumed.filter(c => c.kind !== 'list');
+  assert.equal(resumedWrites.length, 1, 'resumption issued more than one append or a control write');
+  assert.ok(resumedWrites[0].flags & fs.constants.O_APPEND);
+  const continued = fs.readFileSync(file);
+  assert.deepEqual(continued.subarray(0, after.length), after, 'resumption rewrote torn bytes');
+  assert.equal(continued[after.length], 10, 'torn prefix was not delimited before the later record');
+  assert.deepEqual(JSON.parse(continued.subarray(after.length + 1)), {
+    storageVersion: 2, appendedAt: { wallMs: 1000, uptimeMs: 100000 }, policy: f.spool.policy, record: later,
+  });
+  assert.equal(fs.readFileSync(file.replace('.jsonl', '.loss'), 'utf8'), '?', 'resumption cleared the loss latch');
 });
 test('write error after bytes land leaves the same bytes with a permanent uncertainty marker', () => {
-  const f = fixture(), write = fs.writeSync; let fired = false;
+  const f = fixture(), first = record(), later = record(), write = fs.writeSync; let fired = false;
   fs.writeSync = function(fd, buffer, ...args) { const n = write.call(this, fd, buffer, ...args); if (!fired && buffer.length > 1) { fired = true; throw new Error('owned post-write fault'); } return n; };
-  try { assert.equal(f.spool.append(record()).ok, false); } finally { fs.writeSync = write; }
+  try { assert.equal(f.spool.append(first).ok, false); } finally { fs.writeSync = write; }
   assert.equal(fired, true); assert.equal(lines(f.directory).length, 1);
   assert.equal(fs.readdirSync(f.directory).filter(n => n.endsWith('.loss')).length, 1);
+  // Reopening models the next hook process. Only the failed call, not this session, was refused.
+  assert.equal(new ActivitySpool(f.args).append(later).ok, true, 'transient write failure permanently stopped the session');
+  assert.deepEqual(lines(f.directory).map(line => line.record), [first, later]);
+  const file = path.join(f.directory, segments(f.directory)[0]);
+  assert.equal(fs.readFileSync(file.replace('.jsonl', '.loss'), 'utf8'), '?', 'later event cleared the loss latch');
+});
+// Ordinary byte-cap coverage cannot see the extra delimiter needed after a torn marked tail.
+test('loss resumption includes the tail delimiter in the remaining byte allowance', () => {
+  const control = fixture(), later = record(); assert.equal(control.spool.append(later).ok, true);
+  const lineBytes = fs.statSync(path.join(control.directory, segments(control.directory)[0])).size;
+  const f = fixture(); assert.equal(f.spool.append(record()).ok, true);
+  const file = path.join(f.directory, segments(f.directory)[0]);
+  fs.appendFileSync(file, Buffer.alloc(f.args.sessionBytes - lineBytes - fs.statSync(file).size, 32));
+  fs.writeFileSync(file.replace('.jsonl', '.loss'), '?');
+  const before = fs.readFileSync(file);
+  assert.equal(new ActivitySpool(f.args).append(later).ok, false, 'resynchronization byte exceeded the session cap');
+  assert.deepEqual(fs.readFileSync(file), before, 'over-budget resumption changed retained bytes');
+  assert.equal(fs.readFileSync(file.replace('.jsonl', '.loss'), 'utf8'), '?');
+});
+// A failed tail inspection must not invent a delimiter decision or mutate the retained prefix.
+test('unreadable marked tail refuses without mutation and later resumes after read recovery', () => {
+  const f = fixture(); assert.equal(f.spool.append(record()).ok, true);
+  const file = path.join(f.directory, segments(f.directory)[0]);
+  fs.writeFileSync(file.replace('.jsonl', '.loss'), '?');
+  const before = fs.readFileSync(file), read = fs.readSync;
+  fs.readSync = () => 0;
+  try { assert.equal(new ActivitySpool(f.args).append(record()).ok, false, 'unreadable marked tail was treated as known'); }
+  finally { fs.readSync = read; }
+  assert.deepEqual(fs.readFileSync(file), before, 'tail-read refusal changed retained bytes');
+  assert.equal(fs.readFileSync(file.replace('.jsonl', '.loss'), 'utf8'), '?');
+  assert.equal(new ActivitySpool(f.args).append(record()).ok, true);
+  assert.equal(lines(f.directory).length, 2);
 });
 test('invalid record does not create a producer directory', () => {
   const f = fixture(); assert.equal(f.spool.append({ ...record(), version: 2 }).ok, false);

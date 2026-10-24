@@ -64,7 +64,10 @@ original policy and any stricter local limit.
 `new ActivitySpool({directory,...policy}).append(record)` is producer-only.
 Import and construction do no filesystem work. Validation precedes root creation.
 An admitted event stats its segment, checks the byte allowance, then makes exactly
-one `O_APPEND` write of the full envelope plus LF. There is no SQLite, lock, control
+one `O_APPEND` write of the full envelope plus LF. When a loss-marked segment ends
+in torn bytes, it reads only the final byte and prefixes one LF in that same append
+write. The extra byte counts against the session allowance. It never rewrites the
+torn prefix. There is no SQLite, lock, control
 file, fsync, cursor, ACK, repair, compactor or gap-ID ledger. The old `read`, `resolve`
 and `ack` methods are removed, not retained as an alternate queue.
 
@@ -73,8 +76,9 @@ session limits are best effort: concurrent processes can race after stat/count.
 This is not the old hard locked budget or a physical allocation guarantee.
 
 An existing segment's overflow or failed/partial append creates at most one
-`session-<same hash>.loss` containing one `?` byte. Later append refuses that
-segment. Session exhaustion, an oversized first line, invalid clock or a failure
+`session-<same hash>.loss` containing one `?` byte. The marker latches incomplete
+coverage, not a veto on later events. Later events can append within the byte bound
+while the marker remains. Session exhaustion, an oversized first line, invalid clock or a failure
 before session admission uses the single root-wide `uncertain` byte instead.
 Repeated losses do not create per-event files. Markers never contain raw identity.
 The producer never removes a marker or truncates/retries a partial event line.

@@ -6,9 +6,9 @@
 // reads `~/.aify/agent-definitions` unless told otherwise: an ambient input that decides the result.
 //
 // So a fixture that runs a launcher past its definition read renders with its wrapper directory here, and
-// runs with `definitionsEnv` pointing the reader at an empty directory of its own. Only the reader's files
-// are copied: a whole aify-wrapper would let the launcher find and run its lease script, which writes under
-// the real home.
+// runs with `definitionsEnv` pointing the reader at an empty directory of its own. Only the readers and
+// pure hook formatter are copied. The whole package would let the launcher run its lease script,
+// which writes under the real home.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -16,10 +16,11 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-/** The reader, claude-aify's settings reader, and what they import, at their paths inside the package. */
+/** The readers and pure hook formatter, without any lease or runtime-start helpers. */
 export const READER_FILES = Object.freeze([
   "bin/aify-definition.mjs", "lib/agent-definition-defaults.mjs", "lib/agent-definition-schema.mjs", "lib/main-module.mjs",
   "bin/aify-claude-default-model.mjs", "lib/claude-default-model.mjs",
+  "bin/aify-tool-hook-json.sh",
 ]);
 
 /** Copy the reader into `wrapper` (created if missing) and return it. */

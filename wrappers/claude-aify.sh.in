@@ -851,6 +851,7 @@ else
     CLAUDE_MCP_FLAGS+=("--mcp-config=$AIFY_MCP_CONFIG")
   fi
 fi
+
 # Session-id truth capture (2026-05-30, #138): install SessionStart +
 # UserPromptSubmit hooks that record THIS claude session's own id. Claude
 # passes session_id to hooks on stdin; the hook keys it by AIFY_AGENT_ID
@@ -868,11 +869,9 @@ fi
 # signals (a channel wake does run UserPromptSubmit, measured 2026-10-18); PostToolUseFailure does the same for a
 # tool that failed. StopFailure ends a turn an API error killed, which runs no Stop. Nothing is added otherwise, so a
 # launch outside Herdr runs no extra hook. They run in the background (`async`), and the script orders them.
-# Activity opt-in combines local append and working in one tool process; activity off keeps the legacy hooks.
-AIFY_HERDR_WORKING=""; AIFY_HERDR_EVENTS=""
-_aify_tool_hook() { if [ "${AIFY_FILE_ACTIVITY:-0}" = 1 ]; then
-    printf '{ "type": "command", "command": "node \\"%s/bin/aify-tool-event.mjs\\" %s", "timeout": 5, "async": true }' "$AIFY_WRAPPER_DIR_FWD" "$1"
-  else _aify_state_hook working; fi; }
+. "@@WRAPPER_DIR@@/bin/aify-tool-hook-json.sh" # Activity combines local append and working; off keeps the legacy hooks.
+AIFY_HERDR_WORKING=""
+AIFY_HERDR_EVENTS=""
 if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then
   export AIFY_HERDR_AGENT="${0##*/}"
   _aify_state_hook() {
@@ -880,18 +879,19 @@ if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]
   }
   AIFY_HERDR_WORKING=", $(_aify_state_hook working)"
   AIFY_HERDR_EVENTS=",
-    \"PostToolUse\": [ { \"hooks\": [ $(_aify_tool_hook success) ] } ],
-    \"PostToolUseFailure\": [ { \"hooks\": [ $(_aify_tool_hook failure) ] } ],
+    \"PostToolUse\": [ { \"hooks\": [ $(_aify_tool_hook "${AIFY_FILE_ACTIVITY:-0}" "$AIFY_WRAPPER_DIR_FWD" success) ] } ],
+    \"PostToolUseFailure\": [ { \"hooks\": [ $(_aify_tool_hook "${AIFY_FILE_ACTIVITY:-0}" "$AIFY_WRAPPER_DIR_FWD" failure) ] } ],
     \"Notification\": [ { \"matcher\": \"permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input\", \"hooks\": [ $(_aify_state_hook blocked) ] } ],
     \"PermissionRequest\": [ { \"hooks\": [ $(_aify_state_hook blocked) ] } ],
     \"Stop\": [ { \"hooks\": [ $(_aify_state_hook idle) ] } ],
     \"StopFailure\": [ { \"hooks\": [ $(_aify_state_hook idle) ] } ]"
 elif [ "${AIFY_FILE_ACTIVITY:-0}" = 1 ]; then
   AIFY_HERDR_EVENTS=",
-    \"PostToolUse\": [ { \"hooks\": [ $(_aify_tool_hook success) ] } ],
-    \"PostToolUseFailure\": [ { \"hooks\": [ $(_aify_tool_hook failure) ] } ]"
+    \"PostToolUse\": [ { \"hooks\": [ $(_aify_tool_hook "${AIFY_FILE_ACTIVITY:-0}" "$AIFY_WRAPPER_DIR_FWD" success) ] } ],
+    \"PostToolUseFailure\": [ { \"hooks\": [ $(_aify_tool_hook "${AIFY_FILE_ACTIVITY:-0}" "$AIFY_WRAPPER_DIR_FWD" failure) ] } ]"
 fi
-AIFY_HOOK_SETTINGS="$(mktemp -t aify-hooks.XXXXXX.json 2>/dev/null || mktemp -t aify-hooks)"; cat > "$AIFY_HOOK_SETTINGS" <<JSON
+AIFY_HOOK_SETTINGS="$(mktemp -t aify-hooks.XXXXXX.json 2>/dev/null || mktemp -t aify-hooks)"
+cat > "$AIFY_HOOK_SETTINGS" <<JSON
 {
   "hooks": {
     "SessionStart": [
