@@ -78,6 +78,9 @@ aify_lease_claim() {
   local _aify_intent="${AIFY_LEASE_INTENT_ARG:-${AIFY_START_INTENT:-}}"
   unset AIFY_START_INTENT AIFY_LEASE_INTENT_ARG
   AIFY_LEASE_AGENT=""
+  # Shell permission for this attempt only. Unset first to discard an inherited export attribute.
+  unset AIFY_LEASE_RESIDENT_START
+  AIFY_LEASE_RESIDENT_START=""
   [ -n "${1:-}" ] || return 0
   command -v node >/dev/null 2>&1 || return 0
   AIFY_LEASE_HELPER="$AIFY_LEASE_BIN/aify-agent-lease.mjs"
@@ -86,16 +89,17 @@ aify_lease_claim() {
     AIFY_LEASE_HELPER="$(cygpath -m "$AIFY_LEASE_HELPER" 2>/dev/null || printf '%s' "$AIFY_LEASE_HELPER")"
   fi
   AIFY_LEASE_PID="$(aify_lease_pid "$$")"
-  _aify_lease_status=0
-  node "$AIFY_LEASE_HELPER" claim --agent "$1" --pid "$AIFY_LEASE_PID" --runtime "${2:-}" --mode "${3:-}" \
+  local _aify_lease_status=0 _aify_lease_report=""
+  _aify_lease_report="$(node "$AIFY_LEASE_HELPER" claim --agent "$1" --pid "$AIFY_LEASE_PID" --runtime "${2:-}" --mode "${3:-}" \
     --identity "${AIFY_LEASE_IDENTITY:-recovered}" ${_aify_intent:+--intent "$_aify_intent"} \
-    ${AIFY_LEASE_INSIDE_SESSION:+--inside 1} </dev/null || _aify_lease_status=$?
+    ${AIFY_LEASE_INSIDE_SESSION:+--inside 1} --report resident-start </dev/null)" || _aify_lease_status=$?
   [ "$_aify_lease_status" = 75 ] && return 75
   # ONLY A CLAIM THAT SUCCEEDED HOLDS THE LEASE. Any other status is the helper failing, which lets the start
   # through without the guarantee -- and without acting as the holder: a launcher that exported the lease
   # after a failed claim went on to reap as though it owned the agent (hermes' kill-prior reaps only for a
   # launcher holding the lease; external review, 2026-09-15).
   [ "$_aify_lease_status" = 0 ] || return 0
+  if [ "$_aify_lease_report" = replace ]; then AIFY_LEASE_RESIDENT_START=replace; fi
   AIFY_LEASE_AGENT="$1"
   export AIFY_AGENT_LEASE="$AIFY_LEASE_PID"
   return 0

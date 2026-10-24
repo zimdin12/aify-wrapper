@@ -890,7 +890,8 @@ cat > "$AIFY_HOOK_SETTINGS" <<JSON
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "node \"${AIFY_BRIDGE_DIR_FWD}/claude-session-hook.js\"" } ] }
+      { "hooks": [ { "type": "command", "command": "node \"${AIFY_BRIDGE_DIR_FWD}/claude-session-hook.js\"" },
+        { "type": "command", "command": "node \"${AIFY_BRIDGE_DIR_FWD}/agent-state-event.mjs\" resident-started claude" } ] }
     ],
     "UserPromptSubmit": [
       { "hooks": [ { "type": "command", "command": "node \"${AIFY_BRIDGE_DIR_FWD}/claude-session-hook.js\"" }${AIFY_HERDR_WORKING},
@@ -986,7 +987,7 @@ if [ "$CLAUDE_AIFY_SHARED" = true ]; then
   exec aify-env run     --service "@@SERVICE_NAME@@"     --launcher "$0"     --label "${CLAUDE_AIFY_AGENT_ID:-}"     -- "${CLAUDE_AIFY_PASSTHRU[@]}"
 fi
 
-aify_lifetime_start "${CLAUDE_AIFY_AGENT_ID:-}" claude "$AIFY_SESSION_MODE" || exit $?
+aify_lifetime_start "${CLAUDE_AIFY_AGENT_ID:-}" claude "$AIFY_SESSION_MODE" SessionStart || exit $?
 AIFY_RUNTIME_RUNNING=1
 claude "${AIFY_CHANNEL_FLAGS[@]}" "${CLAUDE_MCP_FLAGS[@]}" "${CLAUDE_PERMISSION_FLAGS[@]}" "${CLAUDE_ARGS[@]}"
 STATUS=$?

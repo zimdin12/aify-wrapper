@@ -42,7 +42,7 @@ export const CLAIM_FAILED_EXIT_CODE = 70;
 const COMMANDS = Object.freeze(["claim", "attach", "release", "watch"]);
 
 /** Every flag this helper reads, with its placeholder. The usage line and the parser both come from here. */
-const FLAGS = Object.freeze({ agent: "ID", pid: "PID", runtime: "R", mode: "M", intent: "start|replace", identity: `${IDENTITY_FROM_FLAG}|recovered`, kind: "K", instance: "PID", inside: "1" });
+const FLAGS = Object.freeze({ agent: "ID", pid: "PID", runtime: "R", mode: "M", intent: "start|replace", identity: `${IDENTITY_FROM_FLAG}|recovered`, kind: "K", instance: "PID", inside: "1", report: "resident-start" });
 const USAGE = `usage: aify-agent-lease ${COMMANDS.join("|")} ${Object.entries(FLAGS).map(([flag, value]) => `--${flag} ${value}`).join(" ")}`;
 
 export function parseLeaseArgs(argv, env = process.env) {
@@ -67,6 +67,7 @@ export function parseLeaseArgs(argv, env = process.env) {
     pid,
     runtime: String(options.runtime ?? ""),
     mode: String(options.mode ?? ""),
+    report: String(options.report ?? ""),
     // BOTH WAYS THE LAUNCHER CAN SAY IT. `--inside` is what `aify_forget_inherited_session` remembered, and
     // it is the only answer for claude-aify, which unsets CLAUDE_CODE_CHILD_SESSION before it claims so that
     // Claude Code keeps saving transcripts. The markers are read too, for a launcher whose installed shell
@@ -86,8 +87,8 @@ function describe(entry) {
   return `${kind} pid ${entry?.pid}, started ${started}`;
 }
 
-/** Run one command. Returns the exit status; writes only to `err`. `watch` is async and is run by `runWatch`. */
-export function runLease(argv, { env = process.env, err = process.stderr, lease = (options) => new AgentLease(options), watch = startWatch } = {}) {
+/** Run one command. Only opt-in claim reports use stdout. `watch` is async and is run by `runWatch`. */
+export function runLease(argv, { env = process.env, err = process.stderr, out = process.stdout, lease = (options) => new AgentLease(options), watch = startWatch } = {}) {
   const say = (line) => err.write(`[aify-agent-lease] ${line}\n`);
   let args;
   try {
@@ -128,6 +129,9 @@ export function runLease(argv, { env = process.env, err = process.stderr, lease 
         watch({ agentId: args.agentId, instance: args.pid, env, script: fileURLToPath(import.meta.url) });
       } catch (error) {
         say(`WARN: ${args.agentId}: could not start the watch that stops what this instance leaves when it is killed (${error?.message || error}); the next start still stops it.`);
+      }
+      if (args.report === "resident-start" && result.decision === "claim") {
+        out.write(args.intent === "replace" && args.mode === "resident" && args.named && !args.insideSession ? "replace\n" : "none\n");
       }
       return 0;
     }

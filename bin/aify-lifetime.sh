@@ -1,6 +1,6 @@
 # Sourced by aify-lease.sh. C4 records belong to the waiting launcher, not its runtime.
 #
-#   aify_lifetime_start <agent-id> <harness> <mode>   the record writer is this file's sibling
+#   aify_lifetime_start <agent-id> <harness> <mode> [native-producer]   the writer is this file's sibling
 AIFY_LIFETIME_BIN="${BASH_SOURCE[0]%/*}"
 AIFY_LIFETIME_AGENT="${AIFY_AGENT_ID:-}"
 AIFY_RESIDENT_RECORD=""
@@ -18,7 +18,7 @@ aify_lifetime_home() {
 }
 
 aify_lifetime_start() {
-  local _agent="$1" _harness="$2" _mode="$3"
+  local _agent="$1" _harness="$2" _mode="$3" _producer="${4:-}" _capture=""
   # A host-minted lifetime is addressed to the inherited identity, before the launcher exports its own.
   if [ "$_mode" = managed ] && [ -n "$_agent" ] && [ "$_agent" = "$AIFY_LIFETIME_AGENT" ] \
     && [ -n "${AIFY_LIFETIME:-}" ] && [ -n "${AIFY_ENV_INSTANCE:-}" ] && [ -n "${AIFY_ENV_URL:-}" ]; then
@@ -35,7 +35,12 @@ aify_lifetime_start() {
   fi
   local _clock="${EPOCHREALTIME:-}" _pid
   _pid="$(aify_lease_pid "$$")" || return 78
-  if ! AIFY_LIFETIME="$(MSYS_NO_PATHCONV=1 node "$_helper" "$_root" "$_agent" residents "$_harness" "$_pid" "$0" "${_clock/./}" "${AIFY_HERDR_PANE_ID:-${HERDR_PANE_ID:-}}")"; then
+  # Capture before the record exists. Only Claude currently has a native startup acknowledgment.
+  if [ "${AIFY_LEASE_RESIDENT_START:-}" = replace ] && [ "$_harness" = claude ] && [ "$_producer" = SessionStart ] \
+    && command -v aify-env >/dev/null 2>&1; then
+    _capture="$(aify-env agents resident-start-binding "$_agent" "$_harness" "$_producer" </dev/null 2>/dev/null)" || _capture=""
+  fi
+  if ! AIFY_LIFETIME="$(MSYS_NO_PATHCONV=1 node "$_helper" "$_root" "$_agent" residents "$_harness" "$_pid" "$0" "${_clock/./}" "${AIFY_HERDR_PANE_ID:-${HERDR_PANE_ID:-}}" ${_capture:+"$_capture"})"; then
     echo "${0##*/}: cannot write the resident lifetime; nothing was started." >&2
     return 78
   fi
