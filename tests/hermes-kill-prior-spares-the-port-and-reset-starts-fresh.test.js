@@ -47,60 +47,100 @@ for (const [fresh, failure] of [[true, ""], [false, ""], [true, "import"], [true
     `the launcher's reset block ${fresh ? "clears" : "preserves"} the lifetime markers only`, async (t) => {
     const stdio = path.join(process.env.AIFY_COMMS_REPO || path.resolve(ROOT, "../aify-comms"), "mcp/stdio");
     if (!fs.existsSync(path.join(stdio, "hermes-endpoint.js"))) {
+      assert.ok(!process.env.AIFY_COMMS_REPO, "explicit AIFY_COMMS_REPO must contain the marker writers");
       t.skip("needs the aify-comms marker writers; set AIFY_COMMS_REPO");
       return;
     }
-    const endpoint = await import(pathToFileURL(path.join(stdio, "hermes-endpoint.js")));
-    const ready = await import(pathToFileURL(path.join(stdio, "hermes-loop-ready.js")));
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fresh-markers-"));
+    const temp = path.join(dir, "temp");
+    const home = path.join(dir, "home");
+    const bundle = path.join(dir, "installed-wrapper");
+    const savedEnv = { ...process.env };
     const target = "fixture.target";
     const sibling = "fixture.target-sibling";
     const old = "fixture_old_session";
-    const start = TEMPLATE.indexOf('if [ "${AIFY_HERMES_FRESH_CONTEXT:-}" = "1" ]');
-    const block = TEMPLATE.slice(start, TEMPLATE.indexOf("\nfi", start) + 3).replaceAll("@@HERMES_STDIO_DIR@@",
-      failure === "import" ? path.join(dir, "missing-stdio") : stdio);
-    assert.ok(start < TEMPLATE.indexOf('aify_hermes_kill_prior "$HERMES_AIFY_AGENT_ID"'));
     try {
+      for (const root of [temp, home, bundle]) fs.mkdirSync(root);
+      // Seal before importing the real owners, including os.homedir() on Windows.
+      Object.assign(process.env, { TEMP: temp, TMP: temp, TMPDIR: temp, HOME: home,
+        USERPROFILE: home, HERMES_HOME: path.join(home, ".hermes") });
+      const endpoint = await import(pathToFileURL(path.join(stdio, "hermes-endpoint.js")));
+      const ready = await import(pathToFileURL(path.join(stdio, "hermes-loop-ready.js")));
+      const { defaultGatewayMarkerDir } = await import(pathToFileURL(path.join(stdio, "hermes-gateway-marker.mjs")));
+      const gateways = defaultGatewayMarkerDir();
+      assert.equal(gateways, path.join(home, ".aify", "hermes", "gateways"));
+      assert.notEqual(gateways, temp);
+
+      // Mirror the packaged helper directories, never a live bridge's node_modules.
+      const packaged = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).files;
+      for (const name of ["bin/", "lib/", "wrappers/", "render.sh"]) {
+        assert.ok(packaged.includes(name), `${name} must ship in the package`);
+        fs.cpSync(path.join(ROOT, name), path.join(bundle, name), { recursive: true });
+      }
+      const values = Object.fromEntries([...TEMPLATE.matchAll(/@@([A-Z0-9_]+)@@/g)].map((m) => [m[1], ""]));
+      Object.assign(values, { WRAPPER_DIR: bundle.replaceAll("\\", "/"),
+        HERMES_STDIO_DIR: (failure === "import" ? path.join(dir, "missing-stdio") : stdio).replaceAll("\\", "/") });
+      const launcher = path.join(dir, "hermes-aify");
+      const render = spawnSync("bash", [path.join(bundle, "render.sh").replaceAll("\\", "/"),
+        "hermes-aify.sh.in", launcher.replaceAll("\\", "/"),
+        ...Object.entries(values).map(([key, value]) => `${key}=${value}`)], { encoding: "utf8" });
+      assert.equal(render.status, 0, render.stderr);
+      const emitted = fs.readFileSync(launcher, "utf8");
+      const start = emitted.indexOf('if [ "${AIFY_HERMES_FRESH_CONTEXT:-}" = "1" ]');
+      assert.ok(start > 0 && start < emitted.indexOf('aify_hermes_kill_prior "$HERMES_AIFY_AGENT_ID"'));
+      const block = emitted.slice(start, emitted.indexOf("\nfi", start) + 3);
+      const wrapperRoot = emitted.split("\n").find(line => line.startsWith('AIFY_WRAPPER_DIR_FWD='));
+      assert.ok(wrapperRoot);
+
       for (const id of [target, sibling]) {
-        endpoint.writeSessionIdMarker(id, old, { tempDir: dir });
-        endpoint.writeGatewayUrlMarker(id, "ws://127.0.0.1:19001/api/ws", { tempDir: dir });
-        ready.writeLoopReady(id, dir);
-        fs.writeFileSync(path.join(dir, `aify-hermes-port-${endpoint.sanitizeAgentId(id)}`), "19001");
+        assert.equal(endpoint.writeSessionIdMarker(id, old, { tempDir: temp }), true);
+        assert.equal(endpoint.writeGatewayUrlMarker(id, "ws://127.0.0.1:19001/api/ws", { tempDir: temp }), true);
+        assert.equal(endpoint.writeGatewayUrlMarker(id, "ws://127.0.0.1:19002/api/ws", { gatewayTokenEnv: "FIXTURE_TOKEN" }), true);
+        ready.writeLoopReady(id, temp);
+        endpoint.agentEndpoint(id, { tempDir: temp }); // The real key writer, without any port probe.
+        await endpoint.resolveGatewayPort(id, { tempDir: temp, portFree: async () => true });
       }
-      const before = Object.fromEntries(fs.readdirSync(dir).map(name => [name, fs.readFileSync(path.join(dir, name), "utf8")]));
-      assert.equal(Object.keys(before).length, 8);
+      const before = [temp, gateways].flatMap(root => fs.readdirSync(root).map(name =>
+        [path.join(root, name), fs.readFileSync(path.join(root, name), "utf8")]));
+      assert.equal(before.length, 12);
       const safe = endpoint.sanitizeAgentId(target);
-      const session = `aify-hermes-session-${safe}`;
+      const session = path.join(temp, `aify-hermes-session-${safe}`);
       if (failure === "rm") {
-        fs.unlinkSync(path.join(dir, session));
-        fs.mkdirSync(path.join(dir, session));
-        fs.writeFileSync(path.join(dir, session, "retained"), before[session]);
+        fs.unlinkSync(session);
+        fs.mkdirSync(session);
+        fs.writeFileSync(path.join(session, "retained"), old);
       }
-      // Execute only the real reset conditional. Never run the launcher's reap or triad branches.
-      const result = spawnSync("bash", ["-c", `${block}\nprintf '%s' "$HERMES_SESSION_HANDLE"`], {
-        encoding: "utf8", env: { ...process.env, TEMP: dir, TMP: dir, TMPDIR: dir,
+      // Execute the emitted Reset caller only, before reap, host or triad can run.
+      const preload = pathToFileURL(path.join(ROOT, "tests/test-data/fresh-markers-sealed.mjs")).href;
+      const result = spawnSync("bash", ["-c", `${wrapperRoot}\n${block}\nprintf '%s' "$HERMES_SESSION_HANDLE"`], {
+        encoding: "utf8", env: { ...process.env, NODE_OPTIONS: `--import=${preload}`,
           AIFY_HERMES_FRESH_CONTEXT: fresh ? "1" : "",
           HERMES_AIFY_AGENT_ID: target, HERMES_SESSION_HANDLE: old },
       });
       assert.equal(result.status, 0, result.stderr);
+      assert.doesNotMatch(result.stderr, /FORBIDDEN/, "cleanup must not spawn or use the network");
       const warnings = result.stderr.split("\n").filter(line => line.startsWith("[hermes-aify] WARN:"));
       assert.equal(warnings.length, failure ? 1 : 0, result.stderr);
       if (failure) {
         assert.ok(warnings[0].startsWith(`[hermes-aify] WARN: could not clear ${target}'s markers: `));
         assert.match(warnings[0], failure === "import" ? /Cannot find module/ : /directory|EISDIR/);
       }
-      for (const [name, bytes] of Object.entries(before)) {
-        if (failure === "rm" && name === session) {
-          assert.equal(fs.readFileSync(path.join(dir, session, "retained"), "utf8"), bytes);
+      for (const [file, bytes] of before) {
+        if (failure === "rm" && file === session) {
+          assert.equal(fs.readFileSync(path.join(session, "retained"), "utf8"), bytes);
           continue;
         }
-        const cleared = fresh && !failure && ["session", "gateway", "loop-ready"].some(kind => name === `aify-hermes-${kind}-${safe}`);
-        if (cleared) assert.equal(fs.existsSync(path.join(dir, name)), false, name);
-        else assert.equal(fs.readFileSync(path.join(dir, name), "utf8"), bytes, name);
+        const cleared = fresh && !failure && ["session", "gateway", "loop-ready"].some(kind => path.basename(file) === `aify-hermes-${kind}-${safe}`);
+        if (cleared) assert.equal(fs.existsSync(file), false, `Reset must clear ${file}`);
+        else assert.equal(fs.readFileSync(file, "utf8"), bytes, file);
       }
       if (fresh) assert.notEqual(result.stdout, old);
       else assert.equal(result.stdout, old);
-    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    } finally {
+      for (const key of Object.keys(process.env)) if (!(key in savedEnv)) delete process.env[key];
+      Object.assign(process.env, savedEnv);
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 }
 
