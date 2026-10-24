@@ -1,0 +1,238 @@
+{
+"base": "7658c3ae9a341acd93fde750c02ba66772cabd76",
+"label": "PASSES IN TESTS; no activation or remote delivery proof",
+"portablePaths": {
+  "description": "Derived public view. Native executable, npm and shell paths are replaced with runtime-specific placeholders. Test outcomes, source hashes and executable hashes are unchanged.",
+  "nativeResults": ".check-output/activity-6/native-results.json",
+  "nativeResultsSha256": "5c016848f67d433962454ebe9725e3016fde4526440d356db5f98282315a40fa",
+  "implementationCommit": "fac9bdf93f756819a0d5430cedcc2a62988ccda3"
+},
+"currentSourceSha256": {
+  "tests/file-activity.test.js": "1bcde0a311dbd5807ac878b9d5349f35535c246ef59e7877cc348fe48c66c229",
+  "tests/activity-spool.test.js": "308da17fea4e6ab0029a1a0cb24965c8a5f17e54a6087089cbbe51a2632cda39",
+  "tests/activity-launcher.test.js": "9c192262e1172fbc4f8fd69fce5dba335ec38d39535e06c489b910eb201acbc6",
+  "tests/herdr-tool-parity.test.js": "734268d6f18b67155a973303a4a0eee29539afc6b8710fac5e7e8417991a5003",
+  "tests/file-activity-capability.test.js": "1374996e0da519bca418fa1f266c64ecb296577b7748ed51bcaade6799fcb9f3",
+  "bin/aify-tool-event.mjs": "6bc0b54b75b50b3700a70e22605682cd0504334685bf0b0a18d39602f49de8c0",
+  "lib/file-activity.mjs": "bc8d9ace80cf1f6d46803e16938bc3e11edb465c76547d504ce49c99468427e5",
+  "lib/activity-spool.mjs": "ae0c9d8227630a1be54d3ec5cb68ee5e476e5a1130bf3f07ffaa3b7fcace24f8",
+  "lib/activity-storage.mjs": "e2e73353d127bc157492041f9976918280e43c2e589e3234f996402c60940a4c",
+  "lib/herdr-tool-state.mjs": "53e151300667b9138def121afc70f7026044d4827b6227337180e85ecb439bb2",
+  "wrappers/claude-aify.sh.in": "31a99b5656e2b91bb2ef55ce2f371044f46579fc2524da9106b872b9b069ee43",
+  "lib/registry.mjs": "2108211148a8a9829aa7bc8f8b238143d4a33bfc482f0654b4204f6092c19636",
+  "lib/service-spec.mjs": "2597514356b8c0942406bcb013e308823207574ee577dc85de2cf1331cd111c7",
+  "bin/aify-herdr-state.sh": "5ed022989dcaeb13fbbe6257a26c5094f2c66358982f5653d8fa4d068e11171f",
+  "lib/codex-herdr-hooks.mjs": "f25386037acfed96dca32cbd56581aca4763a3d9a1b76b83850910342a89d89b",
+  "tests/run-in-a-temp-root.mjs": "3db97025f3c95935be3f3f8ff1b5ce48fb53e1cc5cd5f8cce066903dc0d0cd4d",
+  "docs/evidence/activity-6/qualify.mjs": "d43f1bd6ace9a7ba956fd10dda9f8907289da10c3136a12135688a181a21ae68"
+},
+"supportingSha256": {
+  ".gitignore": "07fd3509ac2267245af1a62cf9effa0c6883c995e91252d78f839986e5d96cc7",
+  "docs/FILE-ACTIVITY-SPOOL-v1.md": "09dde463f8c51381cdb38465b1193ba82258f9fa12d2674a6b7e3757efd2ac9b",
+  "docs/evidence/activity-6/README.md": "6710b41fd6015d595bdb3d9e4b9d66e3d8aa1f37951f5a3b1ee5f874e68819ab",
+  "docs/evidence/activity-6/guard-plants.mjs": "ae3794d39323496a22e65fe9e071fd143615eb8ea2e43b228bafcbcfb5c043b8",
+  "docs/evidence/activity-6/qualify.mjs": "d43f1bd6ace9a7ba956fd10dda9f8907289da10c3136a12135688a181a21ae68"
+},
+"unchangedFromBaseSha256": {
+  "bin/aify-herdr-state.sh": "5ed022989dcaeb13fbbe6257a26c5094f2c66358982f5653d8fa4d068e11171f",
+  "lib/codex-herdr-hooks.mjs": "f25386037acfed96dca32cbd56581aca4763a3d9a1b76b83850910342a89d89b",
+  "wrappers/codex-aify.sh.in": "be8116c638ea54478fc758802eb684a412317ea34534524f6d923d03c2785f5d",
+  "wrappers/hermes-aify.sh.in": "d5f2c3dd072dcd912bf42239f27fca0438f1844a1a571059141a6370c5d6a81b",
+  "bin/aify-lease.sh": "bec33f8d9b2f5374243cd3e1df7a1b270770ae0a17dbd70747c1e999a2067eb2",
+  "bin/aify-lifetime.sh": "5b663d5193dae35b0be8b363cc98a9a916fb7b82a50148def9de36505a8012ce"
+},
+"qualifications": [
+  {
+    "node": "v22.20.0",
+    "executable": "<node22-directory>/node.exe",
+    "executableSha256": "fdddbf4581e046b8102815d56208d6a248950bb554570b81519a8a5dacfee95d",
+    "command": [
+      "<node22-directory>/node.exe",
+      "<node22-directory>/node_modules/npm/bin/npm-cli.js",
+      "--script-shell=<system-root>/System32/cmd.exe",
+      "test",
+      "--",
+      "tests/file-activity.test.js",
+      "tests/activity-spool.test.js",
+      "tests/activity-launcher.test.js",
+      "tests/herdr-tool-parity.test.js",
+      "tests/file-activity-capability.test.js"
+    ],
+    "exit": 0,
+    "total": 67,
+    "pass": 67,
+    "fail": 0,
+    "skipped": 0,
+    "receipt": "commit-focused-22/receipt.json",
+    "workersBound": 5,
+    "skipLines": []
+  },
+  {
+    "node": "v26.7.0",
+    "executable": "<node26-directory>/node.exe",
+    "executableSha256": "e921fe5307e29bf6fd00000dd594356affd3a7b044e52720c7f10decbdc305b9",
+    "command": [
+      "<node26-directory>/node.exe",
+      "<node26-directory>/node_modules/npm/bin/npm-cli.js",
+      "--script-shell=<system-root>/System32/cmd.exe",
+      "test",
+      "--",
+      "tests/file-activity.test.js",
+      "tests/activity-spool.test.js",
+      "tests/activity-launcher.test.js",
+      "tests/herdr-tool-parity.test.js",
+      "tests/file-activity-capability.test.js"
+    ],
+    "exit": 0,
+    "total": 67,
+    "pass": 67,
+    "fail": 0,
+    "skipped": 0,
+    "receipt": "commit-focused-26/receipt.json",
+    "workersBound": 5,
+    "skipLines": []
+  },
+  {
+    "node": "v22.20.0",
+    "executable": "<node22-directory>/node.exe",
+    "executableSha256": "fdddbf4581e046b8102815d56208d6a248950bb554570b81519a8a5dacfee95d",
+    "command": [
+      "<node22-directory>/node.exe",
+      "<node22-directory>/node_modules/npm/bin/npm-cli.js",
+      "--script-shell=<system-root>/System32/cmd.exe",
+      "test",
+      "--",
+      "tests/registry.test.js",
+      "tests/render.test.js",
+      "tests/fixed-fields-have-owners.test.js",
+      "tests/a-claimed-codex-pane-reports-what-the-agent-is-doing.test.js",
+      "tests/resident-start-wrapper.test.js",
+      "tests/every-export-is-tested.test.js",
+      "tests/no-oversized-source-file.test.js",
+      "tests/no-source-bakes-in-a-host-path.test.js",
+      "tests/no-backtick-in-an-unquoted-heredoc.test.js"
+    ],
+    "exit": 0,
+    "total": 132,
+    "pass": 126,
+    "fail": 0,
+    "skipped": 6,
+    "receipt": "commit-regressions-22/receipt.json",
+    "workersBound": 9,
+    "skipLines": [
+      "ok 1 - A CLAIMED CODEX PANE FOLLOWS THE AGENT: working, blocked, working, idle, and idle after an interrupt # SKIP the stub herdr is a shell script, which Windows cannot spawn by path",
+      "ok 2 - OUTSIDE HERDR the app-server gets no hooks and the agent variable is unset # SKIP the stub herdr is a shell script, which Windows cannot spawn by path",
+      "ok 3 - a codex pane the claim did NOT take gets no hooks # SKIP the stub herdr is a shell script, which Windows cannot spawn by path",
+      "ok 4 - a hook fired without the agent variable reports nothing # SKIP the stub herdr is a shell script, which Windows cannot spawn by path",
+      "ok 5 - A MANAGED CODEX WORKER reports to the pane aify-env names, and claims nothing # SKIP the stub herdr is a shell script, which Windows cannot spawn by path",
+      "ok 6 - A MANAGED RESUME gets no hooks until config.toml trusts them, because codex would stop to ask # SKIP the stub herdr is a shell script, which Windows cannot spawn by path"
+    ]
+  },
+  {
+    "node": "v26.7.0",
+    "executable": "<node26-directory>/node.exe",
+    "executableSha256": "e921fe5307e29bf6fd00000dd594356affd3a7b044e52720c7f10decbdc305b9",
+    "command": [
+      "<node26-directory>/node.exe",
+      "<node26-directory>/node_modules/npm/bin/npm-cli.js",
+      "--script-shell=<system-root>/System32/cmd.exe",
+      "test",
+      "--",
+      "tests/registry.test.js",
+      "tests/render.test.js",
+      "tests/fixed-fields-have-owners.test.js",
+      "tests/a-claimed-codex-pane-reports-what-the-agent-is-doing.test.js",
+      "tests/resident-start-wrapper.test.js",
+      "tests/every-export-is-tested.test.js",
+      "tests/no-oversized-source-file.test.js",
+      "tests/no-source-bakes-in-a-host-path.test.js",
+      "tests/no-backtick-in-an-unquoted-heredoc.test.js"
+    ],
+    "exit": 0,
+    "total": 132,
+    "pass": 126,
+    "fail": 0,
+    "skipped": 6,
+    "receipt": "commit-regressions-26/receipt.json",
+    "workersBound": 9,
+    "skipLines": [
+      "\ufe63 A CLAIMED CODEX PANE FOLLOWS THE AGENT: working, blocked, working, idle, and idle after an interrupt (0.5177ms) # the stub herdr is a shell script, which Windows cannot spawn by path",
+      "\ufe63 OUTSIDE HERDR the app-server gets no hooks and the agent variable is unset (0.0622ms) # the stub herdr is a shell script, which Windows cannot spawn by path",
+      "\ufe63 a codex pane the claim did NOT take gets no hooks (0.0496ms) # the stub herdr is a shell script, which Windows cannot spawn by path",
+      "\ufe63 a hook fired without the agent variable reports nothing (0.0484ms) # the stub herdr is a shell script, which Windows cannot spawn by path",
+      "\ufe63 A MANAGED CODEX WORKER reports to the pane aify-env names, and claims nothing (0.052ms) # the stub herdr is a shell script, which Windows cannot spawn by path",
+      "\ufe63 A MANAGED RESUME gets no hooks until config.toml trusts them, because codex would stop to ask (0.0474ms) # the stub herdr is a shell script, which Windows cannot spawn by path"
+    ]
+  }
+],
+"plantCounts": {
+  "distinct": 35,
+  "node22": 35,
+  "node26": 35
+},
+"plants": [
+{"name":"raw-field-leak","expectedTest":"only approved file-tool fields reach immutable event bytes","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["only approved file-tool fields reach immutable event bytes"],"red":"plants-22-commit/raw-field-leak-red.txt","restored":"plants-22-commit/raw-field-leak-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["only approved file-tool fields reach immutable event bytes"],"red":"plants-26-commit/raw-field-leak-red.txt","restored":"plants-26-commit/raw-field-leak-restored.txt"}},
+{"name":"borrow-session","expectedTest":"refuse missing session instead of borrowing identity or paths","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["refuse missing session instead of borrowing identity or paths"],"red":"plants-22-commit/borrow-session-red.txt","restored":"plants-22-commit/borrow-session-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["refuse missing session instead of borrowing identity or paths"],"red":"plants-26-commit/borrow-session-red.txt","restored":"plants-26-commit/borrow-session-restored.txt"}},
+{"name":"borrow-agent","expectedTest":"refuse missing agent instead of borrowing identity or paths","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["refuse missing agent instead of borrowing identity or paths"],"red":"plants-22-commit/borrow-agent-red.txt","restored":"plants-22-commit/borrow-agent-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["refuse missing agent instead of borrowing identity or paths"],"red":"plants-26-commit/borrow-agent-red.txt","restored":"plants-26-commit/borrow-agent-restored.txt"}},
+{"name":"borrow-instance","expectedTest":"refuse missing instance instead of borrowing identity or paths","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["refuse missing instance instead of borrowing identity or paths"],"red":"plants-22-commit/borrow-instance-red.txt","restored":"plants-22-commit/borrow-instance-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["refuse missing instance instead of borrowing identity or paths"],"red":"plants-26-commit/borrow-instance-red.txt","restored":"plants-26-commit/borrow-instance-restored.txt"}},
+{"name":"borrow-machine","expectedTest":"refuse missing machine instead of borrowing identity or paths","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["refuse missing machine instead of borrowing identity or paths"],"red":"plants-22-commit/borrow-machine-red.txt","restored":"plants-22-commit/borrow-machine-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["refuse missing machine instead of borrowing identity or paths"],"red":"plants-26-commit/borrow-machine-red.txt","restored":"plants-26-commit/borrow-machine-restored.txt"}},
+{"name":"child-identity","expectedTest":"refuse subagent ambiguity instead of borrowing identity or paths","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["refuse subagent ambiguity instead of borrowing identity or paths","refuse parent session ambiguity instead of borrowing identity or paths"],"red":"plants-22-commit/child-identity-red.txt","restored":"plants-22-commit/child-identity-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["refuse subagent ambiguity instead of borrowing identity or paths","refuse parent session ambiguity instead of borrowing identity or paths"],"red":"plants-26-commit/child-identity-red.txt","restored":"plants-26-commit/child-identity-restored.txt"}},
+{"name":"bash-attribution","expectedTest":"Bash with a file-looking command produces no spool line; Read positive control does","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["Bash with a file-looking command produces no spool line; Read positive control does"],"red":"plants-22-commit/bash-attribution-red.txt","restored":"plants-22-commit/bash-attribution-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["Bash with a file-looking command produces no spool line; Read positive control does"],"red":"plants-26-commit/bash-attribution-red.txt","restored":"plants-26-commit/bash-attribution-restored.txt"}},
+{"name":"disabled-append","expectedTest":"disabled and malformed configuration never append","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["disabled and malformed configuration never append"],"red":"plants-22-commit/disabled-append-red.txt","restored":"plants-22-commit/disabled-append-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["disabled and malformed configuration never append"],"red":"plants-26-commit/disabled-append-red.txt","restored":"plants-26-commit/disabled-append-restored.txt"}},
+{"name":"herdr-only-install","expectedTest":"activity enabled without Herdr executes one native hook per outcome, argv conversion false","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["activity enabled without Herdr executes one native hook per outcome, argv conversion false","activity enabled without Herdr executes one native hook per outcome, argv conversion true"],"red":"plants-22-commit/herdr-only-install-red.txt","restored":"plants-22-commit/herdr-only-install-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["activity enabled without Herdr executes one native hook per outcome, argv conversion false","activity enabled without Herdr executes one native hook per outcome, argv conversion true"],"red":"plants-26-commit/herdr-only-install-red.txt","restored":"plants-26-commit/herdr-only-install-restored.txt"}},
+{"name":"parser-child","expectedTest":"activity enabled without Herdr executes one native hook per outcome, argv conversion false","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["activity enabled without Herdr executes one native hook per outcome, argv conversion false","activity enabled without Herdr executes one native hook per outcome, argv conversion true","malformed input, disabled config, unsupported tool, missing identity and storage failure cannot suppress working","missing and refused Herdr targets cannot suppress valid activity","actual native pane claim preserves one working command per tool, activity 1"],"red":"plants-22-commit/parser-child-red.txt","restored":"plants-22-commit/parser-child-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["activity enabled without Herdr executes one native hook per outcome, argv conversion false","activity enabled without Herdr executes one native hook per outcome, argv conversion true","malformed input, disabled config, unsupported tool, missing identity and storage failure cannot suppress working","missing and refused Herdr targets cannot suppress valid activity","actual native pane claim preserves one working command per tool, activity 1"],"red":"plants-26-commit/parser-child-red.txt","restored":"plants-26-commit/parser-child-restored.txt"}},
+{"name":"state-coupled-to-json","expectedTest":"malformed input, disabled config, unsupported tool, missing identity and storage failure cannot suppress working","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["malformed input, disabled config, unsupported tool, missing identity and storage failure cannot suppress working"],"red":"plants-22-commit/state-coupled-to-json-red.txt","restored":"plants-22-commit/state-coupled-to-json-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["malformed input, disabled config, unsupported tool, missing identity and storage failure cannot suppress working"],"red":"plants-26-commit/state-coupled-to-json-red.txt","restored":"plants-26-commit/state-coupled-to-json-restored.txt"}},
+{"name":"activity-coupled-to-pane","expectedTest":"missing and refused Herdr targets cannot suppress valid activity","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["activity enabled without Herdr executes one native hook per outcome, argv conversion false","activity enabled without Herdr executes one native hook per outcome, argv conversion true","missing and refused Herdr targets cannot suppress valid activity"],"red":"plants-22-commit/activity-coupled-to-pane-red.txt","restored":"plants-22-commit/activity-coupled-to-pane-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["activity enabled without Herdr executes one native hook per outcome, argv conversion false","activity enabled without Herdr executes one native hook per outcome, argv conversion true","missing and refused Herdr targets cannot suppress valid activity"],"red":"plants-26-commit/activity-coupled-to-pane-red.txt","restored":"plants-26-commit/activity-coupled-to-pane-restored.txt"}},
+{"name":"byte-bound","expectedTest":"exact byte boundary permits a complete line and refuses the next without exceeding logical bound","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["exact byte boundary permits a complete line and refuses the next without exceeding logical bound","old gap ACK cannot clear a newer loss generation; exact ACK clears it","parallel native writers share one hard byte budget"],"red":"plants-22-commit/byte-bound-red.txt","restored":"plants-22-commit/byte-bound-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["exact byte boundary permits a complete line and refuses the next without exceeding logical bound","old gap ACK cannot clear a newer loss generation; exact ACK clears it","parallel native writers share one hard byte budget"],"red":"plants-26-commit/byte-bound-red.txt","restored":"plants-26-commit/byte-bound-restored.txt"}},
+{"name":"session-bound","expectedTest":"session count overflow latches durable root-wide uncertainty without retaining excess identities","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["session count overflow latches durable root-wide uncertainty without retaining excess identities","parallel independent sessions cannot race past the per-agent session bound"],"red":"plants-22-commit/session-bound-red.txt","restored":"plants-22-commit/session-bound-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["session count overflow latches durable root-wide uncertainty without retaining excess identities","parallel independent sessions cannot race past the per-agent session bound"],"red":"plants-26-commit/session-bound-red.txt","restored":"plants-26-commit/session-bound-restored.txt"}},
+{"name":"single-append","expectedTest":"each complete event uses exactly one O_APPEND write and reopens as the same immutable body","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["each complete event uses exactly one O_APPEND write and reopens as the same immutable body"],"red":"plants-22-commit/single-append-red.txt","restored":"plants-22-commit/single-append-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["each complete event uses exactly one O_APPEND write and reopens as the same immutable body"],"red":"plants-26-commit/single-append-red.txt","restored":"plants-26-commit/single-append-restored.txt"}},
+{"name":"orphan-file-lock","expectedTest":"a crashed native lock holder cannot wedge subsequent appends","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["exact byte boundary permits a complete line and refuses the next without exceeding logical bound","session count overflow latches durable root-wide uncertainty without retaining excess identities","old gap ACK cannot clear a newer loss generation; exact ACK clears it","ACK binds immutable file content, not a reused filename or offset","torn tail never becomes an event and is converted to an explicit gap","first append age survives reopen and retries; expired records require gap ACK","uncertain age after rollback is a coverage gap, not young content","uncertain age after reboot is a coverage gap, not young content","uncertain age after wall step is a coverage gap, not young content","a crashed native lock holder cannot wedge subsequent appends","interrupted transaction becomes a durable gap on restart","conflicting event becomes a stable durable gap while the unrelated event remains sendable","gap conflict replaces only the named marker and stale ACK cannot erase its replacement","root policy refuses a second sessionBytes budget","root policy refuses a second maxSessions budget","root policy refuses a second maxAgeMs budget","terminal refusal remains durable until its committed gap ACK, then advances a reopened cursor","unknown conflict IDs and an old segment token cannot discard unrelated new content","each complete event uses exactly one O_APPEND write and reopens as the same immutable body","more than 32 recovery gaps drain in bounded pages without renewing IDs or losing the unaffected record","parallel independent sessions cannot race past the per-agent session bound","crash before the first control rename recovers with durable unknown coverage","a smaller recovery read cannot ACK gaps for a prefix it did not read","interrupted ACK publication preserves either original recovery or the fully committed retirement","an interrupted append preserves the old prefix and stable conflict markers"],"red":"plants-22-commit/orphan-file-lock-red.txt","restored":"plants-22-commit/orphan-file-lock-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["exact byte boundary permits a complete line and refuses the next without exceeding logical bound","session count overflow latches durable root-wide uncertainty without retaining excess identities","old gap ACK cannot clear a newer loss generation; exact ACK clears it","ACK binds immutable file content, not a reused filename or offset","torn tail never becomes an event and is converted to an explicit gap","first append age survives reopen and retries; expired records require gap ACK","uncertain age after rollback is a coverage gap, not young content","uncertain age after reboot is a coverage gap, not young content","uncertain age after wall step is a coverage gap, not young content","a crashed native lock holder cannot wedge subsequent appends","interrupted transaction becomes a durable gap on restart","conflicting event becomes a stable durable gap while the unrelated event remains sendable","gap conflict replaces only the named marker and stale ACK cannot erase its replacement","root policy refuses a second sessionBytes budget","root policy refuses a second maxSessions budget","root policy refuses a second maxAgeMs budget","terminal refusal remains durable until its committed gap ACK, then advances a reopened cursor","unknown conflict IDs and an old segment token cannot discard unrelated new content","each complete event uses exactly one O_APPEND write and reopens as the same immutable body","more than 32 recovery gaps drain in bounded pages without renewing IDs or losing the unaffected record","parallel independent sessions cannot race past the per-agent session bound","crash before the first control rename recovers with durable unknown coverage","a smaller recovery read cannot ACK gaps for a prefix it did not read","interrupted ACK publication preserves either original recovery or the fully committed retirement","an interrupted append preserves the old prefix and stable conflict markers"],"red":"plants-26-commit/orphan-file-lock-red.txt","restored":"plants-26-commit/orphan-file-lock-restored.txt"}},
+{"name":"interrupted-append","expectedTest":"interrupted transaction becomes a durable gap on restart","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["interrupted transaction becomes a durable gap on restart","an interrupted append preserves the old prefix and stable conflict markers"],"red":"plants-22-commit/interrupted-append-red.txt","restored":"plants-22-commit/interrupted-append-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["interrupted transaction becomes a durable gap on restart","an interrupted append preserves the old prefix and stable conflict markers"],"red":"plants-26-commit/interrupted-append-red.txt","restored":"plants-26-commit/interrupted-append-restored.txt"}},
+{"name":"expiry","expectedTest":"first append age survives reopen and retries; expired records require gap ACK","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["first append age survives reopen and retries; expired records require gap ACK"],"red":"plants-22-commit/expiry-red.txt","restored":"plants-22-commit/expiry-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["first append age survives reopen and retries; expired records require gap ACK"],"red":"plants-26-commit/expiry-red.txt","restored":"plants-26-commit/expiry-restored.txt"}},
+{"name":"clock-uncertainty","expectedTest":"uncertain age after rollback is a coverage gap, not young content","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["uncertain age after rollback is a coverage gap, not young content","uncertain age after reboot is a coverage gap, not young content","uncertain age after wall step is a coverage gap, not young content"],"red":"plants-22-commit/clock-uncertainty-red.txt","restored":"plants-22-commit/clock-uncertainty-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["uncertain age after rollback is a coverage gap, not young content","uncertain age after reboot is a coverage gap, not young content","uncertain age after wall step is a coverage gap, not young content"],"red":"plants-26-commit/clock-uncertainty-red.txt","restored":"plants-26-commit/clock-uncertainty-restored.txt"}},
+{"name":"root-admission","expectedTest":"spool refuses root junction without modifying external data","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["spool refuses root junction without modifying external data","spool refuses ancestor junction without modifying external data"],"red":"plants-22-commit/root-admission-red.txt","restored":"plants-22-commit/root-admission-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["spool refuses root junction without modifying external data","spool refuses ancestor junction without modifying external data"],"red":"plants-26-commit/root-admission-red.txt","restored":"plants-26-commit/root-admission-restored.txt"}},
+{"name":"content-ack","expectedTest":"ACK binds immutable file content, not a reused filename or offset","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["ACK binds immutable file content, not a reused filename or offset"],"red":"plants-22-commit/content-ack-red.txt","restored":"plants-22-commit/content-ack-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["ACK binds immutable file content, not a reused filename or offset"],"red":"plants-26-commit/content-ack-red.txt","restored":"plants-26-commit/content-ack-restored.txt"}},
+{"name":"old-gap-ack","expectedTest":"old gap ACK cannot clear a newer loss generation; exact ACK clears it","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["old gap ACK cannot clear a newer loss generation; exact ACK clears it","gap conflict replaces only the named marker and stale ACK cannot erase its replacement"],"red":"plants-22-commit/old-gap-ack-red.txt","restored":"plants-22-commit/old-gap-ack-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["old gap ACK cannot clear a newer loss generation; exact ACK clears it","gap conflict replaces only the named marker and stale ACK cannot erase its replacement"],"red":"plants-26-commit/old-gap-ack-red.txt","restored":"plants-26-commit/old-gap-ack-restored.txt"}},
+{"name":"uncommitted-ack","expectedTest":"conflicting event becomes a stable durable gap while the unrelated event remains sendable","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["conflicting event becomes a stable durable gap while the unrelated event remains sendable"],"red":"plants-22-commit/uncommitted-ack-red.txt","restored":"plants-22-commit/uncommitted-ack-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["conflicting event becomes a stable durable gap while the unrelated event remains sendable"],"red":"plants-26-commit/uncommitted-ack-red.txt","restored":"plants-26-commit/uncommitted-ack-restored.txt"}},
+{"name":"refusal-marker","expectedTest":"terminal refusal remains durable until its committed gap ACK, then advances a reopened cursor","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["conflicting event becomes a stable durable gap while the unrelated event remains sendable","gap conflict replaces only the named marker and stale ACK cannot erase its replacement","terminal refusal remains durable until its committed gap ACK, then advances a reopened cursor","more than 32 recovery gaps drain in bounded pages without renewing IDs or losing the unaffected record","a smaller recovery read cannot ACK gaps for a prefix it did not read","interrupted ACK publication preserves either original recovery or the fully committed retirement","an interrupted append preserves the old prefix and stable conflict markers"],"red":"plants-22-commit/refusal-marker-red.txt","restored":"plants-22-commit/refusal-marker-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["conflicting event becomes a stable durable gap while the unrelated event remains sendable","gap conflict replaces only the named marker and stale ACK cannot erase its replacement","terminal refusal remains durable until its committed gap ACK, then advances a reopened cursor","more than 32 recovery gaps drain in bounded pages without renewing IDs or losing the unaffected record","a smaller recovery read cannot ACK gaps for a prefix it did not read","interrupted ACK publication preserves either original recovery or the fully committed retirement","an interrupted append preserves the old prefix and stable conflict markers"],"red":"plants-26-commit/refusal-marker-red.txt","restored":"plants-26-commit/refusal-marker-restored.txt"}},
+{"name":"conflict-drops-unrelated","expectedTest":"conflicting event becomes a stable durable gap while the unrelated event remains sendable","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["conflicting event becomes a stable durable gap while the unrelated event remains sendable","more than 32 recovery gaps drain in bounded pages without renewing IDs or losing the unaffected record","a smaller recovery read cannot ACK gaps for a prefix it did not read","interrupted ACK publication preserves either original recovery or the fully committed retirement","an interrupted append preserves the old prefix and stable conflict markers"],"red":"plants-22-commit/conflict-drops-unrelated-red.txt","restored":"plants-22-commit/conflict-drops-unrelated-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["conflicting event becomes a stable durable gap while the unrelated event remains sendable","more than 32 recovery gaps drain in bounded pages without renewing IDs or losing the unaffected record","a smaller recovery read cannot ACK gaps for a prefix it did not read","interrupted ACK publication preserves either original recovery or the fully committed retirement","an interrupted append preserves the old prefix and stable conflict markers"],"red":"plants-26-commit/conflict-drops-unrelated-red.txt","restored":"plants-26-commit/conflict-drops-unrelated-restored.txt"}},
+{"name":"gap-conflict-reuses-id","expectedTest":"gap conflict replaces only the named marker and stale ACK cannot erase its replacement","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["gap conflict replaces only the named marker and stale ACK cannot erase its replacement"],"red":"plants-22-commit/gap-conflict-reuses-id-red.txt","restored":"plants-22-commit/gap-conflict-reuses-id-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["gap conflict replaces only the named marker and stale ACK cannot erase its replacement"],"red":"plants-26-commit/gap-conflict-reuses-id-red.txt","restored":"plants-26-commit/gap-conflict-reuses-id-restored.txt"}},
+{"name":"policy-mismatch","expectedTest":"root policy refuses a second sessionBytes budget","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["root policy refuses a second sessionBytes budget","root policy refuses a second maxSessions budget","root policy refuses a second maxAgeMs budget"],"red":"plants-22-commit/policy-mismatch-red.txt","restored":"plants-22-commit/policy-mismatch-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["root policy refuses a second sessionBytes budget","root policy refuses a second maxSessions budget","root policy refuses a second maxAgeMs budget"],"red":"plants-26-commit/policy-mismatch-red.txt","restored":"plants-26-commit/policy-mismatch-restored.txt"}},
+{"name":"capability-guard","expectedTest":"activity registry refuses foreign route without guessing a capability","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["activity registry refuses null without guessing a capability","activity registry refuses foreign route without guessing a capability","activity registry refuses unknown option without guessing a capability","activity registry refuses missing path without guessing a capability"],"red":"plants-22-commit/capability-guard-red.txt","restored":"plants-22-commit/capability-guard-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["activity registry refuses null without guessing a capability","activity registry refuses foreign route without guessing a capability","activity registry refuses unknown option without guessing a capability","activity registry refuses missing path without guessing a capability"],"red":"plants-26-commit/capability-guard-red.txt","restored":"plants-26-commit/capability-guard-restored.txt"}},
+{"name":"initial-publish-crash","expectedTest":"crash before the first control rename recovers with durable unknown coverage","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["crash before the first control rename recovers with durable unknown coverage"],"red":"plants-22-commit-resume/initial-publish-crash-red.txt","restored":"plants-22-commit-resume/initial-publish-crash-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["crash before the first control rename recovers with durable unknown coverage"],"red":"plants-26-commit/initial-publish-crash-red.txt","restored":"plants-26-commit/initial-publish-crash-restored.txt"}},
+{"name":"torn-tail","expectedTest":"torn tail never becomes an event and is converted to an explicit gap","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["torn tail never becomes an event and is converted to an explicit gap"],"red":"plants-22-commit-resume/torn-tail-red.txt","restored":"plants-22-commit-resume/torn-tail-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["torn tail never becomes an event and is converted to an explicit gap"],"red":"plants-26-commit/torn-tail-red.txt","restored":"plants-26-commit/torn-tail-restored.txt"}},
+{"name":"recovery-range","expectedTest":"a smaller recovery read cannot ACK gaps for a prefix it did not read","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["a smaller recovery read cannot ACK gaps for a prefix it did not read"],"red":"plants-22-commit-resume/recovery-range-red.txt","restored":"plants-22-commit-resume/recovery-range-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["a smaller recovery read cannot ACK gaps for a prefix it did not read"],"red":"plants-26-commit/recovery-range-red.txt","restored":"plants-26-commit/recovery-range-restored.txt"}},
+{"name":"ack-marked-pending","expectedTest":"interrupted ACK publication preserves either original recovery or the fully committed retirement","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["more than 32 recovery gaps drain in bounded pages without renewing IDs or losing the unaffected record","interrupted ACK publication preserves either original recovery or the fully committed retirement"],"red":"plants-22-commit-resume/ack-marked-pending-red.txt","restored":"plants-22-commit-resume/ack-marked-pending-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["more than 32 recovery gaps drain in bounded pages without renewing IDs or losing the unaffected record","interrupted ACK publication preserves either original recovery or the fully committed retirement"],"red":"plants-26-commit/ack-marked-pending-red.txt","restored":"plants-26-commit/ack-marked-pending-restored.txt"}},
+{"name":"append-discards-prefix","expectedTest":"an interrupted append preserves the old prefix and stable conflict markers","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["an interrupted append preserves the old prefix and stable conflict markers"],"red":"plants-22-commit-resume/append-discards-prefix-red.txt","restored":"plants-22-commit-resume/append-discards-prefix-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["an interrupted append preserves the old prefix and stable conflict markers"],"red":"plants-26-commit/append-discards-prefix-red.txt","restored":"plants-26-commit/append-discards-prefix-restored.txt"}},
+{"name":"append-regenerates-conflict","expectedTest":"an interrupted append preserves the old prefix and stable conflict markers","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["an interrupted append preserves the old prefix and stable conflict markers"],"red":"plants-22-commit-resume/append-regenerates-conflict-red.txt","restored":"plants-22-commit-resume/append-regenerates-conflict-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["an interrupted append preserves the old prefix and stable conflict markers"],"red":"plants-26-commit/append-regenerates-conflict-red.txt","restored":"plants-26-commit/append-regenerates-conflict-restored.txt"}},
+{"name":"retirement-cleanup","expectedTest":"interrupted ACK publication preserves either original recovery or the fully committed retirement","node22":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["interrupted ACK publication preserves either original recovery or the fully committed retirement"],"red":"plants-22-commit-resume/retirement-cleanup-red.txt","restored":"plants-22-commit-resume/retirement-cleanup-restored.txt"},"node26":{"compileExit":0,"redExit":1,"restoredExit":0,"observedFailures":["interrupted ACK publication preserves either original recovery or the fully committed retirement"],"red":"plants-26-commit/retirement-cleanup-red.txt","restored":"plants-26-commit/retirement-cleanup-restored.txt"}}
+],
+"backgroundController": {
+  "sessionId": "proc_f574563ef7a4",
+  "pid": 61188,
+  "status": "exited",
+  "exit": 0,
+  "node22Resume": "plants-22-commit-resume",
+  "node26": "plants-26-commit"
+},
+"retainedInterruptions": [
+  {
+    "attempt": "plants-26-final",
+    "controllerExit": "UNKNOWN",
+    "reason": "420-second tool transport cutoff; exact mutation reversed and healthy hashes checked before resume"
+  },
+  {
+    "attempt": "plants-22-commit",
+    "controllerExit": 124,
+    "reason": "400-second command limit during initial-publish-crash restored arm",
+    "completedRestoredBeforeCutoff": 28,
+    "recovery": "Healthy source hashes matched; missing seven targets resumed with fresh labels under tracked background execution"
+  }
+],
+"notes": [
+  "Original missing-module RED concerns local implementation files, not Node built-ins.",
+  "Six pre-existing Windows Codex shell fixtures are skipped in the affected-regression selection.",
+  "Raw predecessor receipts are retained. Early Node26 failure metadata that included the reporter heading is historical; the final reducer excludes that heading.",
+  "npm ci in this exact clone was parent-supplied exit zero. No dependencies or node_modules directory were fabricated."
+]
+}

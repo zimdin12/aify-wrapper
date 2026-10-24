@@ -1,0 +1,78 @@
+{
+  "label": "PASSES IN TESTS on native Windows; no live activation or composed shipper qualification",
+  "sourceBindings": "results.json#currentSourceSha256",
+  "command": "npm test, with selected absolute Node, matching npm CLI, native script shell and sealed state roots",
+  "runs": [
+    {
+      "version": "v22.20.0",
+      "executableSha256": "fdddbf4581e046b8102815d56208d6a248950bb554570b81519a8a5dacfee95d",
+      "exit": 0,
+      "counters": {
+        "tests": 1117,
+        "suites": 0,
+        "pass": 1051,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 66,
+        "todo": 0
+      },
+      "dependencyHeads": {
+        "env": "865ba439c8dfafdaa0a44e1d4ed278b9b6d7c212",
+        "comms": "634ac1e2e4104d3d1766f3a1fac20c95ff6b85c8"
+      },
+      "rawSha256": "fc4d57c15ee12a51728f29f06832dd783ffe7c8a408f3e9491bf37a7610b813d",
+      "driverSha256": "85a070ce9038c86fa11485ce7f8043260d1c55eb29e6e29050c5c858c9765a77",
+      "permittedSkipClasses": [
+        "unchanged Windows shell-executable fixtures",
+        "unchanged Unix-only process/socket fixtures",
+        "unchanged Windows privileged-symlink fixture"
+      ],
+      "receipt": ".check-output/activity-6/parent-full-repaired-env-22/receipt.json",
+      "raw": ".check-output/activity-6/parent-full-repaired-env-22/raw.txt",
+      "workerFilesBound": 118
+    },
+    {
+      "version": "v26.7.0",
+      "executableSha256": "e921fe5307e29bf6fd00000dd594356affd3a7b044e52720c7f10decbdc305b9",
+      "exit": 0,
+      "counters": {
+        "tests": 1117,
+        "suites": 0,
+        "pass": 1051,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 66,
+        "todo": 0
+      },
+      "dependencyHeads": {
+        "env": "865ba439c8dfafdaa0a44e1d4ed278b9b6d7c212",
+        "comms": "634ac1e2e4104d3d1766f3a1fac20c95ff6b85c8"
+      },
+      "rawSha256": "48d5e3c223048bf5245c056f91066951c8393a34d82b2ddea50031e8b8df579f",
+      "driverSha256": "85a070ce9038c86fa11485ce7f8043260d1c55eb29e6e29050c5c858c9765a77",
+      "permittedSkipClasses": [
+        "unchanged Windows shell-executable fixtures",
+        "unchanged Unix-only process/socket fixtures",
+        "unchanged Windows privileged-symlink fixture"
+      ],
+      "receipt": ".check-output/activity-6/parent-full-repaired-env-26/receipt.json",
+      "raw": ".check-output/activity-6/parent-full-repaired-env-26/raw.txt",
+      "workerFilesBound": 118
+    }
+  ],
+  "preservedSetupFailure": {
+    "receipt": ".check-output/activity-6/parent-full-base-env-22/receipt.json",
+    "exit": 1,
+    "tests": 1117,
+    "pass": 1018,
+    "fail": 33,
+    "skipped": 66,
+    "scope": "The private controller omitted Windows ACL owner identity and a private ProgramFiles path. Production code and tests were unchanged for the corrected runs. Both prerequisites were restored together, so these executions do not isolate their individual causal contributions."
+  },
+  "runtimeCoverage": "Node 22.20.0 and 26.7.0 each executed all 118 selected test-file workers. The 66 skipped tests retain their existing platform reasons; they are not producer or process coverage.",
+  "remaining": [
+    "Composed candidate env/comms governing suites",
+    "Actual Claude callback through spool, shipper and disposable dashboard",
+    "Owner review and activation"
+  ]
+}
