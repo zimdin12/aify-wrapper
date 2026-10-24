@@ -1,0 +1,74 @@
+
+> aify-env@0.9.4 test
+> node tests/run-in-a-temp-root.mjs tests/a-second-start-supersedes-the-first.test.js tests/the-launcher-and-aify-env-name-one-home.test.js tests/herdr-identity.test.js
+
+TAP version 13
+# Subtest: a second start takes over, and the first stops serving
+ok 1 - a second start takes over, and the first stops serving
+  ---
+  duration_ms: 3271.4588
+  type: 'test'
+  ...
+# Subtest: the predecessor's processes are reaped by the replacement, not stranded
+ok 2 - the predecessor's processes are reaped by the replacement, not stranded
+  ---
+  duration_ms: 2161.1059
+  type: 'test'
+  ...
+# Subtest: something that is not an aify-env is left alone, and named
+ok 3 - something that is not an aify-env is left alone, and named
+  ---
+  duration_ms: 189.8675
+  type: 'test'
+  ...
+# Subtest: a stranger that serves a HEALTHY body with a pid is still left alone
+ok 4 - a stranger that serves a HEALTHY body with a pid is still left alone
+  ---
+  duration_ms: 227.8931
+  type: 'test'
+  ...
+# Subtest: shipped dispatcher refuses vanished initial choice: old-p1
+ok 5 - shipped dispatcher refuses vanished initial choice: old-p1
+  ---
+  duration_ms: 217.7247
+  type: 'test'
+  ...
+# Subtest: shipped dispatcher refuses vanished initial choice: lead
+ok 6 - shipped dispatcher refuses vanished initial choice: lead
+  ---
+  duration_ms: 205.2715
+  type: 'test'
+  ...
+# Subtest: final shipped attach --id refuses label collision, ordinary label still resolves
+ok 7 - final shipped attach --id refuses label collision, ordinary label still resolves
+  ---
+  duration_ms: 384.033
+  type: 'test'
+  ...
+# Subtest: fixture ownership is creation-bound, never acquired from logs
+ok 8 - fixture ownership is creation-bound, never acquired from logs
+  ---
+  duration_ms: 0.4523
+  type: 'test'
+  ...
+# Subtest: real job supervisor contains a detached child and rejects unowned membership
+ok 9 - real job supervisor contains a detached child and rejects unowned membership
+  ---
+  duration_ms: 1448.8089
+  type: 'test'
+  ...
+# Subtest: the launcher's record lands in the home aify-env resolves, for every spelling of it
+ok 10 - the launcher's record lands in the home aify-env resolves, for every spelling of it
+  ---
+  duration_ms: 1359.4549
+  type: 'test'
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5944.2532

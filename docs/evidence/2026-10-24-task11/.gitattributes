@@ -1,0 +1,3 @@
+* -text
+*.txt -whitespace
+*.json whitespace=cr-at-eol

@@ -1,0 +1,115 @@
+{
+  "source_unchanged": true,
+  "runs": [
+    {
+      "suite": "baseline-bridge",
+      "exit_code": 1,
+      "file_invocations": 380,
+      "unique_files": 380,
+      "failed_files": [
+        "tests\\bridge-exits-when-its-terminal-goes.test.js"
+      ],
+      "failed_case_or_file_labels": [
+        "a resident bridge whose stdin ends reports resident-lost and exits"
+      ]
+    },
+    {
+      "suite": "baseline-env",
+      "exit_code": 1,
+      "reporter": {
+        "tests": 3447,
+        "pass": 3441,
+        "fail": 2,
+        "cancelled": 0,
+        "skipped": 4
+      },
+      "failed_case_or_file_labels": [
+        "a second start takes over, and the first stops serving",
+        "tests\\\\the-launcher-and-aify-env-name-one-home.test.js"
+      ]
+    },
+    {
+      "suite": "candidate-python",
+      "exit_code": 0,
+      "passed": 5736,
+      "skipped": 28,
+      "warnings": 10,
+      "subtests_passed": 12638,
+      "failed_case_or_file_labels": []
+    },
+    {
+      "suite": "candidate-bridge",
+      "exit_code": 1,
+      "file_invocations": 380,
+      "unique_files": 380,
+      "failed_files": [
+        "tests\\bridge-exits-when-its-terminal-goes.test.js"
+      ],
+      "failed_case_or_file_labels": [
+        "a resident bridge whose stdin ends reports resident-lost and exits"
+      ]
+    },
+    {
+      "suite": "candidate-dashboard",
+      "exit_code": 0,
+      "reporter": {
+        "tests": 1953,
+        "pass": 1953,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0
+      },
+      "failed_case_or_file_labels": []
+    },
+    {
+      "suite": "candidate-wrapper",
+      "exit_code": 0,
+      "reporter": {
+        "tests": 1007,
+        "pass": 937,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 70
+      },
+      "failed_case_or_file_labels": []
+    },
+    {
+      "suite": "candidate-env",
+      "exit_code": 1,
+      "reporter": {
+        "tests": 3447,
+        "pass": 3442,
+        "fail": 1,
+        "cancelled": 0,
+        "skipped": 4
+      },
+      "failed_case_or_file_labels": [
+        "final shipped attach --id refuses label collision, ordinary label still resolves"
+      ]
+    }
+  ],
+  "focused": {
+    "tests": 51,
+    "pass": 51,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 0
+  },
+  "native_cli_in_full_wrapper": true,
+  "named_env_controls": {
+    "baseline": {
+      "tests": 10,
+      "pass": 10,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    },
+    "candidate": {
+      "tests": 10,
+      "pass": 10,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0
+    }
+  }
+}

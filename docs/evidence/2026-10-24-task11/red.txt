@@ -1,0 +1,40 @@
+TAP version 13
+# (node:16900) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/Administrator/projects/aify-wrapper-task11/tests/a-denied-channel-policy-write-names-the-elevated-command.test.js is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to C:\\Users\\Administrator\\projects\\aify-wrapper-task11\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: a denied Windows policy write exits 78 with a copyable elevated command
+not ok 1 - a denied Windows policy write exits 78 with a copyable elevated command
+  ---
+  duration_ms: 146.9901
+  type: 'test'
+  location: 'C:\\Users\\Administrator\\projects\\aify-wrapper-task11\\tests\\a-denied-channel-policy-write-names-the-elevated-command.test.js:12:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /PowerShell as Administrator/. Input:
+    
+    'channel install: the policy was not written: Access to the registry key is denied.\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    channel install: the policy was not written: Access to the registry key is denied.
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/Administrator/projects/aify-wrapper-task11/tests/a-denied-channel-policy-write-names-the-elevated-command.test.js:45:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 213.0276

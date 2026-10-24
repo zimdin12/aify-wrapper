@@ -1,0 +1,31 @@
+{
+  "tree": "0d076ece4df68f0dd7c62326174000e130f1b626",
+  "scope": "added lines of the five staged source/test/doc files",
+  "checks": {
+    "hardcoded-secret": {
+      "positive_control": true,
+      "negative_control": true,
+      "hits": []
+    },
+    "shell-injection": {
+      "positive_control": true,
+      "negative_control": true,
+      "hits": []
+    },
+    "dynamic-code": {
+      "positive_control": true,
+      "negative_control": true,
+      "hits": []
+    },
+    "unsafe-deserialization": {
+      "positive_control": true,
+      "negative_control": true,
+      "hits": []
+    },
+    "formatted-sql": {
+      "positive_control": true,
+      "negative_control": true,
+      "hits": []
+    }
+  }
+}

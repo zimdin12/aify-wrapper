@@ -1,0 +1,15 @@
+{
+  "environment_value_scan": {
+    "selection": "environment names matching KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL, values at least eight bytes",
+    "selected_values": 1,
+    "files_examined": 34,
+    "matched_files": [],
+    "positive_control": true,
+    "negative_control": true
+  },
+  "bundled_wrapper_installer": {
+    "path": "C:\\Users\\Administrator\\projects\\aify-comms-task5\\mcp\\stdio\\node_modules\\aify-wrapper\\lib\\channel-install.mjs",
+    "sha256": "f297972f469a85931eb52d816a7ed8f664a74655bf9474d3470e099d9820609c",
+    "equals_base_bytes": true
+  }
+}

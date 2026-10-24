@@ -1,0 +1,10 @@
+{
+  "tree": "0d076ece4df68f0dd7c62326174000e130f1b626",
+  "archive_sha256": "788f8ac40fcf16ce4eef790821385a522d3d234f8576f47a550fb5949de0a9c1",
+  "target": "lib\\channel-install.mjs",
+  "original_sha256": "b833eb83d0d1d5425ed8b2be57874d57b1abaf98a11d0159da1a1ccb109833fe",
+  "exit_code": 1,
+  "intended_assertion_failed": true,
+  "export_restored": true,
+  "log_sha256": "d29f12217c48b4b5e0bcb0f8ddccea9375d0cfe426baf6f75b47254306a4a6ea"
+}

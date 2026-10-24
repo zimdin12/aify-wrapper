@@ -1,0 +1,87 @@
+{
+  "started_at": "2026-10-24T02:38:18.589569+00:00",
+  "runner_sha256": "d27bbf2d04dfabbf853abf688891adfa13b4029d57ecf291f8a033afb938ddea",
+  "before": {
+    "candidate_wrapper": {
+      "path": "C:\\Users\\Administrator\\projects\\aify-wrapper-task11",
+      "head": "e103f3d6dbfe0173352671eb76642a575b05cdd8",
+      "tracked_files": 346,
+      "raw_population_sha256": "d848ff3bac449b32d9c5e732c29fa36e730b3971c0de4380173911998e05a5fd"
+    },
+    "baseline_wrapper": {
+      "path": "C:\\Users\\Administrator\\projects\\aify-wrapper",
+      "head": "e103f3d6dbfe0173352671eb76642a575b05cdd8",
+      "tracked_files": 344,
+      "raw_population_sha256": "6b8b24d57e26ab188d14cb0969222ad89b4e71d7ef0f07ad2eb3f6b585a98bfa"
+    },
+    "env": {
+      "path": "C:\\Users\\Administrator\\projects\\aify-env",
+      "head": "0561185fda4f142265ad75169ec82e5176e22d90",
+      "tracked_files": 633,
+      "raw_population_sha256": "e789c183b81daf060b7cc44e81ad133296f6eb539f7b0b3065f5a8e7e867bfdc"
+    },
+    "comms": {
+      "path": "C:\\Users\\Administrator\\projects\\aify-comms-task5",
+      "head": "1217040eed6dbe9cff129e52903a0d16b2f7de1e",
+      "tracked_files": 2618,
+      "raw_population_sha256": "9146e583eb392a660f73d437fbc5307f6d6f27ae244e84c5429a5b77036b8301"
+    },
+    "candidate_staged_tree": "0d076ece4df68f0dd7c62326174000e130f1b626"
+  },
+  "runs": [
+    {
+      "arm": "baseline",
+      "wrapper_repo": "C:\\Users\\Administrator\\projects\\aify-wrapper",
+      "command": [
+        "C:\\Program Files\\Git\\usr\\bin\\bash.EXE",
+        "-c",
+        "npm test -- tests/a-second-start-supersedes-the-first.test.js tests/the-launcher-and-aify-env-name-one-home.test.js tests/herdr-identity.test.js"
+      ],
+      "cwd": "C:\\Users\\Administrator\\projects\\aify-env",
+      "exit_code": 0,
+      "elapsed_s": 6.8,
+      "log_sha256": "037359acb43db562e0fe2d1d8a5b1e2a7cb441cdf46365ac5b868c9c3e50e9c8"
+    },
+    {
+      "arm": "candidate",
+      "wrapper_repo": "C:\\Users\\Administrator\\projects\\aify-wrapper-task11",
+      "command": [
+        "C:\\Program Files\\Git\\usr\\bin\\bash.EXE",
+        "-c",
+        "npm test -- tests/a-second-start-supersedes-the-first.test.js tests/the-launcher-and-aify-env-name-one-home.test.js tests/herdr-identity.test.js"
+      ],
+      "cwd": "C:\\Users\\Administrator\\projects\\aify-env",
+      "exit_code": 0,
+      "elapsed_s": 6.144,
+      "log_sha256": "532ff7377eb1053b94982cebfc85b2da62a140e1b6c47d467e92be28ac47e33a"
+    }
+  ],
+  "after": {
+    "candidate_wrapper": {
+      "path": "C:\\Users\\Administrator\\projects\\aify-wrapper-task11",
+      "head": "e103f3d6dbfe0173352671eb76642a575b05cdd8",
+      "tracked_files": 346,
+      "raw_population_sha256": "d848ff3bac449b32d9c5e732c29fa36e730b3971c0de4380173911998e05a5fd"
+    },
+    "baseline_wrapper": {
+      "path": "C:\\Users\\Administrator\\projects\\aify-wrapper",
+      "head": "e103f3d6dbfe0173352671eb76642a575b05cdd8",
+      "tracked_files": 344,
+      "raw_population_sha256": "6b8b24d57e26ab188d14cb0969222ad89b4e71d7ef0f07ad2eb3f6b585a98bfa"
+    },
+    "env": {
+      "path": "C:\\Users\\Administrator\\projects\\aify-env",
+      "head": "0561185fda4f142265ad75169ec82e5176e22d90",
+      "tracked_files": 633,
+      "raw_population_sha256": "e789c183b81daf060b7cc44e81ad133296f6eb539f7b0b3065f5a8e7e867bfdc"
+    },
+    "comms": {
+      "path": "C:\\Users\\Administrator\\projects\\aify-comms-task5",
+      "head": "1217040eed6dbe9cff129e52903a0d16b2f7de1e",
+      "tracked_files": 2618,
+      "raw_population_sha256": "9146e583eb392a660f73d437fbc5307f6d6f27ae244e84c5429a5b77036b8301"
+    },
+    "candidate_staged_tree": "0d076ece4df68f0dd7c62326174000e130f1b626"
+  },
+  "source_unchanged": true
+}

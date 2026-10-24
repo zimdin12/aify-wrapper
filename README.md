@@ -205,8 +205,14 @@ node lib/channel-install.mjs check [--bridge-dir <bridge>]   # the route claude-
 node lib/channel-install.mjs remove                          # plugin, marketplace and our policy entry removed
 ```
 
-On Windows the policy is the per-user value `HKCU\SOFTWARE\Policies\ClaudeCode` → `Settings`, which
-needs no admin. The install **merges** into it, because that value is the user's whole per-user policy
+On Windows the policy is the per-user value `HKCU\SOFTWARE\Policies\ClaudeCode` → `Settings`.
+Per-user does not mean writable without elevation. When Windows Policies permissions deny the write,
+the install exits 78 and prints the exact command with absolute paths and PowerShell quoting.
+Open **PowerShell as Administrator under the same Windows account**, then run that command once.
+Using another account would write that account's HKCU instead. Return to the normal unelevated shell
+afterward. Do not change the Policies ACLs or run the coding-agent runtime elevated.
+
+The install **merges** into the value, because it is the user's whole per-user policy
 and `allowedChannelPlugins` replaces Anthropic's default channel list. When an admin policy is in charge,
 the install reports that and writes nothing. On Linux and macOS the policy is an admin file, so the install
 only reports.

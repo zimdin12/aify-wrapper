@@ -1,0 +1,347 @@
+bringing up nodes...
+bringing up nodes...
+
+.................uuu.uuu.uuu.....uuuuuuuuu.uuuu...uuuuuuuuu.uu...uu...uu [  0%]
+uuu.uuuu.u.uu....u.u.u.uuuuuuuuuuuuuuuuu.......u...uuu..uu...........uu. [  1%]
+................uu.uuu.u.uu....u.uu......uuu.uu.u.u....uu........uuuuuu. [  1%]
+...............uu.......u.uu..u..u...u....uu.uu..u...................... [  3%]
+........................................................................ [  4%]
+.....uuu.u.uuuuuuu...u.................................................. [  5%]
+...................................................uu................... [  6%]
+.............uuuuu.........uuu..uuuu...uuuu...........................uu [  7%]
+uu................u...........................uu.............uu......... [  8%]
+.....u.........uu.u.........u..u...u...........u............u........... [  9%]
+....uuu.u..................................uuuu..u..............uuuu.u.u [ 10%]
+uu.uuuuuu...u.uu...u.uu.uu..u...........u....u.u..u.u.u.u...u.uu..u...u. [ 11%]
+.u....u..u.u..uu..u..u...uu............................................. [ 12%]
+.......u.....u.u.u.u.u.u....u.uu.uuu..uu..u............................. [ 13%]
+.................u.uu..u.uuuuu.uuuu.u...u...u...u..u..uu...u............ [ 14%]
+uuuu..u.....uuu...............u..........u......u.u.uuuuuuuuuuuuuuu..... [ 15%]
+u......................................................uu............... [ 16%]
+...............uuu.................uu.u.uu................uu.uu......... [ 17%]
+........u.................................u...u.uuuu.......u..uu........ [ 18%]
+u.....................................................u..u....u.....u... [ 19%]
+....u.u.....u.....u.u.....u...u..u...u....u............................. [ 20%]
+............uuu.........uuu..u.uu.....uuuuuu.uu...uuuuu.u......uuuuuuuu. [ 21%]
+.uuu....uuu..uuu......uuuuuu.uuuuuu.......uuuu.u.uuuu....uuuuuuuuu...... [ 21%]
+....................................uuuu......u.uuu..................... [ 23%]
+....................uuuu.u..uuuuuuuuu.u.......u.uu.u.............uuu.u.u [ 23%]
+u.u..........................u.uu.u..u....u........u......u......uu..u.u [ 24%]
+.u.u.u....u...u.u.uuu.uuuuuu..uu.u.u.u......u.u.u.uuuuuuu.u.u..uuuuuu..u [ 25%]
+.u..u...u.u....uuuu..u.u.................u.............u.......u........ [ 26%]
+u........u......u..u.......uu.u........u.u..u.u......uuuuuuuu..........u [ 27%]
+................uu.uu.uuu..................uu........................... [ 28%]
+................s....................uu................................. [ 29%]
+...............uu.........uu..uuu........u.u.u..u.u....u.u..u.uu.u.uuu.. [ 30%]
+.....u.................u...............u..u.u.uu..u...u.u.........u..... [ 31%]
+.....u.u.uu.......uuu.uu...u.uu...............uu.u.uu..u.u.....uuuuuuuu. [ 32%]
+..uuuuuuu.u.uuuu..u.......uu.uuuuuu.uu..u.u............u..u...uu........ [ 33%]
+..........................................uu.........uu................. [ 34%]
+...s.....u.u..uuuu...u.u.uuuuu....u.......uuuu...............u.u.u...... [ 35%]
+.......uuuuu.................................................uu......... [ 36%]
+..................................u....................u.u.........u.... [ 37%]
+...uuuu..uuu..u................................uu.uu.uuu.uuuuu.u.uuu.uuu [ 38%]
+.uu........uuuuuuuu...........u.u............................u..u...u..u [ 39%]
+......................................................................u. [ 40%]
+.....u.uu.uuuuuu...u....uu..uu..uu...uu...uuuu...uuuuu.u...u............ [ 41%]
+......................u.uu.............u...u.....uuu.....uuu...u.uuuuu.u [ 42%]
+...u.u.u.u..uuu.....u.u.uuuuuuu.u..u....................u.u.u.uuu.u...u. [ 43%]
+u....uu.u.u.u..u..u.uuu..u.u.....u.u.uu.u..u............................ [ 43%]
+..u.u..........u....uuu.u..uuu.u.u.u..uuu.u.u.u.......u.u..uu..uuuu.uuu. [ 44%]
+u.uu..u....uu.uu...uu..u.u.u.u.....................uuuu.uu.uu........... [ 45%]
+...............u..uu..u.....uu...uu.uuuu......uuuuu....................u [ 46%]
+u.uuu...u.u..u....uu.u.....u................u.uu....................u... [ 47%]
+..u.....u.....u.uuu....uuuuuu.uuuuuuuuuuuuuu.uuuuu.....uuu......uuuuu..u [ 48%]
+uuuuu..uu................uuuuuuu..u.u..........................u.u...... [ 48%]
+...........u...u....u...u...u.uuuuu.u..u...u...u........u..u........uuu. [ 49%]
+uu.........uu...........u......u.....u......u..u.u.u.u.uuuuuu.uuuu...u.. [ 50%]
+.............uuuuu...............................................u..u... [ 51%]
+................u.u............u.....u..uuuuuuu...u.uuuu..........uu.uuu [ 52%]
+uu.................................u...............uuuu.uuuuu..uuu..u.uu [ 53%]
+uuu..uuu.uuuuu..u....u.....u....u.uuu.uu.uuu.uuu.uuuu.uu.uuuuuu........u [ 54%]
+uuuuu...uuu.uuuu.u.............uuuuuuuuuu.........uu.....uu.uuu.uu...uuu [ 54%]
+uuuu......uuuuuu.uuuuuu..uuuu...uuuuuuu.uuuuuuuuuuuuuuu................. [ 55%]
+....................................uu.......uuuuuuuuu.....uu.uu......uu [ 56%]
+u.u.............uu...................uuu.....uuuu......uuuuuu.uuuu...... [ 57%]
+......uu.uu......uu...................uuu......uuu...............u.uu..u [ 58%]
+uu.....uuu....uuu..uuu..uuu.uuu.u.u.uu...uu..u................u......... [ 59%]
+.....uu.........................................................uuuuuuu. [ 60%]
+uuuuuuuu...uuuuuu...uuuu.uuuuu...uuuuuuuuuuuu................u.......... [ 60%]
+...u........uu..uuuuuuu..........u.u.....................u.uuu....uuuuu. [ 61%]
+.uuuuuuuuuuu...uu.u...u....u..uu.u....................u.u.u.u..u...u.u.. [ 62%]
+.........uuuuuuuu.u........sssssus.sssuuuu.uuuuuu........uu.....u.uuuuu. [ 63%]
+..uu.uuuuuu.uu..u..uuuuu.u.u.uu.uu.u.uu.u.u.uu.u..u.uu.u....uuuuuu...uuu [ 63%]
+u............u.uu.u.u......u.u.u..........u.u........................... [ 64%]
+u.....u............u..uu....u..................u.....uu.u.u.u..uu.u.u... [ 65%]
+............uuuuu.uuuuuu..uuuuuuuu...uuuu.............uuu..u.u...uu.uuuu [ 66%]
+uuuuuu.uu.u..u.u....u.u...uuu.uuu.u.uuuuuuu.uuuuu..u..u..........uuu.uuu [ 66%]
+uu..uuu..sssuss.ssusuuuuu.uu....uuuuuu.uuuuuuu.uu.uu.uuuuuuuuuu.uuuu.... [ 67%]
+........uuuuuuuu.uu..uuuu.uuuuu.uuuuuuu.u.u.uu...u....u..u.uuuuuuuuuuuu. [ 67%]
+uuu.u....uuuuu..uuuuuu.uu....................u.u..uu..u..uu.u.u......... [ 68%]
+..........uuu....uuu..............................uuuu.uuuuuu........... [ 69%]
+......uu..u......uuuuu.uuuu...............u...u...uuuuuu.........uuu...u [ 70%]
+u......u.uuu.uu.uuuu.uuuu.uu.uuuuuu...uuuuu.uu.uu.uuu.uuuuuuuuuuu....... [ 70%]
+uuuuuuuuuu.....u.uuuuu.uuuu...u...u......uuuu.............uuuu...u..uu.u [ 71%]
+uu..........uuuuuuuu...uuuuuuuuuuuuu..uuuu......u.uuuuuu.uuu.uuuuuuuuuuu [ 72%]
+uu.uu.uuuuuuu.uuuu..u...uuuuuuuuuuuuuu.uuu.uu.uuuuuuuuuuuuu.uu.....uuuuu [ 72%]
+....uuuuu.uuuuu..uuuuu...............uu.uu.u..u.u..uu..u...uu..u.u...... [ 73%]
+...........u...........................................u...........uuuuu [ 74%]
+uuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 74%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 74%]
+uuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 74%]
+uuuuuuu.uuuuuuuuuu.u.uuu..u.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 74%]
+uuuuuuuuu.u.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuu.....uu....uu [ 74%]
+u....uuuuuu.uuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uu.uuu.uu.uuuu.uuuu [ 74%]
+.uuuuu.uuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuu.uuuuuuuuu [ 74%]
+uuuuuuuuuuuu.uu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uu.uu [ 74%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 74%]
+uuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuu [ 74%]
+uuuuuuuuuuuu.uuu.uu.uuu.u.u.u.uu.u.uuuuuuuuuuuuuuuuuuuu.uuuu.uuuuuuuuuuu [ 75%]
+uuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uu.uu.uuuuuuuuuuuuu.uuu [ 75%]
+uuuuuuuuuuuuuu.uuuuuuuuuuuu.u.uu.uuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuu [ 75%]
+uu.uuuu.uuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuu.uuu.uuuuuuuuuuu [ 75%]
+uuuuuuu.uuuu.uu.uuu.uu.uuuu.uuu.u.....uuu.u.uuuuuuuuuuuuu.uuuuuuuu.uuuu. [ 75%]
+uuuu.uuu.uuuu.uuuuu.uuu.u.u.u.u.u.u.u.uuuuuuuuuuuuuuuuuuuu...uuuuuuuuuuu [ 76%]
+uuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuu.uuuuuuuu.uuuuuuuuuuu.uuuuuuuuuuuuuuu [ 76%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuu.uuuu [ 76%]
+uuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuu.uuuuuuuuu.uuuuuuuuuuuuuuuuu [ 76%]
+.uuuu.uu.uu.uu.uu.uu.u.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 76%]
+uuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu..u......uuuuuu [ 76%]
+uuuuuuuuu.u.uuuuuuuuuuuuuuuuuuuuuu.uuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 76%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.u.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 76%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 76%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 76%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.u.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 76%]
+uuu.uuuuuuuuuuuuuuuuuuuuuuuuuu.u.u.u.u.u..u.u.uu.uu.u...uuuuu.uuuuu.u..u [ 76%]
+uuuu..uu.suuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuu [ 77%]
+uuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 77%]
+uuuuuuu.uuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.u.u [ 77%]
+uuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 77%]
+uuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 77%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuu [ 77%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 77%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuu [ 77%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu...uuuuuuuuuuuuuuuuuuuuuu [ 77%]
+u.uuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 77%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 77%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 77%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 77%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 77%]
+uuuuuuuuuuuuuuuu....uuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.u.uuuuuuuuuuuuuuuuuuu [ 77%]
+uuuuuuuuu.uuuu.uuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 77%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 77%]
+uuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuu.uuuuuuuuuu [ 77%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuu [ 77%]
+uuuuuuu.uusuuusuuuuuuuuuuuuuuuuuuuuu.uuuu..u.uuuuuuu.uuuuu.uuuuuuuuuuuuu [ 77%]
+uuuuuu..uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuu.uuuuuuuuu.uu.u [ 77%]
+uuuu.uuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuu [ 77%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 77%]
+uuuuuuuuuuuuuuuuuuuu.u..u.uu.uuuuuuuuuu.uuuu.uuuu.uuuuuuuuuuuuuuuu.uuuuu [ 78%]
+uuuuuuuuuuuuuu...uu.uuu.uuuuuuu..uuuuuu..uuuuuuu..uuuuuuuuuuuuuuuuuu.uuu [ 78%]
+uuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuu.uuu.uu.u.uuu..u.u..uuu [ 78%]
+uuuuuuu.uuu.uu.uuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 78%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuu [ 78%]
+uuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuu [ 78%]
+uuuuuuuu.uuuu.uuu.uuuuuuuuuuu.uu.uu.uuuuuuuuuuuuu.uuu.u.uuu.uuuuuuuuuuuu [ 78%]
+uuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuu.uu.u.uuuuuuuu.uuu.u.u.uuuuu [ 78%]
+uuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 78%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 78%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 78%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 78%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuu [ 78%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuu.uuuuuuuuuuuuuuu [ 78%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 78%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 78%]
+uuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuu.uuuuuuuu [ 79%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuu.uuuuuuuuuuuuuuu [ 79%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 79%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 79%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 79%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuu [ 79%]
+uuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuu.uuuu.uu.uuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 79%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 79%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuu [ 79%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 79%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 79%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuu.uuuu.uuuuuuu.uu [ 79%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 79%]
+uuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 79%]
+u.uuuuuuuuuuuuuuu..uuuuuuuuuuu.uuuuuuuuuuuuu.....u...u.....uuuuuu.uuuuuu [ 79%]
+uuuuuuuuuuuu.uuuuu.uuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuu [ 79%]
+.uuuuuuuu.u..............................uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 80%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 80%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuu.uuuu.uuu.uuuuuuuuuuuuuuuuuuuuuuuuuuu [ 80%]
+uu.uuuuuuu.uuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuu [ 80%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 80%]
+uuu.uuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 80%]
+uuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 80%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuu.uuuuuuuuuu [ 80%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuu [ 80%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 80%]
+uuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 80%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuu.u [ 80%]
+uu.uu.uu.uu..u..uuu...uu.u.u.uu.uu.u.uu.u.u..uu...uuuuuuuuuu.uuuuuuuuuuu [ 80%]
+uuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu....uuuuuuuuuuuuuuu [ 81%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 81%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uu.uu.uu. [ 81%]
+uu..u.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuu.u [ 81%]
+uuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuu.uuuuuuuuuuuuuuuuuuuu [ 81%]
+uuuuuuuuuuuuuuuuuu.u.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuu [ 81%]
+uuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 81%]
+uuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuu [ 81%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuu.uuuu.u.uuuuuuuuuuuuuuuuu.uuuu [ 81%]
+uuuuuuuuuuuu.uuuuuuuuuuuu.uuuuuu.uuuuu...uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 81%]
+uuuuuuuuuuuuuuu.uuuuuuu..uuuuuuuuuuuu.uuuuuuuuuuuuuuu.uuuuuuu.uuuu.uuuuu [ 81%]
+uuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuu.uuuuuuu [ 81%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 81%]
+uuuuuuuu.uu.uuu.uuuu.u.uu..uuuuuuuuuuuuuuuuuuuuuuuuuu.u.uuuuuuuuuuuuu.uu [ 81%]
+uuuuuuuuuuuuuu.uu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuu.uuuuuu [ 81%]
+uuuuuuuuuuuuuuu.........uuuuuuuuuuuuuuuuu..uuuuuuuuuuuuuuuuuuuuuuuuuuuu. [ 82%]
+.......uuuuu...........uuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuu [ 82%]
+uuuuuuuuu.uuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuu.uuuuuuuuuuuuuuu [ 82%]
+uuu.uuu.uuuuuuuuuuuuuuuu..uuuuuuuuuuu.uuuuu.uuu...uuu.uuuuuuuuuuuuuuuuuu [ 82%]
+.u.uuuuuuuuuuuuuuuuuu.uuuuuuuuu.uuuuu.uuu.uuuuuu.uuuuuuuuuuuuuuuuuuuuuuu [ 82%]
+uu.u.uuuuuuuuuuuu.uuuuuuuu.u.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 82%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuu.uuuuuuu [ 82%]
+uuuu.uuuuuuuuu.uuuuuuuuuuuuuuuuuu.uuuuuu.uuuuuuuuuuuuuuuuuu.uuuuuuuuuuuu [ 83%]
+uu.uuuuuuuuuuuuuu.uu.uu.u.u.u.uuuuuuuuuuu.uuu.uuuuuuuuuuuuuuuuuuuuuuu.uu [ 83%]
+uuu.uuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uu [ 83%]
+uuuuuuuuuuuuuuuuu.uu.uu...uuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuu.uuuu.uuuuuu [ 83%]
+uuuuuuuuuuu..u.........uuuuu.uuu.uuuu.uuu..uu.uu.uuuu.uuuuuuuuuuuuuuuuuu [ 83%]
+.uuuuuuu.uuuuuuuuuu.uuuu..uuuuu.uuuuuuuuuuuuuuu.u..u.uuu.uuuuu.uuu.uu.uu [ 84%]
+uuuuuuu.u.uuuuuuuuuuu.uuuuu.u.uuu...u.uu.uuuu.uuuuuuuuu.uuuuu..uuu.uuuu. [ 84%]
+uuu.uu.uuuuuuuuuuuuuuu..u.uuuuuu.uuuuuuuu.uuuuuuuuuuuuuu.uuuuuuuuuuuuuuu [ 84%]
+uuuuuuuuuuuuuuuuuuuuuuuu..uuuuu.uuu..uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 84%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuu.u.uuuu.uuuuuuuuuuuuuu......... [ 84%]
+....uu...u..u..uuuuuuuu.uu..uuuuuuu.u..uuuuuu..uuuuuuuuuuuuuuuuuuuuuuuuu [ 85%]
+uuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuu [ 85%]
+uuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuu.u..uuuuu.uuuuuuuuuuuuuuuuuu.uuuuuuuuuuu [ 85%]
+uuuuuuuu.uu.uu.uu..u..u.uu...uu.uuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuu [ 85%]
+uuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuu [ 85%]
+uuuu.u.u.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 85%]
+uuu...uu..uuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuu.uuuuuuuuu.uuuuuu.uu..uu.u.uu. [ 85%]
+uuu.u.....uu.u.uuu.uu.u..uuuuuuuuuuu.u..u.u.uuu.uuuu..u.uu.uu.uuuuuuuuuu [ 86%]
+uuuuuuuuuu....uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 86%]
+uuu.uuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 86%]
+uuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu..uuu [ 86%]
+uuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 86%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 86%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uu..uuuuuuuuuu.uuuuuuuuuuuuuu [ 86%]
+uu.uuuuuuu.uuuuuuuuuuuuu.uuuuuuuuuuuuu.uuuuu.uuuuuuuuuuuuuuuuuuuuuuu.uuu [ 86%]
+uuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.....uuuuuuuuuuuuuuuu...... [ 86%]
+................uuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuu.uuu [ 87%]
+uuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuu.uuuuuu [ 87%]
+uuu.uuuuu.uuuuuuuuuuuuuuu.uuuu.uuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuu.u [ 87%]
+uuuuuuuuuuuuuuuuuuuuuuuu.uu.uuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuu.uu.uuuuuuuu [ 87%]
+u.uuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuu.uuu.uu.uu.uuuuu.uuuuuuuuuuuuuuuuuuuuu [ 87%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuu [ 87%]
+uuuuuuuuuuuuuuuuuu.uuu.u..uuu.uuu.u.uu.u..uu.u.uuuuuu..uuuuuuuuuuuuuuuuu [ 87%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.u.uuuuuuuuuuuuu.uuuuuuu [ 87%]
+uuuuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 87%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuu [ 87%]
+u..uuuuuuuuuu..........uuuuuuuuuuuuuuuuuu.................uuuuuuu.uu.... [ 88%]
+uuuuuuuuuuuuuuu.....................uuuuuuuu.u.uuuuuuuuu.uu.uuuuuuuuuu.u [ 88%]
+uuuuu................................u...u......u...u....uuuuuuuuuuuuuuu [ 89%]
+uuuuu.uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuuuuuuuuuuuuuuuu [ 89%]
+uuu.........uuuu.uu.u....u...uuuu..u...uu.......u..u.......u......u..uuu [ 90%]
+.uu.uuuuuuu..uuuu.u....uuu.u......ssss.................................. [ 91%]
+..........uu..............uu..uuuuuu....uu.........uuuuuuu.uuuu.uuu..... [ 92%]
+.....uuuuuu.....................uuuuuu...................u..u..u....u... [ 93%]
+....u..u..u..u....u.u.u.uuuu.u.u..u.uuuuuuu.u.....u.u...u......u......u. [ 94%]
+..u..u.u...u..u..u............................uuuuuuuuuuu..u.u.uu.u.uuu. [ 94%]
+.................u....uu.uuuuu...uu.uuuuu....uu......uuuuu...u.....u.... [ 95%]
+........................uu...u.uuuuu.u.uuu.uuu.uu.u.uu.u..uu...uuu...... [ 96%]
+............uuuuuuuuuuuuuu..uuuuuuu...uu..........uuuuuuuuuuu.uuuuuuuuuu [ 96%]
+uuuuuuu.............................uu.uuu..u.u......................... [ 97%]
+.........uuu............................................................ [ 99%]
+.........uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu [ 99%]
+uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu.uuuuuu.uuuuuuuu..........ssu [ 99%]
+u........uuuuuuuuuuu...........u...uuu....                               [100%]
+============================== warnings summary ===============================
+..\..\AppData\Roaming\Python\Python314\site-packages\fastapi\testclient.py:1
+..\..\AppData\Roaming\Python\Python314\site-packages\fastapi\testclient.py:1
+..\..\AppData\Roaming\Python\Python314\site-packages\fastapi\testclient.py:1
+..\..\AppData\Roaming\Python\Python314\site-packages\fastapi\testclient.py:1
+..\..\AppData\Roaming\Python\Python314\site-packages\fastapi\testclient.py:1
+..\..\AppData\Roaming\Python\Python314\site-packages\fastapi\testclient.py:1
+..\..\AppData\Roaming\Python\Python314\site-packages\fastapi\testclient.py:1
+..\..\AppData\Roaming\Python\Python314\site-packages\fastapi\testclient.py:1
+  C:\Users\Administrator\AppData\Roaming\Python\Python314\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+service/tests/test_health_reports_which_build_answered.py::test_health_reports_nothing_about_agents
+  C:\Users\Administrator\AppData\Roaming\Python\Python314\site-packages\_pytest\threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-4596 (_connection_worker_thread)
+  
+  Traceback (most recent call last):
+    File "C:\Users\Administrator\AppData\Roaming\Python\Python314\site-packages\aiosqlite\core.py", line 66, in _connection_worker_thread
+      future.get_loop().call_soon_threadsafe(set_result, future, result)
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Python314\Lib\asyncio\base_events.py", line 872, in call_soon_threadsafe
+      self._check_closed()
+      ~~~~~~~~~~~~~~~~~~^^
+    File "C:\Python314\Lib\asyncio\base_events.py", line 550, in _check_closed
+      raise RuntimeError('Event loop is closed')
+  RuntimeError: Event loop is closed
+  
+  During handling of the above exception, another exception occurred:
+  
+  Traceback (most recent call last):
+    File "C:\Python314\Lib\threading.py", line 1082, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "C:\Python314\Lib\threading.py", line 1024, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Users\Administrator\AppData\Roaming\Python\Python314\site-packages\aiosqlite\core.py", line 75, in _connection_worker_thread
+      future.get_loop().call_soon_threadsafe(set_exception, future, e)
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Python314\Lib\asyncio\base_events.py", line 872, in call_soon_threadsafe
+      self._check_closed()
+      ~~~~~~~~~~~~~~~~~~^^
+    File "C:\Python314\Lib\asyncio\base_events.py", line 550, in _check_closed
+      raise RuntimeError('Event loop is closed')
+  RuntimeError: Event loop is closed
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+service/tests/test_health_reports_how_many_dashboards_are_connected.py::test_it_survives_no_manager_at_all
+  C:\Users\Administrator\AppData\Roaming\Python\Python314\site-packages\_pytest\threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-3766 (_connection_worker_thread)
+  
+  Traceback (most recent call last):
+    File "C:\Users\Administrator\AppData\Roaming\Python\Python314\site-packages\aiosqlite\core.py", line 66, in _connection_worker_thread
+      future.get_loop().call_soon_threadsafe(set_result, future, result)
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Python314\Lib\asyncio\base_events.py", line 872, in call_soon_threadsafe
+      self._check_closed()
+      ~~~~~~~~~~~~~~~~~~^^
+    File "C:\Python314\Lib\asyncio\base_events.py", line 550, in _check_closed
+      raise RuntimeError('Event loop is closed')
+  RuntimeError: Event loop is closed
+  
+  During handling of the above exception, another exception occurred:
+  
+  Traceback (most recent call last):
+    File "C:\Python314\Lib\threading.py", line 1082, in _bootstrap_inner
+      self._context.run(self.run)
+      ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+    File "C:\Python314\Lib\threading.py", line 1024, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Users\Administrator\AppData\Roaming\Python\Python314\site-packages\aiosqlite\core.py", line 75, in _connection_worker_thread
+      future.get_loop().call_soon_threadsafe(set_exception, future, e)
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "C:\Python314\Lib\asyncio\base_events.py", line 872, in call_soon_threadsafe
+      self._check_closed()
+      ~~~~~~~~~~~~~~~~~~^^
+    File "C:\Python314\Lib\asyncio\base_events.py", line 550, in _check_closed
+      raise RuntimeError('Event loop is closed')
+  RuntimeError: Event loop is closed
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+5736 passed, 28 skipped, 10 warnings, 12638 subtests passed in 164.68s (0:02:44)

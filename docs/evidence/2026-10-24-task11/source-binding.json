@@ -1,0 +1,30 @@
+{
+  "base": "e103f3d6dbfe0173352671eb76642a575b05cdd8",
+  "source_tree": "0d076ece4df68f0dd7c62326174000e130f1b626",
+  "payload_files": 5,
+  "payload": {
+    "README.md": {
+      "sha256": "1ab8acf4538e7a672209427447ef7f21138e5a2f6f4652ce9cf89598f8d1308b",
+      "bytes": 31496
+    },
+    "lib/channel-install.mjs": {
+      "sha256": "b833eb83d0d1d5425ed8b2be57874d57b1abaf98a11d0159da1a1ccb109833fe",
+      "bytes": 7735
+    },
+    "lib/channel-policy.mjs": {
+      "sha256": "a59f9f91ad012fe251149e9088a1ee9ebbebef0b5cde3264a1df156641e907d6",
+      "bytes": 17349
+    },
+    "tests/a-denied-channel-policy-write-names-the-elevated-command.test.js": {
+      "sha256": "d04c324575b7804821b4d62cdfe37eb7c85d4470410343dc4c2052909c7fb475",
+      "bytes": 4239
+    },
+    "tests/data/channel-policy-denied-preload.mjs": {
+      "sha256": "b34976ad720836ce53864a1198a974c32782b71f94255dc92f4357e91240fbc6",
+      "bytes": 1040
+    }
+  },
+  "raw_worktree_equals_index": true,
+  "policy_code_after_header_byte_identical": true,
+  "policy_byte_comparison_negative_control": true
+}
