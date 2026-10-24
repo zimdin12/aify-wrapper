@@ -113,3 +113,31 @@ test("--bridge-dir is read in both spellings", () => {
   assert.equal(bridgeDirArg(["--bridge-dir=/y"]), "/y");
   assert.equal(bridgeDirArg([]), undefined);
 });
+
+for (const platform of ["linux", "darwin"]) test(`${platform}: missing policy prints one policy-only sudo command before plugin work`, () => {
+  const m = machine();
+  const out = installChannel({ ...m, platform, uid: 1000 });
+  assert.equal(out.ok, false);
+  const commands = out.reason.split("\n").filter(line => line.startsWith("sudo "));
+  assert.equal(commands.length, 1, out.reason);
+  assert.match(commands[0], /'prepare-policy' '--path'/);
+  assert.ok(commands[0].includes(platform === "linux" ? "'/etc/claude-code/managed-settings.json'" : "'/Library/Application Support/ClaudeCode/managed-settings.json'"));
+  assert.deepEqual(m.state.calls, [], "no policy mutation, plugin render or Claude operation before policy preparation");
+});
+
+for (const uid of [0, null]) test(`POSIX plugin install refuses root or unknown uid ${uid}`, () => {
+  const m = machine();
+  const read = source => source.kind === "file" ? withOurChannel("").text : null;
+  const out = installChannel({ ...m, platform: "linux", uid, read });
+  assert.equal(out.ok, false, "a root or unknown-identity process must never install the user's plugin");
+  assert.match(out.reason, /non-root/);
+  assert.deepEqual(m.state.calls, [], "the root guard ran after a plugin side effect");
+});
+
+test("POSIX non-root install with admitted managed policy keeps the existing plugin path", () => {
+  const m = machine();
+  const read = source => source.kind === "file" ? withOurChannel("").text : null;
+  const out = installChannel({ ...m, platform: "linux", uid: 1000, read });
+  assert.equal(out.ok, true, out.reason);
+  assert.ok(m.state.calls.includes("claude plugin install aify-channel@aify-local"));
+});

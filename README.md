@@ -202,7 +202,7 @@ The plugin is rendered for this host's bridge (`lib/channel-plugin.mjs`). Its se
 ```bash
 node lib/channel-install.mjs install --bridge-dir <bridge>   # bridge checked, policy merged, plugin installed
 node lib/channel-install.mjs check [--bridge-dir <bridge>]   # the route claude-aify would take, and why
-node lib/channel-install.mjs remove                          # plugin, marketplace and our policy entry removed
+node lib/channel-install.mjs remove                          # plugin, marketplace and our per-user policy entry removed
 ```
 
 On Windows the policy is the per-user value `HKCU\SOFTWARE\Policies\ClaudeCode` → `Settings`.
@@ -214,8 +214,11 @@ afterward. Do not change the Policies ACLs or run the coding-agent runtime eleva
 
 The install **merges** into the value, because it is the user's whole per-user policy
 and `allowedChannelPlugins` replaces Anthropic's default channel list. When an admin policy is in charge,
-the install reports that and writes nothing. On Linux and macOS the policy is an admin file, so the install
-only reports.
+the install reports that and writes nothing. On Linux and macOS, a genuinely absent managed policy causes
+exit 78 with one policy-only `sudo` command. The installer never runs sudo itself. Paste that exact command,
+then rerun the installer as the normal non-root user; plugins are never installed as root. The helper creates
+only the absent canonical `managed-settings.json`, rereads admission and leaves existing admin files and
+drop-ins untouched, including empty, malformed or unreadable input. Existing policy needs its administrator.
 
 Claude starts every configured channel server, so a session runs both the user-scope `aify-comms-channel`
 server and the plugin's. The launcher exports `AIFY_CHANNEL_ROUTE`, and each server reads it to decide

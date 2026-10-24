@@ -102,12 +102,15 @@ test("the admin file is found through Program Files, and not knowing where that 
   assert.equal(readSource(policySources("win32", {})[1]), null, "an unknown location is never read as a file");
 });
 
-test("Linux and macOS have no per-user source: install refuses unless the admin file admits", () => {
-  for (const platform of ["linux", "darwin"]) {
-    assert.equal(planInstall(platform, reader({})).action, "refuse", platform);
+for (const platform of ["linux", "darwin"]) test(`${platform}: only an absent managed policy can be prepared`, () => {
+    const absent = planInstall(platform, reader({}));
+    assert.equal(absent.action, "prepare", "a genuinely absent POSIX policy needs the explicit policy-only operation");
     const file = policySources(platform)[0].path;
+    assert.equal(absent.source.path, file);
     assert.equal(planInstall(platform, reader({ [file]: withOurChannel("").text })).action, "none", platform);
-  }
+    for (const existing of ["", "  ", "{}", "{", JSON.stringify({ channelsEnabled: false })]) {
+      assert.equal(planInstall(platform, reader({ [file]: existing })).action, "refuse", "an existing file is never an absent-policy bootstrap");
+    }
 });
 
 /** A recording stand-in for spawnSync. */
