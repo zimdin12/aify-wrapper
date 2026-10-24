@@ -851,17 +851,28 @@ else
     CLAUDE_MCP_FLAGS+=("--mcp-config=$AIFY_MCP_CONFIG")
   fi
 fi
-
-# Session capture stays on in both MCP modes. Native startup remains SessionStart-only.
-# Activity opts in independently of Herdr. Tool hooks use one combined local process, never a parser
-# beside the old working command. With activity off, all state commands and their launch boundary stay unchanged.
-AIFY_HERDR_WORKING=""
-AIFY_HERDR_EVENTS=""
-_aify_tool_hook() {
-  if [ "${AIFY_FILE_ACTIVITY:-0}" = 1 ]; then
-    printf '{ "type": "command", "command": "node --disable-warning=ExperimentalWarning \\"%s/bin/aify-tool-event.mjs\\" %s", "timeout": 5, "async": true }' "$AIFY_WRAPPER_DIR_FWD" "$1"
-  else _aify_state_hook working; fi
-}
+# Session-id truth capture (2026-05-30, #138): install SessionStart +
+# UserPromptSubmit hooks that record THIS claude session's own id. Claude
+# passes session_id to hooks on stdin; the hook keys it by AIFY_AGENT_ID
+# (inherited from this wrapper's env) so the bridge reads back the agent's
+# OWN session instead of a machine-global filesystem guess (the cause of
+# cross-agent session bleed when a whole team runs in one directory).
+# Always on — both strict and default MCP modes.
+#
+# HERDR STATE. A claimed Herdr pane shows the state its claim last reported, not what Herdr sees on
+# screen, so the claim's `idle` stood for the life of the pane. When this pane is claimed, or aify-env
+# will name the pane showing this managed worker (AIFY_HERDR_PANE_FILE), the agent's own hooks report
+# working / blocked / idle. PermissionRequest reports blocked the moment an approval dialog opens; the
+# Notification matchers stay for input prompts, and lag about six seconds on a permission prompt.
+# PostToolUse re-asserts working after a permission prompt is answered, and after any gap in the turn's own
+# signals (a channel wake does run UserPromptSubmit, measured 2026-10-18); PostToolUseFailure does the same for a
+# tool that failed. StopFailure ends a turn an API error killed, which runs no Stop. Nothing is added otherwise, so a
+# launch outside Herdr runs no extra hook. They run in the background (`async`), and the script orders them.
+# Activity opt-in combines local append and working in one tool process; activity off keeps the legacy hooks.
+AIFY_HERDR_WORKING=""; AIFY_HERDR_EVENTS=""
+_aify_tool_hook() { if [ "${AIFY_FILE_ACTIVITY:-0}" = 1 ]; then
+    printf '{ "type": "command", "command": "node \\"%s/bin/aify-tool-event.mjs\\" %s", "timeout": 5, "async": true }' "$AIFY_WRAPPER_DIR_FWD" "$1"
+  else _aify_state_hook working; fi; }
 if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then
   export AIFY_HERDR_AGENT="${0##*/}"
   _aify_state_hook() {
@@ -880,8 +891,7 @@ elif [ "${AIFY_FILE_ACTIVITY:-0}" = 1 ]; then
     \"PostToolUse\": [ { \"hooks\": [ $(_aify_tool_hook success) ] } ],
     \"PostToolUseFailure\": [ { \"hooks\": [ $(_aify_tool_hook failure) ] } ]"
 fi
-AIFY_HOOK_SETTINGS="$(mktemp -t aify-hooks.XXXXXX.json 2>/dev/null || mktemp -t aify-hooks)"
-cat > "$AIFY_HOOK_SETTINGS" <<JSON
+AIFY_HOOK_SETTINGS="$(mktemp -t aify-hooks.XXXXXX.json 2>/dev/null || mktemp -t aify-hooks)"; cat > "$AIFY_HOOK_SETTINGS" <<JSON
 {
   "hooks": {
     "SessionStart": [

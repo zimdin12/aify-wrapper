@@ -39,7 +39,7 @@ for (const [name, extra, contents] of cases) test(`combined working preserves pr
   const old = spawnSync('sh', [path.join(ROOT, 'bin/aify-herdr-state.sh').replaceAll('\\', '/'), 'working'], { env, input: '{}', encoding: 'utf8' });
   assert.equal(old.status, 0); assert.equal(old.stdout + old.stderr, ''); const expected = calls();
   fs.writeFileSync(log, '');
-  const current = spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', path.join(ROOT, 'bin/aify-tool-event.mjs'), 'success'], { env, input: '{bad', encoding: 'utf8' });
+  const current = spawnSync(process.execPath, [path.join(ROOT, 'bin/aify-tool-event.mjs'), 'success'], { env, input: '{bad', encoding: 'utf8' });
   assert.equal(current.status, 0); assert.equal(current.stdout + current.stderr, '');
   const actual = fs.readFileSync(log, 'utf8').trim();
   assert.deepEqual(actual ? actual.split('\n').map(JSON.parse) : [], expected, 'combined state diverged from frozen shell');

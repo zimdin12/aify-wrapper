@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { activityEvent, activityConfiguration, safeAgentId, validActivityRecord } from '../lib/file-activity.mjs';
-import { ActivitySpool } from '../lib/activity-spool.mjs';
+
 console.log(JSON.stringify({ worker: 'file-activity', node: process.version, executable: process.execPath }));
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -20,7 +20,7 @@ function fixture(extra = {}) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(AIFY_|HERDR_|COMMS_|AGENT_STATE_|HERMES_SESSION_ID$|NODE_OPTIONS$)/i.test(k)));
   for (const k of ['HOME', 'USERPROFILE', 'TEMP', 'TMP', 'TMPDIR', 'APPDATA', 'LOCALAPPDATA', 'HERMES_HOME']) env[k] = dir;
   Object.assign(env, { AIFY_AGENT_ID: 'probe', AIFY_ENV_INSTANCE: 'fixture-instance', AIFY_AGENT_LEASE_DIR: dir, AIFY_FILE_ACTIVITY: '1' }, extra);
-  const run = (body, outcome = 'success') => spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', path.join(ROOT, 'bin/aify-tool-event.mjs'), outcome], {
+  const run = (body, outcome = 'success') => spawnSync(process.execPath, [path.join(ROOT, 'bin/aify-tool-event.mjs'), outcome], {
     env, input: typeof body === 'string' ? body : JSON.stringify(body), encoding: 'utf8', timeout: 10_000,
   });
   return { dir, env, run };
@@ -58,13 +58,15 @@ test('Bash with a file-looking command produces no spool line; Read positive con
   const { run, dir } = fixture();
   const bash = run({ ...input, tool_name: 'Bash', tool_input: { command: 'cat secret.txt', file_path: 'bait.txt' } });
   assert.equal(bash.status, 0, bash.stderr);
-  assert.equal(fs.existsSync(path.join(dir, 'probe', 'activity-v1')), false);
+  assert.equal(fs.existsSync(path.join(dir, 'probe', 'activity-v2')), false);
   const read = run(input);
   assert.equal(read.status, 0, read.stderr);
   assert.equal(read.stdout + read.stderr, '');
-  const batch = new ActivitySpool({ directory: path.join(dir, 'probe', 'activity-v1') }).read();
-  assert.equal(batch.records.length, 1);
-  assert.equal(batch.records[0].record.event.tool, 'Read');
+  const directory = path.join(dir, 'probe', 'activity-v2');
+  const files = fs.readdirSync(directory);
+  assert.equal(files.length, 1);
+  const line = JSON.parse(fs.readFileSync(path.join(directory, files[0]), 'utf8'));
+  assert.equal(line.record.event.tool, 'Read');
 });
 
 test('disabled and malformed configuration never append', () => {
@@ -75,7 +77,7 @@ test('disabled and malformed configuration never append', () => {
   }
   const { run, dir } = fixture({ AIFY_FILE_ACTIVITY: '0' });
   assert.equal(run(input).status, 0);
-  assert.equal(fs.existsSync(path.join(dir, 'probe', 'activity-v1')), false);
+  assert.equal(fs.existsSync(path.join(dir, 'probe', 'activity-v2')), false);
 });
 
 export { input, identity, fixture };

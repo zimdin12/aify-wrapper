@@ -28,7 +28,7 @@ try {
       const root = leaseDirectory({ env: process.env });
       if (record && path.isAbsolute(root)) {
         const { ActivitySpool } = await import('../lib/activity-spool.mjs');
-        new ActivitySpool({ ...config, directory: path.join(root, identity.agentId, 'activity-v1') }).append(record);
+        new ActivitySpool({ ...config, directory: path.join(root, identity.agentId, 'activity-v2') }).append(record);
       }
     }
   }

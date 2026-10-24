@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
-import { ActivitySpool } from '../lib/activity-spool.mjs';
+
 console.log(JSON.stringify({ worker: 'activity-launcher', node: process.version, executable: process.execPath }));
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WIN = process.platform === 'win32';
@@ -52,7 +52,12 @@ function fixture({ enabled = '1', managed = false, claimed = false, rewrite = fa
     return hooks;
   };
   const calls = () => fs.existsSync(trace) ? fs.readFileSync(trace, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : [];
-  const spool = () => new ActivitySpool({ directory: path.join(env.AIFY_AGENT_LEASE_DIR, 'probe/activity-v1') }).read();
+  const spool = () => {
+    const directory = path.join(env.AIFY_AGENT_LEASE_DIR, 'probe/activity-v2');
+    const records = fs.readdirSync(directory).filter(n => n.endsWith('.jsonl'))
+      .flatMap(n => fs.readFileSync(path.join(directory, n), 'utf8').trimEnd().split('\n').map(JSON.parse));
+    return { records };
+  };
   return { dir, config, env, runtime, fire, calls, spool };
 }
 for (const rewrite of [false, true]) test(`activity enabled without Herdr executes one native hook per outcome, argv conversion ${rewrite}`, () => {
@@ -70,7 +75,7 @@ test('cap off retains no outside-Herdr tool hooks and managed legacy working rep
   const f = fixture({ enabled: '0', managed: true }); fs.writeFileSync(f.env.AIFY_HERDR_PANE_FILE, 'wA:pB\n');
   assert.equal(f.fire('PostToolUse', '{}').length, 1);
   assert.equal(f.calls().filter(c => path.basename(c.args[0]) === 'pane').length, 1);
-  assert.equal(fs.existsSync(path.join(f.env.AIFY_AGENT_LEASE_DIR, 'probe/activity-v1')), false);
+  assert.equal(fs.existsSync(path.join(f.env.AIFY_AGENT_LEASE_DIR, 'probe/activity-v2')), false);
 });
 // Distinct independence directions, neither is covered by an extractor unit test.
 test('malformed input, disabled config, unsupported tool, missing identity and storage failure cannot suppress working', () => {
@@ -93,5 +98,5 @@ for (const enabled of ['0', '1']) test(`actual native pane claim preserves one w
   for (const event of ['PostToolUse', 'PostToolUseFailure']) assert.equal(f.fire(event).length, 1);
   assert.equal(f.calls().filter(c => path.basename(c.args[0]) === 'pane').length, 2, 'combined working reports missing');
   if (enabled === '1') { assert.equal(f.spool().records.length, 2); assert.equal(f.calls().length, 4, 'parallel parser child started'); }
-  else assert.equal(fs.existsSync(path.join(f.env.AIFY_AGENT_LEASE_DIR, 'probe/activity-v1')), false);
+  else assert.equal(fs.existsSync(path.join(f.env.AIFY_AGENT_LEASE_DIR, 'probe/activity-v2')), false);
 });
