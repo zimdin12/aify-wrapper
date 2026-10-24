@@ -97,11 +97,11 @@ means unknown age and a gap, not renewed freshness. Keep cross-poll clock contin
 in consumer state. Arbitrary undetectable clock changes remain unqualified.
 
 A retained `.loss` means persistent source uncertainty; `uncertain` means root-wide
-unknown producer coverage without fabricating an unretained source. Neither an old
-nor a new ACK erases these latches. Retain marked segments with their markers so
-consumer retirement cannot create an unbounded collection of orphan markers.
-Unmarked segments may be retired only under the consumer's concurrent-reader/writer
-and immutable-prefix identity rules. A deterministic filename is not a fresh segment
+unknown producer coverage without fabricating an unretained source. An ACK alone
+does not erase these latches. A consumer may reclaim a fully ACKed segment and marker
+under its state lock only for a process-proven ended incarnation and after ACKing a
+terminal `reclaimed` gap declaring that in-flight hooks may leave the tail incomplete.
+A deterministic filename is not a fresh segment
 identity and never authorizes applying an old cursor to replacement bytes.
 
 The shipper's bounded per-batch state owns stable gap IDs/generations, exact committed
