@@ -294,15 +294,57 @@ test("REUSE: a reconnect with no new key reuses the published reference and stag
   }
 });
 
-test("RETIREMENT: a new key leaves the old reference in the store and reports it cleanup-pending", async () => {
+test("REUSE: a reconnect given the SAME key reuses the published reference, stages nothing and retires nothing", async () => {
+  // The guided install asks for a policy-only sudo line, then a rerun; every rerun passes the same key, and each one
+  // left the last reference orphaned, so a fresh machine's `aify-env doctor` failed its credentials row (2026-10-25).
   const host = makeHost();
   const spec = commsSpec(host);
   const service = await startService({ spec });
   try {
     const first = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY), ...approvals(spec)]);
     assert.equal(first.status, 0, first.stderr);
+    const [only] = host.refs();
+    const before = credentialSets(host).length;
+    const run = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY, "same"), ...approvals(spec)]);
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(credentialSets(host).length, before, "a key the store already holds was staged again");
+    assert.deepEqual(host.refs(), [only]);
+    assert.doesNotMatch(run.stdout, /cleanup-pending/);
+  } finally {
+    await service.close();
+  }
+});
+
+test("REUSE IS NEVER CLEANUP: a same-key reconnect that fails leaves the published reference in the store", async () => {
+  const host = makeHost();
+  const spec = commsSpec(host);
+  let down = false;
+  const service = await startService({ spec, answer: (req) => (down && req.url === "/health" ? { status: 503 } : null) });
+  try {
+    const first = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY), ...approvals(spec)]);
+    assert.equal(first.status, 0, first.stderr);
+    const [only] = host.refs();
+    down = true;
+    const run = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY, "same"), ...approvals(spec)]);
+    assert.notEqual(run.status, 0, "CONTROL: the reconnect did fail");
+    assert.deepEqual(host.refs(), [only], "the failed connect removed the reference the registry still names");
+  } finally {
+    await service.close();
+  }
+});
+
+test("RETIREMENT: a new key leaves the old reference in the store and reports it cleanup-pending", async () => {
+  const host = makeHost();
+  const spec = commsSpec(host);
+  // A service mid-rotation accepts both keys, so the second connect's probe passes with the new one; any other key
+  // still gets the 401 connect's own wrong-key control requires.
+  const rotated = `${KEY}-rotated`;
+  const service = await startService({ spec, answer: (req) => (req.url === "/api/v1/agents" && req.headers["x-api-key"] === rotated ? { status: 200, body: "{}" } : null) });
+  try {
+    const first = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY), ...approvals(spec)]);
+    assert.equal(first.status, 0, first.stderr);
     const [old] = host.refs();
-    const run = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY, "again"), ...approvals(spec)]);
+    const run = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(rotated, "again"), ...approvals(spec)]);
     assert.equal(run.status, 0, run.stderr);
     assert.ok(host.refs().includes(old), "connect removed no old reference");
     assert.match(run.stdout, new RegExp(`cleanup-pending: credentialRef no longer names ${old}`));
