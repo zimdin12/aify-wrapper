@@ -11,7 +11,7 @@ import { test } from "node:test";
 import { USAGE, keyFromText, parseConnectArgs } from "../lib/connect-args.mjs";
 import { artifactStanding, mergeEntry, registryWith, renderServers, retiredRefs, stableJson } from "../lib/connect-entry.mjs";
 import { NoSpec, REQUEST_TIMEOUT_MS, RedirectRefused, checkHealth, checkProbe, fetchManifest, fetchServed, fetchSpec } from "../lib/connect-http.mjs";
-import { Refused, aifyEnvTools, checkFileSet, connect, stagedRef } from "../lib/connect.mjs";
+import { Refused, aifyEnvTools, checkFileSet, connect, stagedRef, unlistedSummary } from "../lib/connect.mjs";
 import { SPEC_PATH, SPEC_VERSION, isCredentialRefField, isPackageFromGit, parseManifest, resolveRoute, routeProblem, tupleDigest, validateSpec } from "../lib/service-spec.mjs";
 import { binFiles, installArgs, installPackage, installedCommit, npmTool } from "../lib/package-install.mjs";
 import { FAKE_ENV, commsSpec, makeHost } from "./connect-fixture.mjs";
@@ -155,6 +155,12 @@ test("parseManifest reads sha256sum lines and refuses traversal, absolute paths,
     [`${h}  a.js`, /line feed/],
     [`${h} a.js${LF}`, /not "<sha256>  <path>"/],
   ]) assert.match(parseManifest(text).errors.join(";"), pattern);
+});
+
+test("unlistedSummary counts npm's dependency files apart and samples only the unexpected ones", () => {
+  // A fresh install reported 4165 unlisted files, all under node_modules, as if they were stray core files (2026-10-25).
+  assert.deepEqual(unlistedSummary("comms-bridge", ["node_modules/.bin/x", "node_modules/a/b.js", "extra.js", "lib/node_modules_note.js"]),
+    { id: "comms-bridge", count: 4, dependencies: 2, sample: ["extra.js", "lib/node_modules_note.js"] });
 });
 
 test("checkFileSet holds every listed file to its line, requires every entry listed, and only reports extras", () => {

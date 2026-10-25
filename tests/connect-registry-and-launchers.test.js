@@ -144,6 +144,9 @@ test("RE-RENDER: a recorded launcher is re-rendered for the new registry after a
   const host = makeHost();
   const recorded = renderLauncher(host, "claude-aify", "claude-aify.sh.in");
   fs.copyFileSync(recorded, path.join(host.dest, "codex-aify"));
+  // npm's bin for this package's own `herdr-aify` lands in the same directory when the prefix is ~/.local; no template
+  // here renders it, so it is not a launcher (fresh-install report, 2026-10-25).
+  fs.writeFileSync(path.join(host.dest, "herdr-aify"), "#!/bin/sh\n");
   const before = bakedFingerprint(recorded);
   const spec = commsSpec(host);
   const service = await startService({ spec });
@@ -155,6 +158,7 @@ test("RE-RENDER: a recorded launcher is re-rendered for the new registry after a
     assert.equal(bakedFingerprint(recorded), now);
     assert.match(run.stdout, /launcher claude-aify: re-rendered/);
     assert.match(run.stdout, /launcher codex-aify: stale -- no render record/);
+    assert.doesNotMatch(run.stdout, /launcher herdr-aify/);
     assert.notEqual(bakedFingerprint(path.join(host.dest, "codex-aify")), now, "the unrecorded launcher was left alone");
   } finally {
     await service.close();

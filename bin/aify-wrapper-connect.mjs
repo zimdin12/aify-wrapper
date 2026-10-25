@@ -96,7 +96,11 @@ try {
   for (const server of report.pending) out.push(`  mcp ${server.name}: no entry written -- ${server.reason}`);
   for (const file of report.fetched ?? []) out.push(`  fetched and verified: ${file}`);
   for (const pkg of report.installed ?? []) out.push(`  ${pkg.id}: ${pkg.reused ? "already installed" : "installed"} at ${pkg.at}`);
-  for (const extra of report.unlisted ?? []) out.push(`  ${extra.id}: ${extra.count} file(s) on disk not in its manifest, not run by any entry (e.g. ${extra.sample.join(", ")})`);
+  for (const extra of report.unlisted ?? []) {
+    const other = extra.count - extra.dependencies;
+    if (other) out.push(`  ${extra.id}: ${other} file(s) on disk not in its manifest, not run by any entry (e.g. ${extra.sample.join(", ")})`);
+    if (extra.dependencies) out.push(`  ${extra.id}: ${extra.dependencies} dependency file(s) under node_modules, installed by npm and not in its manifest`);
+  }
   for (const old of report.cleanupPending) {
     out.push(`  cleanup-pending: ${old.field} no longer names ${old.ref}; once nothing still reads it: aify-env credential remove --ref=${old.ref}`);
   }

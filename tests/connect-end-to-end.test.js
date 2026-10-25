@@ -204,12 +204,15 @@ test("MANIFEST: a web page where the manifest should be is refused", async () =>
 
 test("MANIFEST: files on disk the manifest does not list are reported, not failed", async () => {
   const host = makeHost();
+  fs.writeFileSync(path.join(host.root, "stray.js"), "// not in the commit\n");
   const spec = commsSpec(host);
   const service = await startService({ spec });
   try {
     const run = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY), ...approvals(spec)]);
     assert.equal(run.status, 0, run.stderr);
-    assert.match(run.stdout, /comms-bridge: 1 file\(s\) on disk not in its manifest, not run by any entry \(e\.g\. node_modules\/dep\/index\.js\)/);
+    // npm's files are named as dependencies, apart from a file that is neither listed nor a dependency.
+    assert.match(run.stdout, /comms-bridge: 1 file\(s\) on disk not in its manifest, not run by any entry \(e\.g\. stray\.js\)/);
+    assert.match(run.stdout, /comms-bridge: 1 dependency file\(s\) under node_modules, installed by npm and not in its manifest/);
   } finally {
     await service.close();
   }
