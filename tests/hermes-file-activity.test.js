@@ -58,8 +58,13 @@ test("a record of one adapter cannot pass as the other's", () => {
 // Loads the module against a fake hermes resolver and a context that records hooks, replaces its hand-off with a
 // recorder, then calls post_tool_call with hermes' keyword arguments once per call given.
 const DRIVER = `
-import importlib.util, json, pathlib, sys, time, types
+import importlib.util, json, logging, pathlib, sys, time, types
 options = json.loads(sys.argv[2])
+warnings = []
+class Collect(logging.Handler):
+    def emit(self, record):
+        warnings.append(record.getMessage())
+logging.getLogger("aify_file_activity").addHandler(Collect())
 paths = types.ModuleType("tools.file_tools_paths")
 def resolve(filepath, task_id="default"):
     if options.get("resolverRaises"):
@@ -90,9 +95,12 @@ module.register(ctx)
 started = time.monotonic()
 results = [callback(**call) for call in options["calls"] for callback in ctx.hooks.get("post_tool_call", [])]
 took = time.monotonic() - started
+in_flight = len(module._pending)
 if options.get("realHandOff"):
-    module._drain(10)
-print(json.dumps({"hooks": sorted(ctx.hooks), "results": results, "sent": sent, "took": took}))
+    deadline = time.monotonic() + 15
+    while module._pending and time.monotonic() < deadline:
+        time.sleep(0.02)
+print(json.dumps({"hooks": sorted(ctx.hooks), "results": results, "sent": sent, "took": took, "inFlight": in_flight, "warnings": warnings}))
 `;
 
 const call = (over = {}) => ({ tool_name: "read_file", args: { path: "docs/a.md" }, result: "{}", task_id: "t1", session_id: "s1",
@@ -138,6 +146,26 @@ test("the tool call does not wait for the event writer", { skip: NO_PYTHON }, ()
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("at most eight writers run at once, and the calls above the cap are dropped", { skip: NO_PYTHON }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-hermes-cap-"));
+  try {
+    const slow = path.join(dir, "slow-writer.mjs");
+    fs.writeFileSync(slow, "setTimeout(() => {}, 3000);\n");
+    const twelve = Array.from({ length: 12 }, (_, n) => call({ tool_call_id: `c${n}` }));
+    assert.equal(drive({ calls: twelve, realHandOff: true, attrs: { _EVENT: slow } }).inFlight, 8);
+    assert.equal(drive({ calls: twelve.slice(0, 3), realHandOff: true, attrs: { _EVENT: slow } }).inFlight, 3, "control: under the cap, every call starts");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a hermes resolver that fails is reported once, in hermes' log", { skip: NO_PYTHON }, () => {
+  const answer = drive({ calls: [call(), call({ tool_call_id: "c2" })], resolverRaises: true });
+  assert.deepEqual(answer.sent, []);
+  assert.deepEqual(answer.warnings, ["hermes file paths unavailable: resolver"]);
+  assert.deepEqual(drive({ calls: [call()] }).warnings, [], "a working resolver reports nothing");
 });
 
 test("the callback hands one line to the spool end to end", { skip: NO_PYTHON }, () => {

@@ -13,11 +13,19 @@ never search_files, never a patch with no path. The path is the one hermes' own 
 NEVER WAITS. The callback runs on the agent's thread, and a node start costs 85-260 ms on Windows (measured
 2026-10-25, p50-p95). So it starts bin/aify-hermes-file-event.mjs, writes the event to its stdin, and returns; a reaper
 thread collects the exit. Every failure returns None and nothing is raised.
+
+BOUNDED. At most _MAX_IN_FLIGHT writers run at once: a turn that batches forty reads must not start forty node runtimes
+on the operator's machine. An event above the cap is dropped. Activity is observation, and a dropped event is a gap,
+not a fault.
+
+HERMES' OWN PRIVATES. The resolver functions are hermes internals. When an update renames one, every event is dropped,
+so the first failure is logged once, as "hermes file paths unavailable", in hermes' own log.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -27,19 +35,26 @@ import time
 _EVENT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bin", "aify-hermes-file-event.mjs")
 _TOOLS = frozenset({"read_file", "write_file", "patch"})
 _OUTCOMES = {"ok": "success", "error": "failure"}
+_MAX_IN_FLIGHT = 8
 _pending: list[subprocess.Popen] = []
 _pending_lock = threading.Lock()
+_logger = logging.getLogger(__name__)
+_resolver_reported = False
 
 
 def _resolved(path: str, task_id: str) -> str | None:
     """Hermes' own answer for `path` in this task, or None when the task's files are not this host's."""
+    global _resolver_reported
     try:
         from tools import file_tools_paths as paths
 
         if paths._terminal_env_type_for_task(task_id) == "ssh" or paths._uses_container_paths(task_id):
             return None
         return str(paths._resolve_path_for_task(path, task_id))
-    except Exception:
+    except Exception as error:
+        if not _resolver_reported:
+            _resolver_reported = True
+            _logger.warning("hermes file paths unavailable: %s", error)
         return None
 
 
@@ -59,25 +74,18 @@ def _hand_off(payload: dict, outcome: str) -> None:
     if not node:
         return
     flags = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
-    process = subprocess.Popen([node, _EVENT, outcome], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL, **flags)
+    # The slot is taken before the start, so two calls at once cannot both pass a full cap.
     with _pending_lock:
+        if len(_pending) >= _MAX_IN_FLIGHT:
+            return
+        process = subprocess.Popen([node, _EVENT, outcome], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL, **flags)
         _pending.append(process)
     try:
         process.stdin.write(json.dumps(payload).encode("utf-8"))
     finally:
         process.stdin.close()
     threading.Thread(target=_reap, args=(process,), daemon=True).start()
-
-
-def _drain(timeout: float) -> None:
-    """Wait for every event handed off so far, for at most `timeout` seconds in all."""
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        with _pending_lock:
-            if not _pending:
-                return
-        time.sleep(0.02)
 
 
 def _observed(**kwargs):
