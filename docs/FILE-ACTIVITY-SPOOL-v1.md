@@ -15,7 +15,13 @@ network client, transcript reader or second JSON-parser child. Activity-off hook
 and non-tool state callers retain their legacy shell. Both SessionStart commands
 and session-ID capture remain installed. Hook Node is resolved from its own PATH.
 
-Only top-level Claude Read/Write/Edit `tool_input.file_path` records are supported.
+Two adapters write records, and a record of one never validates as the other's:
+`claude-file-path-v1`, top-level Claude Read/Write/Edit `tool_input.file_path` only;
+and `hermes-file-path-v1`, hermes read_file/write_file/patch `path` only, as
+lib/hermes-file-activity.py hands it over: hermes' own resolver gives the absolute
+path for the task, a remote (ssh or container) task, a subagent's call or a patch
+with no path records nothing, and bin/aify-hermes-file-event.mjs is started without
+the tool call waiting for it.
 Bash, contents, diffs, command strings, responses, errors and child/subagent fields
 are refused. Paths normalize lexically without realpath or file-content reads.
 Identity comes from `AIFY_AGENT_ID`, `AIFY_ENV_INSTANCE`, `AIFY_LIFETIME` or null,

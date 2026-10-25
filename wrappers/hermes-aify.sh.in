@@ -670,6 +670,10 @@ fi
 # services say to each turn. Only for an agent: the dashboard places a session by its agent, and a plain hermes has none.
 if [ -n "${AIFY_AGENT_ID:-}" ]; then
   export AIFY_TURN_START_HERMES_PLUGIN="$AIFY_WRAPPER_DIR_FWD/lib/hermes-turn-start.py"
+  # File activity, only when the producer's switch is on: lib/hermes-file-activity.py records named-file tool calls.
+  if [ "${AIFY_FILE_ACTIVITY:-0}" = 1 ]; then
+    export AIFY_FILE_ACTIVITY_HERMES_PLUGIN="$AIFY_WRAPPER_DIR_FWD/lib/hermes-file-activity.py"
+  fi
 fi
 
 # Node >=22 guarantee. The Hermes Ink TUI's gateway client attaches over a
