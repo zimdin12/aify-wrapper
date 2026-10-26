@@ -26,3 +26,12 @@ test("the loop's output goes to a per-agent log, not /dev/null", () => {
   assert.match(line, />"\$\{TMPDIR:-\/tmp\}\/aify-hermes-loop-\$HERMES_AIFY_AGENT_ID\.log" 2>&1 &$/,
     "stdout and stderr go to one file per agent, started fresh each launch");
 });
+
+test("the loop starts with the gateway the launcher verified already in its environment (0.9.10 review)", () => {
+  // The loop's bring-up takes AIFY_HERMES_GATEWAY_URL instead of asking aify-env again: a second ask whose probe
+  // missed a busy gateway would end the one the TUI uses. Exported after the loop starts, it reaches only the TUI.
+  const exportAt = TEMPLATE.split("\n").findIndex((line) => /^\s*export AIFY_HERMES_GATEWAY_URL="\$HERMES_TUI_WS_URL"$/.test(line));
+  const loopAt = TEMPLATE.split("\n").indexOf(loopLines[0]);
+  assert.ok(exportAt >= 0, "control: the launcher exports the verified gateway url");
+  assert.ok(exportAt < loopAt, `the url is exported on line ${exportAt + 1}, after the loop starts on line ${loopAt + 1}`);
+});

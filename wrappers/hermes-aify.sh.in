@@ -923,6 +923,11 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
   # which loop we are health-gating on. ITS OUTPUT IS KEPT, one file per agent beside its markers and
   # started fresh each launch: pc-manager's loop, found 2026-09-28 beside a gateway with no TUI, had
   # written to /dev/null and left nothing to say what it was doing.
+  # The gateway just verified, exported BEFORE the loop starts: the loop's bring-up takes it from here rather than
+  # asking aify-env again, because a second ask whose probe missed a busy gateway would end the one the TUI uses
+  # (0.9.10 review). The TUI and its aify-comms MCP server read the same two variables.
+  export AIFY_HERMES_GATEWAY_URL="$HERMES_TUI_WS_URL"
+  export AIFY_HERMES_GATEWAY_TOKEN="$(printf '%s' "$HERMES_TUI_WS_URL" | sed -E 's/.*[?&]token=([^&]+).*/\1/;t;s/.*//')"
   nohup node "$AIFY_HERMES_MANAGED_HOST_JS" run "$HERMES_AIFY_AGENT_ID" >"${TMPDIR:-/tmp}/aify-hermes-loop-$HERMES_AIFY_AGENT_ID.log" 2>&1 &
   HERMES_LOOP_PID="$!"
   disown 2>/dev/null || true
@@ -971,16 +976,6 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
   # loop is live. Flow is now: spawn loop (+ kill-prior exclude) → exec TUI.
   # (4) The VISIBLE TUI in this PTY, attached to the gateway host + stable session.
   export HERMES_TUI_GATEWAY_URL="$HERMES_TUI_WS_URL"
-  # The aify-comms MCP child (server.js) reads AIFY_HERMES_GATEWAY_URL to set
-  # runtime_config.gatewayUrl on register — that is the precondition for
-  # resident-run / wakeMode=hermes-live (runtimes.js: gatewayOk = !!gatewayUrl).
-  # The v0.15 gateway-host rewrite exported only HERMES_TUI_GATEWAY_URL, so the
-  # MCP config '${AIFY_HERMES_GATEWAY_URL}' interpolated to the literal
-  # placeholder and every resident hermes registered as hermes-missing-handle.
-  # Export it (same gateway WS URL) + its embedded token before the TUI/MCP
-  # child spawn so the bridge registers a real ws:// gatewayUrl.
-  export AIFY_HERMES_GATEWAY_URL="$HERMES_TUI_WS_URL"
-  export AIFY_HERMES_GATEWAY_TOKEN="$(printf '%s' "$HERMES_TUI_WS_URL" | sed -E 's/.*[?&]token=([^&]+).*/\1/;t;s/.*//')"
   # Use the prebuilt ui-tui bundle when available so the managed TUI does NOT
   # run `npm run build` on every launch (slow + noisy in the dashboard
   # console). `hermes --tui` skips the build when HERMES_TUI_DIR points at a
