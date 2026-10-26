@@ -2,7 +2,7 @@
 // launcher starts the gateway from its own environment, and registers the pid. aify-env and the gateway are stand-ins.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ensureGateway, envEndpoint } from '../lib/hermes-gateway-ensure.mjs';
+import { ensureGateway, envEndpoint, hashedPort } from '../lib/hermes-gateway-ensure.mjs';
 
 const LIFETIME = '11111111-1111-4111-8111-111111111111';
 const ENV = { AIFY_ENV_INSTANCE: 'default', AIFY_LIFETIME: LIFETIME, AIFY_AGENT_LEASE: '700', AIFY_AGENT_ID: 'pc-manager', SECRET: 'kept' };
@@ -88,4 +88,45 @@ test('A GATEWAY aify-env WILL NOT RECORD IS ENDED: no later launch could end it'
     start: async (input) => ({ port: input.port, token: 't', wsUrl: 'ws://x', pid: 4242 }), stop: async (pid) => { stopped.push(pid); } }),
   /refused the gateway register: not-prepared/);
   assert.deepEqual(stopped, [4242]);
+});
+
+const RESIDENT = { ...ENV, AIFY_ENV_INSTANCE: 'residents' };
+const refused = async () => { throw new TypeError('fetch failed', { cause: Object.assign(new Error('connect'), { code: 'ECONNREFUSED' }) }); };
+
+test('A HAND LAUNCH WORKS WITHOUT aify-env (operator, 2026-10-26): it starts on its agent\'s hashed port, joins the lease, records nothing, and says so', async () => {
+  for (const [why, endpoint] of [['no descriptor', () => null], ['a descriptor nothing answers', () => BASE]]) {
+    const starts = [];
+    const attached = [];
+    const notes = [];
+    const gateway = await ensureGateway({ agentId: 'pc-manager', env: RESIDENT, logDir: 'L', endpoint, fetchImpl: refused,
+      start: async (input) => { starts.push(input); input.onSpawn(4242); return { port: input.port, token: 't', wsUrl: 'ws://127.0.0.1:8868/api/ws?token=t', pid: 4242 }; },
+      attach: (pid) => attached.push(pid), note: (line) => notes.push(line) });
+    assert.deepEqual(gateway, { port: 8868, token: 't', wsUrl: 'ws://127.0.0.1:8868/api/ws?token=t' }, why);
+    assert.deepEqual(starts.map(({ port, ownerPid }) => ({ port, ownerPid })), [{ port: 8868, ownerPid: 700 }], why);
+    assert.equal(starts[0].env, RESIDENT, `${why}: the gateway starts with the launcher's environment`);
+    assert.deepEqual(attached, [4242], `${why}: the gateway joins the agent lease`);
+    assert.match(notes.join('\n'), /without aify-env's record/, why);
+  }
+});
+
+test('ONLY A HAND LAUNCH, AND ONLY WHEN NOTHING ANSWERS: a managed launch, a refusal and a timeout still stop', async () => {
+  const never = async () => assert.fail('nothing may start');
+  await assert.rejects(ensureGateway({ agentId: 'pc-manager', env: ENV, logDir: 'L', start: never, endpoint: () => BASE, fetchImpl: refused }),
+    /fetch failed/, 'a managed launch whose aify-env is gone');
+  const env = aifyEnv({ prepare: { status: 409, body: { ok: false, reason: 'not-current' } } });
+  await assert.rejects(ensureGateway({ agentId: 'pc-manager', env: RESIDENT, logDir: 'L', start: never, endpoint: () => BASE, fetchImpl: env.fetchImpl }),
+    /refused the gateway prepare: not-current/, 'aify-env answered: a refusal is an answer');
+  const slow = async () => { throw new DOMException('The operation was aborted due to timeout', 'TimeoutError'); };
+  await assert.rejects(ensureGateway({ agentId: 'pc-manager', env: RESIDENT, logDir: 'L', start: never, endpoint: () => BASE, fetchImpl: slow }),
+    /timeout/, 'a slow aify-env may be ending the older gateway on that port');
+  await assert.rejects(ensureGateway({ agentId: 'pc-manager', env: { ...RESIDENT, AIFY_AGENT_LEASE: '' }, logDir: 'L', start: never, endpoint: () => null }),
+    /holds no agent lease/, 'a hand launch with no lease still starts nothing');
+});
+
+test('THE PORT RULE is aify-env\'s: the values its own test pins (lib/hermes-gateway-ports.mjs)', () => {
+  assert.equal(hashedPort('general-helper-gpt'), 8803, 'steps past the reserved 8800-8802');
+  assert.equal(hashedPort('comms-senior-dev'), 9341);
+  assert.equal(hashedPort('graph-hermes-tl'), 9341);
+  assert.equal(hashedPort('pc-manager'), 8868);
+  assert.equal(hashedPort('sc-coder-gpt'), 9545);
 });

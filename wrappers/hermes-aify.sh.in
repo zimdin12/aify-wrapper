@@ -839,7 +839,7 @@ if [ ${#HERMES_ARGS[@]} -eq 0 ]; then aify_hermes_warm_bridge; fi
 #   1. kill-prior: reap a stale delivery loop for this agent.
 #   2. the gateway: bin/aify-hermes-gateway.mjs asks aify-env for this lifetime's gateway and starts the HIDDEN
 #      per-agent `hermes dashboard` (windowsHide) from this launch's environment when none is live, then answers
-#      its {port,token,wsUrl}. aify-env must be running (0.9.10).
+#      its {port,token,wsUrl}. Managed needs aify-env; a hand launch without one starts it unrecorded (0.9.10).
 #   3. start the background delivery loop (detached, survives the exec below): it
 #      claims channel/resident dispatch runs and prompt.submits them into the
 #      visible TUI's session.
