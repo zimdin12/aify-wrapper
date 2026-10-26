@@ -2,7 +2,7 @@
 // launcher starts the gateway from its own environment, and registers the pid. aify-env and the gateway are stand-ins.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ensureGateway, envEndpoint, hashedPort } from '../lib/hermes-gateway-ensure.mjs';
+import { ensureGateway, envEndpoint, freePort } from '../lib/hermes-gateway-ensure.mjs';
 
 const LIFETIME = '11111111-1111-4111-8111-111111111111';
 const ENV = { AIFY_ENV_INSTANCE: 'default', AIFY_LIFETIME: LIFETIME, AIFY_AGENT_LEASE: '700', AIFY_AGENT_ID: 'pc-manager', SECRET: 'kept' };
@@ -93,12 +93,12 @@ test('A GATEWAY aify-env WILL NOT RECORD IS ENDED: no later launch could end it'
 const RESIDENT = { ...ENV, AIFY_ENV_INSTANCE: 'residents' };
 const refused = async () => { throw new TypeError('fetch failed', { cause: Object.assign(new Error('connect'), { code: 'ECONNREFUSED' }) }); };
 
-test('A HAND LAUNCH WORKS WITHOUT aify-env (operator, 2026-10-26): it starts on its agent\'s hashed port, joins the lease, records nothing, and says so', async () => {
+test('A HAND LAUNCH WORKS WITHOUT aify-env (operator, 2026-10-26): it starts on a port the OS gives, joins the lease, records nothing, and says so', async () => {
   for (const [why, endpoint] of [['no descriptor', () => null], ['a descriptor nothing answers', () => BASE]]) {
     const starts = [];
     const attached = [];
     const notes = [];
-    const gateway = await ensureGateway({ agentId: 'pc-manager', env: RESIDENT, logDir: 'L', endpoint, fetchImpl: refused,
+    const gateway = await ensureGateway({ agentId: 'pc-manager', env: RESIDENT, logDir: 'L', endpoint, fetchImpl: refused, pickPort: async () => 8868,
       start: async (input) => { starts.push(input); input.onSpawn(4242); return { port: input.port, token: 't', wsUrl: 'ws://127.0.0.1:8868/api/ws?token=t', pid: 4242 }; },
       attach: (pid) => attached.push(pid), note: (line) => notes.push(line) });
     assert.deepEqual(gateway, { port: 8868, token: 't', wsUrl: 'ws://127.0.0.1:8868/api/ws?token=t' }, why);
@@ -123,10 +123,11 @@ test('ONLY A HAND LAUNCH, AND ONLY WHEN NOTHING ANSWERS: a managed launch, a ref
     /holds no agent lease/, 'a hand launch with no lease still starts nothing');
 });
 
-test('THE PORT RULE is aify-env\'s: the values its own test pins (lib/hermes-gateway-ports.mjs)', () => {
-  assert.equal(hashedPort('general-helper-gpt'), 8803, 'steps past the reserved 8800-8802');
-  assert.equal(hashedPort('comms-senior-dev'), 9341);
-  assert.equal(hashedPort('graph-hermes-tl'), 9341);
-  assert.equal(hashedPort('pc-manager'), 8868);
-  assert.equal(hashedPort('sc-coder-gpt'), 9545);
+test('THE FREE PORT is one this host can listen on now', async () => {
+  const port = await freePort();
+  assert.ok(Number.isInteger(port) && port > 0 && port < 65536, String(port));
+  const net = await import('node:net');
+  await new Promise((resolve, reject) => {
+    const server = net.createServer().once('error', reject).listen({ port, host: '127.0.0.1' }, () => server.close(resolve));
+  });
 });
