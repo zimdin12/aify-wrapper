@@ -131,3 +131,25 @@ test('THE FREE PORT is one this host can listen on now', async () => {
     const server = net.createServer().once('error', reject).listen({ port, host: '127.0.0.1' }, () => server.close(resolve));
   });
 });
+
+test('A RECOVERY SERVES THE TOKEN, AND WITHOUT aify-env THE PORT, THE VISIBLE TUI WAS LAUNCHED AGAINST', async () => {
+  // The TUI keeps retrying its launch URL; a replacement with a new token or port left it disconnected while delivery
+  // worked (review of fcde794a). Only a recovery carries AIFY_HERMES_GATEWAY_URL: the launcher unsets it before its
+  // first ensure and exports it to the delivery loop after.
+  const LAUNCH = 'ws://127.0.0.1:9101/api/ws?token=launch-token';
+  const started = (starts) => async (input) => { starts.push(input); return { port: input.port, token: input.token ?? 'fresh', wsUrl: 'ws://x', pid: 4242 }; };
+  const noEnv = [];
+  await ensureGateway({ agentId: 'pc-manager', env: { ...RESIDENT, AIFY_HERMES_GATEWAY_URL: LAUNCH }, logDir: 'L', endpoint: () => null,
+    pickPort: async () => assert.fail('a recovery takes no other port'), start: started(noEnv), note: () => {} });
+  assert.deepEqual(noEnv.map(({ port, token }) => ({ port, token })), [{ port: 9101, token: 'launch-token' }], 'without aify-env');
+  const recorded = [];
+  const env = aifyEnv({ prepare: { status: 200, body: { ok: true, port: 9341, live: false } }, register: { status: 200, body: { ok: true } } });
+  await ensureGateway({ agentId: 'pc-manager', env: { ...ENV, AIFY_HERMES_GATEWAY_URL: LAUNCH }, logDir: 'L', endpoint: () => BASE,
+    fetchImpl: env.fetchImpl, start: started(recorded), stop: async () => {} });
+  assert.deepEqual(recorded.map(({ port, token }) => ({ port, token })), [{ port: 9341, token: 'launch-token' }], "aify-env's port, the same token");
+  // CONTROL: a first launch carries no launch URL, so its gateway mints a fresh token on the port it is given.
+  const first = [];
+  await ensureGateway({ agentId: 'pc-manager', env: RESIDENT, logDir: 'L', endpoint: () => null, pickPort: async () => 8868,
+    start: started(first), note: () => {} });
+  assert.deepEqual(first.map(({ port, token }) => ({ port, token })), [{ port: 8868, token: undefined }]);
+});
