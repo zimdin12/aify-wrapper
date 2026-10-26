@@ -53,8 +53,14 @@ class Ctx:
         self.hooks.setdefault(name, []).append(callback)
 ctx = Ctx()
 module.register(ctx)
+for earlier in options.get("before", []):
+    for callback in ctx.hooks.get("pre_llm_call", []):
+        callback(**earlier)
+for aux in options.get("aux", []):
+    for callback in ctx.hooks.get("post_auxiliary_call", []):
+        callback(**aux)
 started = time.monotonic()
-results = [callback(**json.loads(sys.argv[2])) for callback in ctx.hooks.get("pre_llm_call", [])]
+results = [callback(**json.loads(sys.argv[2])) for _ in range(options.get("turns", 1)) for callback in ctx.hooks.get("pre_llm_call", [])]
 print(json.dumps({"hooks": sorted(ctx.hooks), "results": results, "took": time.monotonic() - started}))
 `;
 
@@ -63,9 +69,9 @@ const TURN = { session_id: "hermes-session-7", task_id: "task-1", turn_id: "turn
   is_first_turn: true, model: "probe-model", platform: "cli", parent_session_id: "", sender_id: "" };
 
 /** Run the driver with `env`; `cwd` is the hermes process's launch folder. */
-function fire(env, { turn = TURN, hermesCwd = null, attrs = {}, cwd = os.tmpdir() } = {}) {
+function fire(env, { turn = TURN, hermesCwd = null, attrs = {}, cwd = os.tmpdir(), aux = [], turns = 1, before = [] } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(PYTHON, ["-c", DRIVER, MODULE, JSON.stringify(turn), JSON.stringify({ hermesCwd, attrs })],
+    const child = spawn(PYTHON, ["-c", DRIVER, MODULE, JSON.stringify(turn), JSON.stringify({ hermesCwd, attrs, aux, turns, before })],
       { env: { ...env, PYTHONDONTWRITEBYTECODE: "1" }, cwd, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "", stderr = "";
     child.stdout.on("data", (chunk) => { stdout += chunk; });
@@ -85,7 +91,7 @@ test("THE TURN CARRIES THE SERVICES' TEXT as hermes' context, asked with the ses
   t.after(() => fs.rmSync(launch, { recursive: true, force: true }));
   const hermesCwd = path.join(os.tmpdir(), "hermes-session-workspace");
   const fired = await fire(host(t, { endpoint: svc.endpoint }), { hermesCwd, cwd: launch });
-  assert.deepEqual(fired.hooks, ["pre_llm_call"]);
+  assert.deepEqual(fired.hooks, ["post_auxiliary_call", "pre_llm_call"]);
   assert.deepEqual(fired.results, [{ context: "OPERATOR RULE" }]);
   assert.equal(svc.seen.length, 1);
   const [seen] = svc.seen;
@@ -95,6 +101,28 @@ test("THE TURN CARRIES THE SERVICES' TEXT as hermes' context, asked with the ses
   assert.equal(seen.body.cwd, hermesCwd);
   assert.equal(seen.headers["x-aify-agent"], "probe-agent");
   assert.doesNotMatch(fired.output, new RegExp(KEY));
+});
+
+test("THE MOMENT: a first turn is a start, the turn after a compression is a compact once, and any other turn is a turn", { skip: NO_PYTHON }, async (t) => {
+  // aify-dashboard re-sends its brief at start and compact. Hermes has no hook that injects at a compression, so its
+  // post_auxiliary_call observer, which sees the compression call (aux_task "compression"), marks the next turn.
+  const svc = await service(t, answer("OPERATOR RULE"));
+  const env = host(t, { endpoint: svc.endpoint });
+  await fire(env);
+  assert.equal(svc.seen.at(-1).body.moment, "start");
+  const later = { ...TURN, is_first_turn: false };
+  const compressed = { aux_task: "compression", session_id: TURN.session_id, task_id: "task-1", turn_id: "turn-1" };
+  // Hermes rotates the session at a compression: the observer saw session A, and the next turn runs in session B.
+  const rotated = { ...later, session_id: "hermes-session-8" };
+  await fire(env, { turn: rotated, before: [TURN], aux: [compressed], turns: 2 });
+  assert.deepEqual(svc.seen.slice(-2).map((seen) => [seen.body.sessionKey, seen.body.moment]),
+    [["hermes-session-8", "compact"], ["hermes-session-8", "turn"]], "the rotated session's first turn is the compaction, told once");
+  // A build that compresses in place: the same session is marked and asks next.
+  await fire(env, { turn: later, aux: [compressed], turns: 2 });
+  assert.deepEqual(svc.seen.slice(-2).map((seen) => seen.body.moment), ["compact", "turn"], "the compaction is told once, then turns are turns");
+  // Controls: another auxiliary call, and a compression of another session, leave the turn a turn.
+  await fire(env, { turn: later, aux: [{ ...compressed, aux_task: "title_generation" }, { ...compressed, session_id: "other-session" }] });
+  assert.equal(svc.seen.at(-1).body.moment, "turn");
 });
 
 test("OUTSIDE HERMES, where its folder rule cannot be imported, the launch folder is named", { skip: NO_PYTHON }, async (t) => {

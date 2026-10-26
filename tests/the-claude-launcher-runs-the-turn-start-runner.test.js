@@ -55,6 +55,12 @@ test("THE LAUNCHER'S SETTINGS run the turn-start runner on UserPromptSubmit, syn
     assert.equal(runner.length, 1, `the runner is registered once: ${JSON.stringify(commands)}`);
     assert.notEqual(runner[0].async, true, "the runner must be synchronous: its output is the context");
     assert.ok(commands.some((hook) => hook.command.includes("claude-session-hook.js")), "the session capture is still registered");
+    // And at session start, which Claude Code fires again after a compaction, beside what that entry already ran.
+    const starting = config.hooks.SessionStart.flatMap((group) => group.hooks);
+    const briefed = starting.filter((hook) => hook.command.includes("aify-turn-start.mjs"));
+    assert.equal(briefed.length, 1, `the runner is registered once at SessionStart: ${JSON.stringify(starting)}`);
+    assert.notEqual(briefed[0].async, true, "the runner must be synchronous: its output is the context");
+    assert.ok(starting.some((hook) => hook.command.includes("agent-state-event.mjs")), "the lifetime report is still registered");
 
     // Run the registered command as Claude would: with no agent id it adds nothing and exits 0.
     const fired = spawnSync("sh", ["-c", runner[0].command], { input: JSON.stringify({ session_id: "s", cwd: dir }), encoding: "utf8",

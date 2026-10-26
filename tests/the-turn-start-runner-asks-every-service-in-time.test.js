@@ -14,7 +14,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { parseRegistry, TURN_START_DEADLINE_MS } from "../lib/registry.mjs";
-import { hookOutput, runTurnStart, turnStartTargets } from "../lib/turn-start.mjs";
+import { hookOutput, momentOf, runTurnStart, turnStartTargets } from "../lib/turn-start.mjs";
 import { answer, host, KEY, service } from "./turn-start-host.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -216,6 +216,21 @@ test("THE OUTPUT is Claude's UserPromptSubmit shape, and nothing at all when not
   assert.deepEqual(JSON.parse(hookOutput("RULE")),
     { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: "RULE" } });
   assert.equal(hookOutput(""), "");
+  // At session start Claude takes the same shape under its own event name.
+  assert.deepEqual(JSON.parse(hookOutput("RULE", "SessionStart")),
+    { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: "RULE" } });
+});
+
+test("THE MOMENT comes from the hook that ran: SessionStart's source, every UserPromptSubmit, or what hermes says", () => {
+  // aify-dashboard re-sends its brief at "start" and "compact" (its DESIGN-RIGHT-MOMENT). Claude Code's SessionStart
+  // sources are startup, resume, clear and compact; codex-cli 0.160.0 sends the same four.
+  for (const source of ["startup", "resume", "clear"]) assert.equal(momentOf({ hook_event_name: "SessionStart", source }), "start", source);
+  assert.equal(momentOf({ hook_event_name: "SessionStart", source: "compact" }), "compact");
+  assert.equal(momentOf({ hook_event_name: "UserPromptSubmit", prompt: "hi" }), "turn");
+  assert.equal(momentOf({ hook_event_name: "pre_llm_call", moment: "compact" }), "compact");
+  // Control: a moment this runner does not know, or none, is not passed on, so a service keeps its own re-send.
+  assert.equal(momentOf({ hook_event_name: "pre_llm_call", moment: "later" }), "");
+  assert.equal(momentOf({ session_id: "s" }), "");
 });
 
 // ---- the hook command, end to end ----------------------------------------------------------------------------------
@@ -277,8 +292,17 @@ test("END TO END: the hook sends the runner-built request and prints the context
   assert.equal(seen.headers["x-aify-agent"], "probe-agent");
   // PLACEMENT: the id the runner itself derived, lower-cased, from a mixed-case COMPUTERNAME.
   const tag = process.platform === "linux" && /microsoft|wsl/i.test(fs.existsSync("/proc/sys/kernel/osrelease") ? fs.readFileSync("/proc/sys/kernel/osrelease", "utf8") : "") ? "wsl" : process.platform;
-  assert.deepEqual(seen.body, { agentId: "probe-agent", cwd: "C:\\Docker\\aify-dashboard", machineId: `${tag}:probe-host`, sessionKey: "claude-session-42" });
+  assert.deepEqual(seen.body, { agentId: "probe-agent", cwd: "C:\\Docker\\aify-dashboard", machineId: `${tag}:probe-host`, sessionKey: "claude-session-42", moment: "turn" });
   assert.doesNotMatch(result.stdout + result.stderr, new RegExp(KEY));
+});
+
+test("END TO END, A COMPACTION: Claude's SessionStart after a compaction asks with moment compact and prints SessionStart's shape", async (t) => {
+  const svc = await service(t, answer("THE BRIEF"));
+  const input = JSON.stringify({ session_id: "claude-session-42", cwd: "C:\\Docker\\aify-dashboard", hook_event_name: "SessionStart", source: "compact" });
+  const result = await runHook(host(t, { endpoint: svc.endpoint }), input);
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: "THE BRIEF" } });
+  assert.equal(svc.seen[0].body.moment, "compact");
 });
 
 test("END TO END, A SERVICE ECHOING ITS KEY ADDS NOTHING AND PRINTS NO KEY, and its healthy peer still arrives", async (t) => {

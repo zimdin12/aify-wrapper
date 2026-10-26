@@ -30,6 +30,13 @@ import subprocess
 _RUNNER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bin", "aify-turn-start.mjs")
 _GUARD_S = 15  # covers node start-up on a loaded host; the runner bounds its own work at 1.5 s
 _NODE = None  # node on PATH, looked up at each turn when unset
+# Sessions hermes compressed since their last turn. Hermes has no hook that injects at a compression, but its
+# post_auxiliary_call observer sees the compression call (aux_task "compression"), so the next turn says "compact".
+# Hermes ROTATES the session at a compression (agent/conversation_compression.py mints a new id, 2026-10-26): the
+# observer sees the old id, the next turn the new one. So the session the last turn ran in is kept, and
+# a turn in a new session after its compression is the compaction too.
+_COMPRESSED: set = set()
+_LAST_SESSION = {"id": ""}
 
 
 def _folder() -> str:
@@ -41,11 +48,30 @@ def _folder() -> str:
         return ""
 
 
+def _compressed(**kwargs) -> None:
+    if kwargs.get("aux_task") == "compression" and kwargs.get("session_id"):
+        _COMPRESSED.add(str(kwargs["session_id"]))
+
+
+def _moment(kwargs) -> str:
+    """start on a session's first turn, compact on the first turn after a compression, turn otherwise."""
+    session = str(kwargs.get("session_id") or "")
+    last, _LAST_SESSION["id"] = _LAST_SESSION["id"], session
+    # The compressed session itself, on a build that compresses in place, or the one it was rotated from.
+    compacted = session in _COMPRESSED or (last != session and last in _COMPRESSED)
+    _COMPRESSED.discard(session)
+    _COMPRESSED.discard(last)
+    if compacted:
+        return "compact"
+    return "start" if kwargs.get("is_first_turn") else "turn"
+
+
 def _context(**kwargs):
     if kwargs.get("platform") == "subagent":
         return None
     try:
-        request = json.dumps({"session_id": kwargs.get("session_id"), "cwd": _folder(), "hook_event_name": "pre_llm_call"})
+        request = json.dumps({"session_id": kwargs.get("session_id"), "cwd": _folder(), "hook_event_name": "pre_llm_call",
+                              "moment": _moment(kwargs)})
         run = {"input": request, "capture_output": True, "text": True, "encoding": "utf-8", "timeout": _GUARD_S}
         if os.name == "nt":
             run["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -57,3 +83,4 @@ def _context(**kwargs):
 
 def register(ctx) -> None:  # noqa: ANN001 - hermes PluginContext
     ctx.register_hook("pre_llm_call", _context)
+    ctx.register_hook("post_auxiliary_call", _compressed)

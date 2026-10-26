@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Claude Code's UserPromptSubmit hook: adds what the registry's turn-start services say to the turn that is starting.
+// Claude Code's SessionStart and UserPromptSubmit hook: adds what the registry's turn-start services say to the session
+// that is starting or compacted, and to each turn.
 // The logic is lib/turn-start.mjs; this file is its I/O. It ALWAYS exits 0. Everything after module load is bounded by
 // one absolute due time: stdin, the registry and the credentials are read asynchronously against it, the answer closes
 // at it with what had arrived, and a backstop just after it exits whatever is still pending.
@@ -11,7 +12,7 @@ import path from "node:path";
 import { readCredential } from "../lib/credential-file.mjs";
 import { hostIsWsl, machineIdFor } from "../lib/machine-id.mjs";
 import { parseRegistry, TURN_START_DEADLINE_MS } from "../lib/registry.mjs";
-import { hookOutput, runTurnStart, turnStartTargets } from "../lib/turn-start.mjs";
+import { hookOutput, momentOf, runTurnStart, turnStartTargets } from "../lib/turn-start.mjs";
 
 const startedAt = Date.now();
 const dueAt = startedAt + TURN_START_DEADLINE_MS;
@@ -65,11 +66,13 @@ async function main() {
     cwd: typeof input.cwd === "string" && input.cwd ? input.cwd : process.cwd(),
     machineId: machineIdFor({ platform: process.platform, hostname: os.hostname(), env: process.env, isWsl: hostIsWsl() }),
     sessionKey,
+    // Left out when the input names no moment, so a service keeps its own re-send for it.
+    ...(momentOf(input) ? { moment: momentOf(input) } : {}),
   };
   const { text: added } = await runTurnStart({
     targets, request, keyFor: (ref) => readCredential(ref), fetchImpl: fetch, startedAt, dueAt,
   });
-  return hookOutput(added);
+  return hookOutput(added, input.hook_event_name === "SessionStart" ? "SessionStart" : "UserPromptSubmit");
 }
 
 main()

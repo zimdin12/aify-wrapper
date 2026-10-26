@@ -62,7 +62,10 @@ function fixture({ enabled = '1', managed = false, claimed = false, rewrite = fa
 }
 for (const rewrite of [false, true]) test(`activity enabled without Herdr executes one native hook per outcome, argv conversion ${rewrite}`, () => {
   const f = fixture({ rewrite });
-  assert.equal(f.config.hooks.SessionStart[0].hooks.length, 2, 'resident-started SessionStart lost');
+  // Three since the turn-start runner joined SessionStart for the dashboard's brief; the lifetime report is named, not counted.
+  const starting = f.config.hooks.SessionStart[0].hooks.map((hook) => hook.command);
+  assert.ok(starting.some((command) => command.includes('resident-started')), 'resident-started SessionStart lost');
+  assert.equal(starting.length, 3, `SessionStart runs ${starting.length} commands`);
   for (const event of ['PostToolUse', 'PostToolUseFailure']) assert.equal(f.fire(event).length, 1, 'parallel observer or missing combined hook');
   const batch = f.spool();
   assert.deepEqual(batch.records.map(e => e.record.event.outcome), ['success', 'failure']);
