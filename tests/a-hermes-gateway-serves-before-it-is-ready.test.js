@@ -50,7 +50,10 @@ function fakeHermes(t, { serves = 0, socket = true, writes = '', exitWith = null
 test('READY WHEN THE SOCKET OPENS: the start answers the socket url, tied to the agent and not to this process', async (t) => {
   const h = fakeHermes(t, { serves: 30 });
   const spawned = [];
-  const ready = await startGateway({ port: PORT, ownerPid: 777, logDir: h.logDir, env: { PATH: 'x', HERMES_PARENT_NONCE: 'inherited' },
+  // The agent's aify-env binding rides through whole, with no allowlist: hermes' plugins in the gateway post its
+  // turns to aify-env with it (moved from comms' agent-state-event test, G5).
+  const binding = { AIFY_ENV_URL: 'http://127.0.0.1:9', AIFY_ENV_INSTANCE: 'test', AIFY_LIFETIME: 'L', AIFY_AGENT_ID: 'pc-manager' };
+  const ready = await startGateway({ port: PORT, ownerPid: 777, logDir: h.logDir, env: { PATH: 'x', HERMES_PARENT_NONCE: 'inherited', ...binding },
     token: TOKEN, onSpawn: (pid) => spawned.push(pid), spawn: h.spawn, fetchImpl: h.fetchImpl, WebSocketImpl: h.WebSocketImpl, intervalMs: 5 });
   assert.deepEqual(ready, { port: PORT, token: TOKEN, wsUrl: `ws://127.0.0.1:${PORT}/api/ws?token=${TOKEN}`, pid: 4242 });
   const [{ cmd, args, options }] = h.calls;
@@ -60,6 +63,7 @@ test('READY WHEN THE SOCKET OPENS: the start answers the socket url, tied to the
   assert.equal(options.env.HERMES_PARENT_PID, '777', "hermes' watchdog ends it with its agent");
   assert.equal(options.env.HERMES_PARENT_NONCE, '', 'an inherited nonce describes some other parent');
   assert.equal(options.env.HERMES_YOLO_MODE, '1');
+  for (const [name, value] of Object.entries({ PATH: 'x', ...binding })) assert.equal(options.env[name], value, name);
   assert.equal(options.env.HERMES_DASHBOARD_SESSION_TOKEN, TOKEN, 'hermes serves the token the launcher minted');
   assert.equal(options.env.AIFY_HERMES_GATEWAY_URL, ready.wsUrl, "the gateway's MCP servers read its address from its own environment");
   assert.equal(options.env.AIFY_HERMES_GATEWAY_TOKEN, TOKEN);
@@ -79,6 +83,24 @@ test('A MINTED TOKEN is fresh per start and safe in a url', async (t) => {
   const [a, b] = [await run(), await run()];
   assert.notEqual(a.token, b.token);
   assert.match(a.token, /^[A-Za-z0-9_-]{43}$/);
+});
+
+test('A SLOW BOOT IS WAITED FOR: a gateway that serves after two minutes is ready; a set limit still refuses it', async (t) => {
+  // Boots took 57.6-71.9 s in the field, and a first one can install hermes' TUI dependencies; a 60 s readiness
+  // timer once failed every one of them (moved from comms' a-batch-keeps-waiting-for-slow-gateways). The clock is
+  // simulated: each index probe costs ten seconds of it.
+  let clock = 0;
+  t.mock.method(Date, 'now', () => clock);
+  const slow = (h) => async (...args) => { clock += 10_000; return h.fetchImpl(...args); };
+  const h = fakeHermes(t, { serves: 130_000 });
+  const ready = await startGateway({ port: PORT, ownerPid: 777, logDir: h.logDir, spawn: h.spawn, fetchImpl: slow(h),
+    WebSocketImpl: h.WebSocketImpl, intervalMs: 0 });
+  assert.equal(ready.port, PORT);
+  clock = 0;
+  const limited = fakeHermes(t, { serves: 130_000 });
+  await assert.rejects(startGateway({ port: PORT, ownerPid: 777, logDir: limited.logDir, spawn: limited.spawn,
+    fetchImpl: slow(limited), WebSocketImpl: limited.WebSocketImpl, readyTimeoutMs: 60_000, intervalMs: 0 }),
+  /did not serve within 60000 ms/, 'CONTROL: the same boot under a 60 s limit');
 });
 
 test('AN INDEX WITHOUT A SOCKET IS NOT READY: the start waits to its deadline and says so', async (t) => {
