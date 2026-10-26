@@ -103,6 +103,25 @@ test('A SLOW BOOT IS WAITED FOR: a gateway that serves after two minutes is read
   /did not serve within 60000 ms/, 'CONTROL: the same boot under a 60 s limit');
 });
 
+test('A HELD INDEX REQUEST OR BODY ENDS AT THE DEADLINE, and a page that arrives after it is not ready', async (t) => {
+  // Checked only between attempts, the deadline never fired while a probe was pending: a gateway that accepted the
+  // request and never answered held the launcher (review of da073ab, A3). These fakes ignore the abort signal, so only
+  // the race against the deadline's abort can end them; a real fetch would also abort.
+  for (const holds of ['request', 'body']) {
+    const h = fakeHermes(t);
+    let releasePage;
+    const held = new Promise((resolve) => { releasePage = () => resolve(page(TOKEN)); });
+    const fetchImpl = async () => (holds === 'request'
+      ? held.then((text) => ({ ok: true, text: async () => text }))
+      : { ok: true, text: () => held });
+    const started = Date.now();
+    await assert.rejects(startGateway({ port: PORT, ownerPid: 777, logDir: h.logDir, spawn: h.spawn, fetchImpl, token: TOKEN,
+      WebSocketImpl: h.WebSocketImpl, readyTimeoutMs: 50, intervalMs: 5 }), /did not serve within 50 ms/, holds);
+    assert.ok(Date.now() - started < 5000, `${holds}: ended near its deadline`);
+    releasePage(); // the late page lands on a start that already refused, and changes nothing
+  }
+});
+
 test('AN INDEX WITHOUT A SOCKET IS NOT READY: the start waits to its deadline and says so', async (t) => {
   const h = fakeHermes(t, { socket: false });
   await assert.rejects(startGateway({ port: PORT, ownerPid: 777, logDir: h.logDir, spawn: h.spawn, fetchImpl: h.fetchImpl,
