@@ -25,12 +25,12 @@ test('NO LIVE GATEWAY: start on the port aify-env gave, from this launch\'s own 
   const starts = [];
   const attached = [];
   const gateway = await ensureGateway({ agentId: 'pc-manager', env: ENV, logDir: 'L', endpoint: () => BASE, fetchImpl: env.fetchImpl,
-    start: async (input) => { starts.push(input); return { port: input.port, token: 't', wsUrl: 'ws://127.0.0.1:9341/api/ws?token=t', pid: 4242 }; },
+    start: async (input) => { starts.push(input); input.onSpawn(4242); return { port: input.port, token: 't', wsUrl: 'ws://127.0.0.1:9341/api/ws?token=t', pid: 4242 }; },
     attach: (pid) => attached.push(pid) });
   assert.deepEqual(gateway, { port: 9341, token: 't', wsUrl: 'ws://127.0.0.1:9341/api/ws?token=t' });
   assert.deepEqual(starts.map(({ port, ownerPid, logDir }) => ({ port, ownerPid, logDir })), [{ port: 9341, ownerPid: 700, logDir: 'L' }]);
   assert.equal(starts[0].env, ENV, "the gateway starts with the launcher's environment: the agent's id and secrets");
-  assert.deepEqual(attached, [4242], 'the gateway joins the agent lease');
+  assert.deepEqual(attached, [4242], 'the gateway joins the agent lease, at spawn');
   assert.deepEqual(env.asked.map(({ url, body }) => [url, body]), [
     ['http://127.0.0.1:8802/agents/pc-manager/gateway', { instance: 'default', lifetime: LIFETIME, action: 'prepare' }],
     ['http://127.0.0.1:8802/agents/pc-manager/gateway', { instance: 'default', lifetime: LIFETIME, action: 'register', port: 9341, pid: 4242 }],
