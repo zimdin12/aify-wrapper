@@ -123,6 +123,15 @@ test('AN EXIT BEFORE SERVING refuses at once with its last line, and its token n
   assert.deepEqual(spawned, [4242], 'a gateway that never served joined the lease all the same');
 });
 
+test("A PREVIOUS BOOT'S FAILURE does not end this one: the log is started fresh", async (t) => {
+  // An appended log let a prior failure's signature end a fixed relaunch at once (comms #237).
+  const h = fakeHermes(t, { serves: 30 });
+  fs.writeFileSync(path.join(h.logDir, `hermes-gateway-${PORT}.log`), 'Installing TUI dependencies...\nnpm error Missing script: "build"\n');
+  const ready = await startGateway({ port: PORT, ownerPid: 777, logDir: h.logDir, spawn: h.spawn, fetchImpl: h.fetchImpl,
+    WebSocketImpl: h.WebSocketImpl, intervalMs: 5 });
+  assert.equal(ready.port, PORT);
+});
+
 test('THE KNOWN BOOT FAILURE refuses at once, before the deadline', async (t) => {
   const h = fakeHermes(t, { serves: false, writes: 'Installing TUI dependencies...\nnpm error Missing script: "build"\n' });
   await assert.rejects(startGateway({ port: PORT, ownerPid: 777, logDir: h.logDir, spawn: h.spawn, fetchImpl: h.fetchImpl,
