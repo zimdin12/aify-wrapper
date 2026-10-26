@@ -41,10 +41,14 @@ const RUNTIME = [
 
 const MANAGED_HOST = [
   "const cmd = process.argv[2];",
-  "if (cmd === 'ensure-host') process.stdout.write('{\"port\":1,\"token\":\"t\",\"wsUrl\":\"ws://127.0.0.2:1/?token=t\"}\\n');",
   "if (cmd === 'run') setTimeout(() => {}, 60000);",
   "",
 ].join("\n");
+
+// The gateway step (bin/aify-hermes-gateway.mjs) asks a running aify-env; this answers in its place. The rendered
+// launcher is pointed at it, and the edit must land, so a renamed step fails here rather than going unexercised.
+const GATEWAY = "if (process.argv[2] === 'ensure') process.stdout.write('{\"port\":1,\"token\":\"t\",\"wsUrl\":\"ws://127.0.0.2:1/?token=t\"}\\n');\n";
+const GATEWAY_STEP = '"$AIFY_WRAPPER_DIR_FWD/bin/aify-hermes-gateway.mjs"';
 
 function world(client) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `aify-lease-${client}-`));
@@ -57,6 +61,13 @@ function world(client) {
   const rendered = spawnSync("bash", [INSTALL, "--registry", emptyRegistry(), "--client", client, "--endpoint", NOWHERE, "--render-only", out, "--bridge-dir", bridge],
     { encoding: "utf8", timeout: 120_000 });
   assert.equal(rendered.status, 0, `render failed: ${rendered.stdout}\n${rendered.stderr}`);
+  if (client === "hermes") {
+    const launcherPath = path.join(out, "hermes-aify");
+    const text = fs.readFileSync(launcherPath, "utf8");
+    assert.equal(text.split(GATEWAY_STEP).length, 2, "the hermes launcher runs its gateway step exactly once");
+    fs.writeFileSync(path.join(bridge, "gateway-stub.mjs"), GATEWAY);
+    fs.writeFileSync(launcherPath, text.replace(GATEWAY_STEP, `"${path.join(bridge, "gateway-stub.mjs").replaceAll("\\", "/")}"`));
+  }
   // pi-aify runs the `omp` CLI; every other launcher runs a CLI named for its client.
   fs.writeFileSync(path.join(stubs, client === "pi" ? "omp" : client), RUNTIME, { mode: 0o755 });
   fs.writeFileSync(path.join(stubs, "aify-env"), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${path.join(dir, "aify-env-calls")}'\nexit 0\n`, { mode: 0o755 });

@@ -60,14 +60,18 @@ const EVENT_SCRIPT = [
   "",
 ].join("\n");
 
-// hermes-aify's agent-id branch asks this for a gateway host before it starts the TUI.
+// hermes-aify's agent-id branch asks this to resolve the session before it starts the TUI.
 const MANAGED_HOST = [
   "const cmd = process.argv[2];",
-  "if (cmd === 'ensure-host') process.stdout.write('{\"port\":1,\"token\":\"t\",\"wsUrl\":\"ws://127.0.0.2:1/?token=t\"}\\n');",
   "if (cmd === 'resolve-session' && process.argv.includes('--explicit')) process.stdout.write(process.argv[process.argv.indexOf('--explicit') + 1] + '\\n');",
   "else if (cmd === 'resolve-session' && process.env.STUB_RESOLVE) process.stdout.write(process.env.STUB_RESOLVE + '\\n');",
   "",
 ].join("\n");
+
+// The gateway step (bin/aify-hermes-gateway.mjs) asks a running aify-env; this answers in its place. The rendered
+// launcher is pointed at it, and the edit must land, so a renamed step fails here rather than going unexercised.
+const GATEWAY = "if (process.argv[2] === 'ensure') process.stdout.write('{\"port\":1,\"token\":\"t\",\"wsUrl\":\"ws://127.0.0.2:1/?token=t\"}\\n');\n";
+const GATEWAY_STEP = '"$AIFY_WRAPPER_DIR_FWD/bin/aify-hermes-gateway.mjs"';
 
 /** Render one launcher into a fresh directory with its stubs. */
 function world(client, { eventScript = true } = {}) {
@@ -84,6 +88,13 @@ function world(client, { eventScript = true } = {}) {
   const rendered = spawnSync("bash", [INSTALL, "--registry", emptyRegistry(), "--client", client, "--endpoint", NOWHERE,
     "--render-only", out, "--bridge-dir", bridge], { encoding: "utf8", timeout: 120_000 });
   assert.equal(rendered.status, 0, `render failed: ${rendered.stdout}\n${rendered.stderr}`);
+  if (client === "hermes") {
+    const launcherPath = path.join(out, "hermes-aify");
+    const text = fs.readFileSync(launcherPath, "utf8");
+    assert.equal(text.split(GATEWAY_STEP).length, 2, "the hermes launcher runs its gateway step exactly once");
+    fs.writeFileSync(path.join(bridge, "gateway-stub.mjs"), GATEWAY);
+    fs.writeFileSync(launcherPath, text.replace(GATEWAY_STEP, `"${path.join(bridge, "gateway-stub.mjs").replaceAll("\\", "/")}"`));
+  }
 
   fs.writeFileSync(path.join(stubs, client), RUNTIME, { mode: 0o755 });
   const calls = path.join(dir, "herdr-calls");

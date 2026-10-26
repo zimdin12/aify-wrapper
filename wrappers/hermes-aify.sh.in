@@ -938,8 +938,8 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
   # session.active_list, so the agent stays `online` and the loop polls the wrong
   # session (split / no live render). Instead of `exec`, run the TUI as a CHILD
   # of this wrapper with an EXIT/INT/TERM trap that SIGTERMs the loop when the TUI
-  # ends. Closing the TUI reaps the loop, whose own SIGTERM teardown
-  # (installTeardown in hermes-managed-host.js) reaps the gateway host it owns —
+  # ends. Closing the TUI reaps the loop, and releasing the lease ends the gateway,
+  # which joined it at spawn and carries the lease pid as HERMES_PARENT_PID (0.9.10) —
   # so the agent flips resident-lost and nothing orphans. This reaps correctly for
   # BOTH the managed (windowless dashboard PTY) and resident (operator terminal)
   # launches: the managed reap was already correct, this keeps it correct.
