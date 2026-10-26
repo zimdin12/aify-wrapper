@@ -11,6 +11,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { ensureGateway } from '../lib/hermes-gateway-ensure.mjs';
 import { startGateway } from '../lib/hermes-gateway-start.mjs';
+import { killTree } from '../lib/process-identity.mjs';
 
 const [command, agentId] = process.argv.slice(2);
 if (command !== 'ensure' || !agentId) {
@@ -33,7 +34,7 @@ function attach(pid) {
 
 try {
   const gateway = await ensureGateway({
-    agentId, attach, logDir: path.join(os.homedir(), '.aify', 'hermes-gateways', 'logs'),
+    agentId, attach, stop: (pid) => killTree(pid), logDir: path.join(os.homedir(), '.aify', 'hermes-gateways', 'logs'),
     start: (input) => startGateway({ ...input, hermesCmd: String(process.env.AIFY_HERMES_COMMAND || 'hermes').trim() || 'hermes' }),
   });
   process.stdout.write(`${JSON.stringify(gateway)}\n`);

@@ -71,3 +71,21 @@ test('THE DESCRIPTOR names a loopback aify-env for its own instance, or nothing'
   ]) assert.equal(envEndpoint({ env: {}, instance: 'default', readFile: read(bad) }), null, why);
   assert.equal(envEndpoint({ env: {}, instance: 'default', readFile: () => { throw new Error('ENOENT'); } }), null, 'no descriptor');
 });
+
+test('NO LEASE, NO GATEWAY: a launch holding no agent lease is refused before aify-env is asked (review of 6959d44, F4)', async () => {
+  for (const lease of ['', '0', 'x']) {
+    const env = aifyEnv({ prepare: { status: 200, body: { ok: true, port: 9341, live: false } } });
+    await assert.rejects(ensureGateway({ agentId: 'pc-manager', env: { ...ENV, AIFY_AGENT_LEASE: lease }, logDir: 'L', endpoint: () => BASE,
+      fetchImpl: env.fetchImpl, start: async () => assert.fail('a gateway with no owner was started') }), /holds no agent lease/, lease);
+    assert.equal(env.asked.length, 0, `${JSON.stringify(lease)}: aify-env was asked anyway`);
+  }
+});
+
+test('A GATEWAY aify-env WILL NOT RECORD IS ENDED: no later launch could end it', async () => {
+  const env = aifyEnv({ prepare: { status: 200, body: { ok: true, port: 9341, live: false } }, register: { status: 409, body: { ok: false, reason: 'not-prepared' } } });
+  const stopped = [];
+  await assert.rejects(ensureGateway({ agentId: 'pc-manager', env: ENV, logDir: 'L', endpoint: () => BASE, fetchImpl: env.fetchImpl,
+    start: async (input) => ({ port: input.port, token: 't', wsUrl: 'ws://x', pid: 4242 }), stop: async (pid) => { stopped.push(pid); } }),
+  /refused the gateway register: not-prepared/);
+  assert.deepEqual(stopped, [4242]);
+});
