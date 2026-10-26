@@ -754,7 +754,6 @@ fi
 # host-side MCP bridges live here (NEVER copied elsewhere — that is how every
 # session gets security fixes automatically).
 AIFY_HERMES_STDIO_DIR="@@HERMES_STDIO_DIR@@"
-AIFY_HERMES_DAEMON_CLI="$AIFY_HERMES_STDIO_DIR/hermes-daemon-cli.js"
 # Managed visible-TUI model (Plan "managed-hermes visible-TUI", 2026-05-31): the
 # per-agent hidden gateway host + background delivery loop live here. The managed
 # branch brings up the gateway host, starts the delivery loop, and then EXECs a
@@ -793,15 +792,9 @@ aify_hermes_warm_bridge() {
   $_warm_to env -u AIFY_AGENT_ID -u AIFY_HERMES_GATEWAY_URL node --input-type=module -e "$_warm" >/dev/null 2>&1 || true
 }
 
-# (The retired `aify_hermes_ensure_daemon` helper — which brought up the old
-# per-agent api_server daemon — was removed in the native-session-id + gateway
-# cleanup. Managed/resident hermes now delivers via the hidden gateway host +
-# `hermes-managed-host.js run <agent>` delivery loop; there is no api_server
-# daemon to ensure. `AIFY_HERMES_DAEMON_CLI` remains for kill-prior's `stop`.)
-
-# Kill any prior sidecar/daemon-cli for THIS agent before launching, so a
-# relaunch never leaves two sidecars claiming the same agent (proliferation
-# guard, mirrors the intent of the claude/codex wrappers' per-agent ownership).
+# Kill this agent's prior delivery loop before launching, so a relaunch never leaves two loops claiming the same
+# agent. A prior GATEWAY is not this function's: aify-env ends an older lifetime's gateway when this launch asks for
+# one (bin/aify-hermes-gateway.mjs), and the lease ends it with its agent (0.9.10).
 aify_hermes_kill_prior() {
   local agent_id="$1"
   # WS1 Task 1.5: optional PID of the delivery loop THIS wrapper just spawned.
@@ -812,8 +805,8 @@ aify_hermes_kill_prior() {
   [ -n "$agent_id" ] || return 0
   # ONE NODE REAP ON EVERY PLATFORM (lib/hermes-prior-runs.mjs). This was pkill/pgrep behind `command -v pkill`, and
   # Git for Windows has neither, so on Windows a relaunch kept the previous delivery loop running and the agent read
-  # online. It ends this agent's prior `hermes-managed-host.js run <agent>` loop, whole id only, whose teardown ends
-  # the gateway host it owns, never this launch's own: `exclude_pid` is the loop just started, converted to its
+  # online. It ends this agent's prior `hermes-managed-host.js run <agent>` loop, whole id only,
+  # never this launch's own: `exclude_pid` is the loop just started, converted to its
   # Windows pid where Git Bash has one. A previous visible TUI is the lease's to end, as part of the previous launch's
   # tree; a hermes window nothing launched for this agent is left alone (0.9.2 review, the operator's ruling).
   local _exclude=""
@@ -826,21 +819,6 @@ aify_hermes_kill_prior() {
   if [ "${AIFY_LEASE_AGENT:-}" = "$agent_id" ]; then
     node "$AIFY_WRAPPER_DIR_FWD/bin/aify-hermes-reap-prior.mjs" --agent "$agent_id" \
       ${_exclude:+--exclude "$_exclude"} </dev/null >/dev/null 2>&1 || true
-  fi
-  # POSIX only (lsof): reap a gateway host left listening on this agent's port by a SIGKILLed loop. On Windows
-  # `hermes-daemon-cli stop` below reaps gateway hosts by their own records.
-  if [ -z "$exclude_pid" ] && command -v lsof >/dev/null 2>&1; then
-    local host_port
-    host_port="$(node -e 'import("'"$AIFY_HERMES_STDIO_DIR"'/hermes-endpoint.js").then(m=>process.stdout.write(String(m.agentPort(process.argv[1]))))' "$agent_id" 2>/dev/null || true)"
-    if [ -n "$host_port" ]; then
-      lsof -ti tcp:"$host_port" 2>/dev/null | xargs -r ps -o pid=,args= -p 2>/dev/null | awk '/hermes dashboard --port/ {print $1}' | xargs -r kill >/dev/null 2>&1 || true
-    fi
-  fi
-  # Also reap the prior per-agent DAEMON for this agentId — PRE-spawn call only
-  # (exclude_pid empty), so the post-spawn call never kills the daemon/gateway the
-  # current launch just brought up.
-  if [ -z "$exclude_pid" ]; then
-    node "$AIFY_HERMES_DAEMON_CLI" stop "$agent_id" >/dev/null 2>&1 || true
   fi
 }
 
@@ -858,9 +836,10 @@ if [ ${#HERMES_ARGS[@]} -eq 0 ]; then aify_hermes_warm_bridge; fi
 # visible TUI's discovered sid). The former resident path used the REST api_server
 # daemon (renders nothing) + started no delivery loop — that was the resident
 # "nothing arrives in my terminal" bug.
-#   1. kill-prior: reap a stale delivery loop + gateway host for this agent.
-#   2. ensure-host: bring up the HIDDEN per-agent `hermes dashboard --tui`
-#      gateway host (windowsHide) and learn its {port,token,wsUrl}.
+#   1. kill-prior: reap a stale delivery loop for this agent.
+#   2. the gateway: bin/aify-hermes-gateway.mjs asks aify-env for this lifetime's gateway and starts the HIDDEN
+#      per-agent `hermes dashboard` (windowsHide) from this launch's environment when none is live, then answers
+#      its {port,token,wsUrl}. aify-env must be running (0.9.10).
 #   3. start the background delivery loop (detached, survives the exec below): it
 #      claims channel/resident dispatch runs and prompt.submits them into the
 #      visible TUI's session.
@@ -876,7 +855,7 @@ if [ ${#HERMES_ARGS[@]} -eq 0 ]; then aify_hermes_warm_bridge; fi
 # `--shared` IS NOT THIS BRANCH'S TO HANDLE, and leaving it out cost the flag its main case.
 # External review, Round 8 H6: `--shared` is consumed at the top of this file and acted on at the
 # BOTTOM, but this branch -- an agent id with no other arguments, which IS the ordinary managed
-# launch -- runs kill-prior, ensure-host and the TUI and then EXITS, two hundred lines above it.
+# launch -- runs kill-prior, the gateway step and the TUI and then EXITS, two hundred lines above it.
 # So `hermes-aify --aify-agent x --shared` started locally and never called aify-env, with
 # nothing said: the operator gets a session that dies with the terminal while believing the host
 # owns it. PROVEN by running the rendered launcher against stubs, which is how it was found --
@@ -907,15 +886,15 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
   # HERMES_TUI_ACTIVE_SESSION_FILE; the bridge prefers AIFY_HERMES_ACTIVE_SESSION_FILE
   # then falls back to HERMES_TUI_ACTIVE_SESSION_FILE — point BOTH at the SAME path so
   # the writer (TUI/gateway host) and the reader (bridge) agree. Use the marker tmp dir
-  # (TEMP||TMP||os.tmpdir(), == ${TMPDIR:-/tmp} here). Exported BEFORE ensure-host and
+  # (TEMP||TMP||os.tmpdir(), == ${TMPDIR:-/tmp} here). Exported BEFORE the gateway step and
   # the TUI exec so the gateway host, the exec'd TUI, and the MCP child all inherit it.
   HERMES_AIFY_ACTIVE_SESSION_FILE="${TMPDIR:-/tmp}/aify-hermes-active-$HERMES_AIFY_AGENT_ID.json"
   export HERMES_TUI_ACTIVE_SESSION_FILE="$HERMES_AIFY_ACTIVE_SESSION_FILE"
   export AIFY_HERMES_ACTIVE_SESSION_FILE="$HERMES_AIFY_ACTIVE_SESSION_FILE"
   # (2) Hidden gateway host → capture {port,token,wsUrl} as ONE JSON line.
-  if ! HERMES_HOST_JSON="$(node "$AIFY_HERMES_MANAGED_HOST_JS" ensure-host "$HERMES_AIFY_AGENT_ID")"; then
+  if ! HERMES_HOST_JSON="$(node "$AIFY_WRAPPER_DIR_FWD/bin/aify-hermes-gateway.mjs" ensure "$HERMES_AIFY_AGENT_ID")"; then
     echo "[hermes-aify] FATAL: managed gateway host for '$HERMES_AIFY_AGENT_ID' did not come up." >&2
-    echo "[hermes-aify]   (node $AIFY_HERMES_MANAGED_HOST_JS ensure-host $HERMES_AIFY_AGENT_ID failed — see the error above)" >&2
+    echo "[hermes-aify]   (aify-hermes-gateway ensure $HERMES_AIFY_AGENT_ID failed — see the error above)" >&2
     exit 1
   fi
   # Parse the JSON line (mirror the pi-session-state grep/sed extraction above).
@@ -1096,9 +1075,7 @@ fi
 # (convergence 2026-06-02). The former REST api_server-daemon resident path was
 # removed — it rendered nothing in the visible TUI (api_server chat does not emit
 # to tui_gateway WS clients) and started no delivery loop, so injected aify
-# messages never appeared in the operator's terminal. `aify_hermes_ensure_daemon`
-# / `AIFY_HERMES_DAEMON_CLI` remain defined above for any explicit fallback use
-# but are no longer the resident default.
+# messages never appeared in the operator's terminal.
 
 aify_hermes_exec_plain_or_tui() {
   # Default to hermes --tui for the operator's interactive TUI when

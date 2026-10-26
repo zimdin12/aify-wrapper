@@ -6,8 +6,8 @@
 // is its console, which console_tail and the dashboard serve, so anyone able to read a console could drive that
 // agent's gateway. The answer itself is private IPC on stdout and stays whole: the TUI still needs the URL.
 //
-// EXECUTED: the rendered hermes-aify on its managed path (an agent id, no chat command), to a stub gateway host
-// that answers with a SENTINEL token and a stub TUI that records its environment. Everything the launcher prints
+// EXECUTED: the rendered hermes-aify on its managed path (an agent id, no chat command), to a stub gateway command
+// (bin/aify-hermes-gateway.mjs, the launcher's gateway step since 0.9.10) that answers with a SENTINEL token and a stub TUI that records its environment. Everything the launcher prints
 // is searched for the sentinel; the TUI's gateway URL must still carry it (the control that the token was not
 // simply lost).
 
@@ -18,14 +18,14 @@ import { launch } from "./launch-to-a-stub-runtime.mjs";
 
 const SENTINEL = "SENTINEL-TOKEN-a1b2c3";
 
-/** A gateway host that answers `ensure-host` with `answer`, and nothing else. */
+/** A gateway command that answers `ensure` with `answer`, and nothing else. */
 const host = (answer) => [
-  "if (process.argv[2] === 'ensure-host') process.stdout.write(" + JSON.stringify(`${answer}\n`) + ");",
+  "if (process.argv[2] === 'ensure') process.stdout.write(" + JSON.stringify(`${answer}\n`) + ");",
   "",
 ].join("\n");
 
 const run = (answer) => launch("hermes", ["--aify-agent", `token-probe-${process.pid}-${Math.random().toString(36).slice(2, 8)}`], {
-  bridgeFiles: { "hermes-managed-host.js": host(answer) },
+  files: { "wrapper/bin/aify-hermes-gateway.mjs": host(answer) },
 });
 
 test("THE SUCCESS LINE names the gateway without its token, and the TUI still gets the URL that carries it", () => {
