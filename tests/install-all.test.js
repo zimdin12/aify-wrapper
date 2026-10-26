@@ -127,6 +127,24 @@ test("hermes' computed extras do NOT leak into another client's launcher", () =>
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test("hermes' plugin path is baked in the form a native runtime reads", () => {
+  // The guided install chain renders hermes-aify with this default, from Git Bash where the host root is an MSYS
+  // path. Baked as /c/Users/..., a native-Windows hermes cannot import the plugin, and from 2026-10-23 every gateway
+  // log said "shim load failed: No module named 'aify_hermes_plugin'". Off Windows the path is already native.
+  const { dir, PATH: p, out } = sealed(["hermes"]);
+  const root = path.join(dir, "service-root");
+  fs.mkdirSync(root);
+  const msys = process.platform === "win32"
+    ? spawnSync("bash", ["-c", 'cygpath -u "$1"', "_", root], { encoding: "utf8" }).stdout.trim()
+    : root;
+  assert.match(msys, process.platform === "win32" ? /^\// : /./, "control: the root is given in the form the chain gives it");
+  const res = runInstall({ PATH: p, args: ["--client", "hermes", "--endpoint", NOWHERE, "--host-repo", msys, "--render-only", out] });
+  assert.equal(res.status, 0, `${res.stdout}\n${res.stderr}`);
+  const baked = fs.readFileSync(path.join(out, "hermes-aify"), "utf8").match(/^AIFY_HERMES_PLUGIN_PATH="(.*)"$/m)?.[1];
+  assert.equal(baked?.toLowerCase(), `${root.replace(/\\/g, "/")}/integrations/hermes-aify-plugin`.toLowerCase());
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test("--all and --client together are refused rather than silently preferring one", () => {
   const { dir, PATH: p, out } = sealed(["claude"]);
   const res = runInstall({ PATH: p, args: ["--all", "--client", "claude", "--endpoint", NOWHERE, "--render-only", out] });

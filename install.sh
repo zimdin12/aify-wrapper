@@ -217,7 +217,8 @@ install_one() {
   # Computed per client rather than once: under --all these must not leak into pi's render.
   if [ "$client" = "hermes" ]; then
     _have() { printf '%s\n' "${extras[@]:-}" | grep -q "^$1="; }
-    _have HERMES_PLUGIN_PATH || extras+=("HERMES_PLUGIN_PATH=$HOST_REPO/integrations/hermes-aify-plugin")
+    # A native-Windows hermes is Python, which reads the same drive form Node does (`node_path`).
+    _have HERMES_PLUGIN_PATH || extras+=("HERMES_PLUGIN_PATH=$(node_path "$HOST_REPO/integrations/hermes-aify-plugin")")
     _have HERMES_STDIO_DIR   || extras+=("HERMES_STDIO_DIR=$BRIDGE_DIR")
     _have HERMES_TUI_DIR     || extras+=("HERMES_TUI_DIR=")
   fi
