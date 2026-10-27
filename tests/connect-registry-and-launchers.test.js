@@ -260,6 +260,12 @@ for (const [declared, expected] of [["http", "http"], [undefined, "stdio"]]) {
       assert.equal(parseRegistry(host.registryBytes().toString("utf8")).registry.services["aify-comms"].mcpTransport, declared);
       assert.match(run.stdout, /launcher claude-aify: re-rendered/);
       assert.equal(liveTransport(recorded), expected);
+      // Re-rendered again, the record holds one transport, not one more per pass (review of 48f276ba).
+      for (let pass = 0; pass < 2; pass += 1) rerenderLaunchers({ dest: host.dest, registryPath: host.registry, wrapperRoot: ROOT });
+      const dir = recordDirFor(host.registry);
+      const [record] = fs.readdirSync(dir).map((name) => parseRecord(fs.readFileSync(path.join(dir, name))));
+      assert.deepEqual(record.pairs.filter((pair) => pair.startsWith("MCP_TRANSPORT=")), [`MCP_TRANSPORT=${expected}`]);
+      assert.equal(liveTransport(recorded), expected);
     } finally {
       await service.close();
     }
