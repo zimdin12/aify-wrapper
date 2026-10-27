@@ -63,9 +63,9 @@ HOST_REPO=""
 RENDER_ONLY=""
 REGISTRY=""
 # How the runtime reaches MCP. `stdio` spawns the service's own bridge locally, which is the only
-# reason a host carries a copy of it; `sse` points at the container's <endpoint>/mcp/sse and needs no
-# service code on the host. Default stdio: repointing a live fleet is the operator's call, and a
-# launcher rendered today must be byte-identical to one rendered before this existed.
+# reason a host carries a copy of it; `http` reaches the service's <endpoint>/mcp/http. Default stdio:
+# repointing a live fleet is the operator's call, and a launcher rendered today must be byte-identical
+# to one rendered before this existed.
 MCP_TRANSPORT="stdio"
 # WHICH SERVICE these launchers are for. aify-comms by default, which is what every existing install
 # renders -- the point of the default is that this change is invisible to them.
@@ -127,8 +127,8 @@ case "$SERVICE_NAME" in
 esac
 
 case "$MCP_TRANSPORT" in
-  stdio|sse|http) ;;
-  *) echo "install.sh: unknown --mcp-transport '$MCP_TRANSPORT' (stdio|sse|http)" >&2; exit "$EXIT_CONFIG" ;;
+  stdio|http) ;;
+  *) echo "install.sh: unknown --mcp-transport '$MCP_TRANSPORT' (stdio|http)" >&2; exit "$EXIT_CONFIG" ;;
 esac
 
 if [ -z "$ENDPOINT" ]; then

@@ -155,13 +155,13 @@ runtime, which is a large side effect for a question.
 
 ```bash
 ./install.sh --all --endpoint http://host:8800                     # stdio (default)
-./install.sh --all --endpoint http://host:8800 --mcp-transport sse # the container serves MCP
+./install.sh --all --endpoint http://host:8800 --mcp-transport http # the service serves MCP
 ./install.sh --all --endpoint http://host:8800 --service my-service # launchers for another service
 ```
 
 `stdio` spawns the service's own bridge from this host. That is the only reason a host carries a copy
-of the service at all -- on aify-comms it is 92 MB under `~/.aify-comms`. `sse` points the runtime at
-`<endpoint>/mcp/sse`, so the client side needs no service code.
+of the service at all -- on aify-comms it is 92 MB under `~/.aify-comms`. `http` points the runtime at
+`<endpoint>/mcp/http`, with the agent's id in a header.
 
 Default is stdio, and a launcher rendered today is byte-identical to one rendered before the flag
 existed. Repointing a live fleet's transport is the operator's call, not an upgrade side effect.

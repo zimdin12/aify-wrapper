@@ -1,17 +1,13 @@
 // A setting the launcher will not apply must not pass silently.
 //
-// WRAP-M3, external review round 7. `HARNESS_MCP_COMMAND` and `--mcp-transport sse` are read ONLY
-// inside the strict-MCP branch, which is opt-in via `AIFY_CLAUDE_STRICT_MCP=1`. In the default mode
-// both were dropped with no error, no warning and no effect -- and `--check` printed the configured
-// value on its `mcp` line as though it were in force, so the one report an operator consults to find
-// out whether their wrapper is configured CONFIRMED a setting the launch then ignored.
+// WRAP-M3, external review round 7. `HARNESS_MCP_COMMAND` is read ONLY inside the strict-MCP branch,
+// which is opt-in via `AIFY_CLAUDE_STRICT_MCP=1`. In the default mode it was dropped with no error, no
+// warning and no effect -- and `--check` printed the configured value on its `mcp` line as though it
+// were in force, so the one report an operator consults to find out whether their wrapper is
+// configured CONFIRMED a setting the launch then ignored. (The `sse` transport this also covered was
+// deleted in aify-comms 0.9.11.)
 //
-// The transport is worse than the variable, because of WHO sets it. `--mcp-transport sse` is chosen
-// at INSTALL time and baked into the file, so the person who set it is usually not the person
-// launching, and nothing connected the two. An operator who installed for sse and then wondered why
-// the host still loads a 92 MB bridge copy had nothing to read.
-//
-// WARNED, NOT APPLIED, and that is the deliberate half. Honouring them in the default mode means
+// WARNED, NOT APPLIED, and that is the deliberate half. Honouring it in the default mode means
 // writing an `--mcp-config`, which IS the strict behaviour this flag exists to opt out of. Changing
 // which servers a session sees is a decision; being told a setting was dropped is a repair.
 
@@ -69,20 +65,8 @@ test("--check admits that HARNESS_MCP_COMMAND is not applied in the default mode
   }
 });
 
-test("and that an sse install is not in force either", () => {
-  // The half an operator cannot see from their shell: this was decided at install time and baked in.
-  const { dir, launcher } = render(["--mcp-transport", "sse"]);
-  try {
-    const out = check(launcher);
-    assert.match(out, /NOT APPLIED/, "an sse-installed launcher claims the transport is in force");
-    assert.match(out, /mcp-transport sse/, "--check does not name the transport as the dropped setting");
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
 test("in strict mode it is applied, and says so instead", () => {
-  // CONTRADICTION ARM. Printing "NOT APPLIED" unconditionally would satisfy both tests above and lie
+  // CONTRADICTION ARM. Printing "NOT APPLIED" unconditionally would satisfy the test above and lie
   // in the one configuration where the setting IS honoured.
   const { dir, launcher } = render();
   try {
@@ -116,9 +100,8 @@ test("the LAUNCH path warns too, not only --check", () => {
   // what these tests must not do. So this checks the branch exists and carries the warning, which
   // catches its removal, and does NOT claim to have watched it print.
   //
-  // It matters beyond --check because an operator who never runs --check still gets the drop, and
-  // `--mcp-transport sse` was chosen at install time by someone who may not be launching at all.
-  const { dir, launcher } = render(["--mcp-transport", "sse"]);
+  // It matters beyond --check because an operator who never runs --check still gets the drop.
+  const { dir, launcher } = render();
   try {
     const text = fs.readFileSync(launcher, "utf8");
     const strictAt = text.indexOf("--strict-mcp-config");
@@ -129,10 +112,6 @@ test("the LAUNCH path warns too, not only --check", () => {
       afterStrict, /NOT applied|not applied/,
       "the default-mode branch no longer warns that HARNESS_MCP_COMMAND was dropped, so a launch "
       + "silently ignores it again",
-    );
-    assert.match(
-      afterStrict, /mcp-transport sse|strict MCP mode/,
-      "the default-mode branch no longer mentions the sse transport it is declining to use",
     );
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
