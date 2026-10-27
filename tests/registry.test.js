@@ -18,7 +18,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
-  parseRegistry, mcpEntriesFor, fingerprint, REGISTRY_VERSION,
+  parseRegistry, mcpEntriesFor, fingerprint, REGISTRY_VERSION, MCP_TRANSPORTS, mcpTransportFor,
   strictMcpEntriesFor, strictMcpFragment, strictMcpFragmentBase64,
 } from "../lib/registry.mjs";
 
@@ -478,4 +478,16 @@ test("no credentialRef is a normal state, not a fault", () => {
   }));
   assert.equal(parsed.ok, true, JSON.stringify(parsed.errors));
   assert.equal(parsed.registry.services.svc.credentialRef, "");
+});
+
+test("mcpTransport is stdio or http when a service declares it; anything else is refused", () => {
+  const parse = (mcpTransport) => parseRegistry(JSON.stringify({ version: 1, services: { s: { endpoint: "http://h:1", mcpTransport } } }));
+  assert.deepEqual(MCP_TRANSPORTS, ["stdio", "http"]);
+  assert.equal(mcpTransportFor(parse("http").registry, "s"), "http");
+  assert.equal(mcpTransportFor(parse(undefined).registry, "s"), "", "undeclared reads as no declaration");
+  assert.equal(mcpTransportFor(parse("http").registry, "other"), "", "another service's entry is not this one's");
+  assert.equal(parse(undefined).registry.services.s.mcpTransport, undefined, "undeclared stays undeclared");
+  for (const bad of ["sse", "HTTP", true]) {
+    assert.deepEqual(parse(bad).errors, ["services.s.mcpTransport must be one of stdio, http"], String(bad));
+  }
 });

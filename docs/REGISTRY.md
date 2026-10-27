@@ -50,6 +50,7 @@ the launcher stale rather than leaving you to notice.
 | `<service>.endpoint` | yes | Where the service is reachable. |
 | `<service>.endpointEnv` | no | The environment variable names **this service's own code reads** to find its endpoint. |
 | `<service>.mcp` | no | MCP servers this service contributes to a runtime. Each needs `name` and `command`; `args` optional. |
+| `<service>.mcpTransport` | no | `"stdio"` or `"http"`: how this service's launchers reach its MCP tools. Declared, it decides them over `install.sh --mcp-transport`, at install and at re-render, so the guided chain (which passes no flag) renders what the service serves. Absent keeps the flag, default stdio. Anything else is refused. |
 | `<service>.sessionInject` | no | `{ "mcp": true }` adds this service's `mcp` servers to every default-mode Claude session and every codex session, beside the operator's own. See below. |
 | `<service>.turnStart` | no | `{ "path": "/events/turn-start", "budgetMs": 800 }`: the route the turn-start runner (`bin/aify-turn-start.mjs`) calls as each Claude turn begins. `path` follows `agentState.path`'s rule; `budgetMs` is a whole number from 1 to `TURN_START_DEADLINE_MS` (1500), the runner's shared deadline, and defaults to it. Any other key is refused. See below. |
 | `<service>.advertise` | no | Read by aify-env, not by this package. `false` means aify-env sends this service no environment heartbeat; absent, or any other value, means it does. This parser accepts the field and leaves it out of what it returns. A service plugin aify-env runs for the entry still heartbeats on its own, carrying the host's machine id (aify-env 0.8). |
@@ -192,6 +193,8 @@ parseRegistry(text)              // -> {ok, registry?, errors[]}
 READ_FIELDS                      // every entry field parseRegistry reads; a spec's `fixed` may set only an owned one
 TURN_START_DEADLINE_MS           // the turn-start runner's shared deadline, and the largest turnStart.budgetMs
 mcpEntriesFor(registry)          // -> [{name, command, args, env}]
+MCP_TRANSPORTS                   // the transports a service may declare: stdio, http
+mcpTransportFor(registry, service) // -> the transport `service` declares, or ""
 fingerprint(registry)            // -> stable short digest
 strictMcpEntriesFor(registry)    // -> the same entries, strict-MCP shaped
 strictMcpSecretProblem(registry, env = process.env)  // -> a reason, or "" when there is none

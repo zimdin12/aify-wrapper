@@ -63,9 +63,9 @@ HOST_REPO=""
 RENDER_ONLY=""
 REGISTRY=""
 # How the runtime reaches MCP. `stdio` spawns the service's own bridge locally, which is the only
-# reason a host carries a copy of it; `http` reaches the service's <endpoint>/mcp/http. Default stdio:
-# repointing a live fleet is the operator's call, and a launcher rendered today must be byte-identical
-# to one rendered before this existed.
+# reason a host carries a copy of it; `http` reaches the service's <endpoint>/mcp/http. A transport the
+# service declares in the registry wins (below). Default stdio: repointing a live fleet is the operator's
+# call, and a launcher rendered today must be byte-identical to one rendered before this existed.
 MCP_TRANSPORT="stdio"
 # WHICH SERVICE these launchers are for. aify-comms by default, which is what every existing install
 # renders -- the point of the default is that this change is invisible to them.
@@ -192,6 +192,10 @@ STRICT_EXTRA_MCP_B64="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" strict-
 # Services that opted into every default-mode session ("sessionInject": {"mcp": true}), as a whole
 # --mcp-config document in base64. Empty unless a service asked, and then the launcher passes nothing.
 SESSION_MCP_B64="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" session-fragment-b64 "$(node_path "$REGISTRY")")" || exit "$EXIT_CONFIG"
+# A service that declares its transport ("mcpTransport") decides it for its launchers, over --mcp-transport: the
+# guided chain renders with no flag, and a launcher must not take a transport its service has retired.
+DECLARED_TRANSPORT="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" mcp-transport "$(node_path "$REGISTRY")" "$SERVICE_NAME")" || exit "$EXIT_CONFIG"
+[ -z "$DECLARED_TRANSPORT" ] || MCP_TRANSPORT="$DECLARED_TRANSPORT"
 
 # The launcher name follows the client name. pi is the one exception: it ships an alias, which is real
 # information and not derivable from a filename, so it is the only thing written down here.

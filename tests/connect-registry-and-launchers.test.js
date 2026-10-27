@@ -241,3 +241,27 @@ test("the render record holds the template's hash, its name and the installer's 
   const bare = makeHost();
   assert.deepEqual(rerenderLaunchers({ dest: path.join(bare.home, "absent"), registryPath: bare.registry, wrapperRoot: ROOT }), [], "no records and no launchers: nothing to report");
 });
+
+// aify-comms 0.9.11: the guided chain renders with no --mcp-transport, so the service's spec declares its transport
+// (`fixed.mcpTransport`), connect writes it into the registry entry, and re-rendering applies it over the recorded one.
+const liveTransport = (file) => (/^\s*if \[ "([a-z]+)" = "http" \]; then$/m.exec(fs.readFileSync(file, "utf8")) || [])[1];
+
+for (const [declared, expected] of [["http", "http"], [undefined, "stdio"]]) {
+  test(`TRANSPORT: a spec declaring ${declared ?? "nothing"} re-renders a recorded stdio launcher as ${expected}`, async () => {
+    const host = makeHost();
+    const recorded = renderLauncher(host, "claude-aify", "claude-aify.sh.in");
+    assert.equal(liveTransport(recorded), "stdio", "CONTROL: the launcher was rendered stdio");
+    const base = commsSpec(host);
+    const spec = declared ? commsSpec(host, { fixed: { ...base.fixed, mcpTransport: declared } }) : base;
+    const service = await startService({ spec });
+    try {
+      const run = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY), ...approvals(spec)]);
+      assert.equal(run.status, 0, run.stderr);
+      assert.equal(parseRegistry(host.registryBytes().toString("utf8")).registry.services["aify-comms"].mcpTransport, declared);
+      assert.match(run.stdout, /launcher claude-aify: re-rendered/);
+      assert.equal(liveTransport(recorded), expected);
+    } finally {
+      await service.close();
+    }
+  });
+}

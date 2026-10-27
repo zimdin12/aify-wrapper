@@ -24,10 +24,10 @@ const INSTALL = path.join(ROOT, "install.sh");
 const ENDPOINT = "http://10.20.30.40:8800";
 const posix = (p) => p.split(String.fromCharCode(92)).join("/");
 
-function render(extraArgs = []) {
+function render(extraArgs = [], registry = emptyRegistry()) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-transport-"));
   const r = spawnSync("bash", [
-    INSTALL, "--registry", emptyRegistry(), "--client", "claude", "--endpoint", ENDPOINT, "--render-only", posix(dir), ...extraArgs,
+    INSTALL, "--registry", registry, "--client", "claude", "--endpoint", ENDPOINT, "--render-only", posix(dir), ...extraArgs,
   ], { encoding: "utf8", timeout: 120_000 });
   assert.equal(r.status, 0, `render failed: ${r.stdout}${r.stderr}`);
   return fs.readFileSync(path.join(dir, "claude-aify"), "utf8");
@@ -77,3 +77,21 @@ for (const transport of ["carrier-pigeon", "sse"]) {
     assert.match(r.stderr, new RegExp(transport), "and it must name what it did not understand");
   });
 }
+
+// The guided chain renders with no flag (aify-comms 0.9.11): the service's registry entry decides its launchers.
+function declaring(transport) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-transport-reg-"));
+  const file = path.join(dir, "services.json");
+  fs.writeFileSync(file, JSON.stringify({ version: 1, services: { "aify-comms": { endpoint: ENDPOINT, mcpTransport: transport } } }));
+  return posix(file);
+}
+
+test("a service that declares http gets http launchers with no flag, and over an explicit stdio", () => {
+  assert.equal(liveArm(render([], declaring("http"))), "http");
+  assert.equal(liveArm(render(["--mcp-transport", "stdio"], declaring("http"))), "http");
+});
+
+test("control: a service that declares stdio keeps stdio, and another service's declaration is not this one's", () => {
+  assert.equal(liveArm(render([], declaring("stdio"))), "stdio");
+  assert.equal(liveArm(render(["--service", "other-svc"], declaring("http"))), "stdio");
+});
