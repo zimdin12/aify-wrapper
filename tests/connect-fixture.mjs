@@ -114,7 +114,7 @@ export function commsSpec(host, overrides = {}, manifest = manifestFor(host)) {
     specVersion: 1,
     name: "aify-comms",
     version: "0.9.8",
-    fixed: { agentState: { path: "/api/v1/agent-state" }, endpointEnv: ["CLAUDE_MCP_SERVER_URL", "AIFY_SERVER_URL"], keyEnv: ["CLAUDE_MCP_API_KEY", "AIFY_API_KEY"] },
+    fixed: { agentState: { path: "/api/v1/agent-state" }, endpointEnv: ["CLAUDE_MCP_SERVER_URL", "AIFY_SERVER_URL"], keyEnv: ["CLAUDE_MCP_API_KEY", "AIFY_API_KEY"], mcpTransport: "http" },
     artifacts: [artifact],
     mcp: [
       { name: "aify-comms", artifact: "comms-bridge", entry: "server.js" },

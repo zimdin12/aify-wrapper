@@ -251,8 +251,8 @@ for (const [declared, expected] of [["http", "http"], [undefined, "stdio"]]) {
     const host = makeHost();
     const recorded = renderLauncher(host, "claude-aify", "claude-aify.sh.in");
     assert.equal(liveTransport(recorded), "stdio", "CONTROL: the launcher was rendered stdio");
-    const base = commsSpec(host);
-    const spec = declared ? commsSpec(host, { fixed: { ...base.fixed, mcpTransport: declared } }) : base;
+    const { mcpTransport: _comms, ...undeclared } = commsSpec(host).fixed;
+    const spec = commsSpec(host, { fixed: declared ? { ...undeclared, mcpTransport: declared } : undeclared });
     const service = await startService({ spec });
     try {
       const run = await runConnect(host, ["aify-comms", service.url, "--key-file", host.keyFile(KEY), ...approvals(spec)]);
