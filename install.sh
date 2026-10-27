@@ -127,8 +127,8 @@ case "$SERVICE_NAME" in
 esac
 
 case "$MCP_TRANSPORT" in
-  stdio|sse) ;;
-  *) echo "install.sh: unknown --mcp-transport '$MCP_TRANSPORT' (stdio|sse)" >&2; exit "$EXIT_CONFIG" ;;
+  stdio|sse|http) ;;
+  *) echo "install.sh: unknown --mcp-transport '$MCP_TRANSPORT' (stdio|sse|http)" >&2; exit "$EXIT_CONFIG" ;;
 esac
 
 if [ -z "$ENDPOINT" ]; then

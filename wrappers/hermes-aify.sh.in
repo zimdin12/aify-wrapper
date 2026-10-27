@@ -878,6 +878,8 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
   # an MCP child exit must never POST resident-lost for the still-open TUI.
   export AIFY_RESIDENT_LIFECYCLE_OWNER=managed-host
   export AIFY_CHANNELS_ENABLED=1
+  # Installed with --mcp-transport http, no comms process runs inside hermes, so the delivery loop registers it.
+  if [ "@@MCP_TRANSPORT@@" = "http" ]; then export AIFY_COMMS_MCP=http; fi
   # Per-agent TUI active-session file: the visible hermes session writes its REAL
   # native session id here, and the in-session MCP bridge (adapters/hermes.js
   # discoverSessionId) reads it to register a real handle on FIRST launch — instead

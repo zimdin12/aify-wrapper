@@ -491,7 +491,9 @@ if [ "$HARNESS_CHECK" = true ]; then
   # AIFY_CLAUDE_STRICT_MCP=1. In the default mode this line printed the configured value as though it
   # were in force, so `--check` confirmed a setting that the launch then ignored -- the one report an
   # operator consults to find out exactly this.
-  if [ "${AIFY_CLAUDE_STRICT_MCP:-0}" = "1" ]; then
+  if [ "@@MCP_TRANSPORT@@" = "http" ]; then
+    echo "  mcp       : the service's /mcp/http, added for this launch as its agent"
+  elif [ "${AIFY_CLAUDE_STRICT_MCP:-0}" = "1" ]; then
     echo "  mcp       : ${HARNESS_MCP_COMMAND:-<built-in bridge>} (strict mode)"
   elif [ -n "$HARNESS_MCP_COMMAND" ] || [ "@@MCP_TRANSPORT@@" = "sse" ]; then
     HARNESS_IGNORED_MCP=""
@@ -788,15 +790,17 @@ if [ "${AIFY_CLAUDE_STRICT_MCP:-0}" = "1" ]; then
   # copy of it at all. `sse` points at the container, so the client side needs no service code.
   # Substituted at install time and defaulted to stdio, because repointing a live fleet's transport is
   # the operator's call.
-  if [ "@@MCP_TRANSPORT@@" = "sse" ]; then
-    _aify_comms_entry="\"@@SERVICE_NAME@@\": { \"type\": \"sse\", \"url\": \"${HARNESS_ENDPOINT}/mcp/sse\" }"
+  if [ "@@MCP_TRANSPORT@@" = "http" ]; then
+    _aify_comms_entry=""  # its own --mcp-config below, which carries this agent's header
+  elif [ "@@MCP_TRANSPORT@@" = "sse" ]; then
+    _aify_comms_entry="\"@@SERVICE_NAME@@\": { \"type\": \"sse\", \"url\": \"${HARNESS_ENDPOINT}/mcp/sse\" },"
   else
-    _aify_comms_entry="\"@@SERVICE_NAME@@\": { \"command\": \"${_mcp_cmd}\", \"args\": [${_mcp_args}], \"env\": { \"AIFY_SERVER_URL\": \"$HARNESS_ENDPOINT\", \"CLAUDE_MCP_SERVER_URL\": \"$HARNESS_ENDPOINT\" } }"
+    _aify_comms_entry="\"@@SERVICE_NAME@@\": { \"command\": \"${_mcp_cmd}\", \"args\": [${_mcp_args}], \"env\": { \"AIFY_SERVER_URL\": \"$HARNESS_ENDPOINT\", \"CLAUDE_MCP_SERVER_URL\": \"$HARNESS_ENDPOINT\" } },"
   fi
   cat > "$AIFY_MCP_CONFIG" <<JSON
 {
   "mcpServers": {
-    ${_aify_comms_entry},
+    ${_aify_comms_entry}
     "@@SERVICE_NAME@@-channel": {
       "command": "node",
       "args": ["${AIFY_BRIDGE_DIR_FWD}/claude-channel.js"],
@@ -850,6 +854,19 @@ else
     # appended after this, so nothing is swallowed; the equals form keeps that true whatever is added later.
     CLAUDE_MCP_FLAGS+=("--mcp-config=$AIFY_MCP_CONFIG")
   fi
+fi
+# THE SERVICE'S TOOLS, PER LAUNCH (0.9.11). Installed with --mcp-transport http, the comms tools are the service's
+# /mcp/http called as this agent, a header nothing machine-wide can hold. The service's installed copy prints the
+# entry (URL and header are its contract); this places it, and the EXIT trap removes it.
+AIFY_COMMS_MCP_CONFIG=""
+if [ "@@MCP_TRANSPORT@@" = "http" ]; then
+  AIFY_COMMS_MCP_CONFIG="$(mktemp -t @@SERVICE_NAME@@-mcp.XXXXXX.json 2>/dev/null || mktemp -t @@SERVICE_NAME@@-mcp)"
+  if ! node "$AIFY_BRIDGE_DIR_FWD/comms-http-entry.mjs" "$HARNESS_ENDPOINT" "@@SERVICE_NAME@@" "$CLAUDE_AIFY_AGENT_ID" > "$AIFY_COMMS_MCP_CONFIG"; then
+    echo "[claude-aify] this launch's comms tools entry could not be written; re-run the service's installer." >&2
+    rm -f "$AIFY_COMMS_MCP_CONFIG"; exit "$HARNESS_EXIT_CONFIG"
+  fi
+  CLAUDE_MCP_FLAGS+=("--mcp-config=$AIFY_COMMS_MCP_CONFIG")
+  export AIFY_COMMS_MCP=http  # the channel then holds the resident duties (comms resident-duties.mjs)
 fi
 
 # Session-id truth capture (2026-05-30, #138): install SessionStart +
@@ -923,7 +940,7 @@ _aify_runtime_exited() {
   if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then _aify_exit_herdr=herdr; fi
   sh "@@WRAPPER_DIR@@/bin/aify-runtime-exited.sh" "@@BRIDGE_DIR@@" "$_aify_exit_herdr" </dev/null >/dev/null 2>&1 || true
 }
-trap 'rm -f "$AIFY_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null; _aify_runtime_exited; aify_lifetime_release; aify_lease_release' EXIT
+trap 'rm -f "$AIFY_MCP_CONFIG" "$AIFY_COMMS_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null; _aify_runtime_exited; aify_lifetime_release; aify_lease_release' EXIT
 
 # The lease is claimed by the run that starts claude: not by a `--shared` launch, which hands the start
 # to the host, whose own run of this launcher claims. 75 is a refused start. BEFORE THE REAP BELOW: that
@@ -982,7 +999,7 @@ if [ "$CLAUDE_AIFY_SHARED" = true ]; then
   #
   # The trapped command is reused rather than a second copy written beside it: one of the two
   # would drift. Cleared afterwards so an INT between here and the exec cannot run it twice.
-  rm -f "$AIFY_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null
+  rm -f "$AIFY_MCP_CONFIG" "$AIFY_COMMS_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null
   trap - EXIT
   # AN INFERRED SESSION MODE DOES NOT CROSS THIS BOUNDARY (R9-M10). It was resolved from THIS
   # process's stdin, and the host will run the launcher in a PTY where the answer differs. Dropping
