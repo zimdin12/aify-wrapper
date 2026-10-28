@@ -64,6 +64,7 @@ try {
     endpoint,
     secrets,
     approved: new Set([...catalogue.approved, ...args.approve]),
+    drop: args.drop,
     tools: aifyEnvTools(aifyEnvBin),
     readStored: (ref) => {
       try {
@@ -94,6 +95,8 @@ try {
   for (const field of report.unprobed) out.push(`  ${field}: stored, not probed`);
   for (const field of report.absent ?? []) out.push(`  ${field}: optional, not supplied`);
   for (const server of report.pending) out.push(`  mcp ${server.name}: no entry written -- ${server.reason}`);
+  for (const key of report.leftover ?? []) out.push(`  ${key}: published, not in this spec; not removed (--drop ${key} removes it)`);
+  for (const key of report.dropped ?? []) out.push(`  ${key}: removed (--drop)`);
   for (const file of report.fetched ?? []) out.push(`  fetched and verified: ${file}`);
   for (const pkg of report.installed ?? []) out.push(`  ${pkg.id}: ${pkg.reused ? "already installed" : "installed"} at ${pkg.at}`);
   for (const extra of report.unlisted ?? []) {

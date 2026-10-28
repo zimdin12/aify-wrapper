@@ -103,7 +103,10 @@ nobody types an entry by hand. In order:
    commit.
 
 The entry is the published one with the spec's fields over it, so `secretsCredentialRef`, `advertise` and any
-other field the spec does not name survive. Each MCP server is `{command: <the absolute node running connect>,
+other field the spec does not name survive. That includes a field an earlier spec's `fixed` set and this one does
+not: connect cannot tell it from one the service's own installer wrote, so it reports it ("published, not in this
+spec; not removed") and removes it only when asked, with `--drop <field>`. `--drop` takes only a field a spec's
+`fixed` can set and this spec does not, and is refused before anything is staged otherwise. Each MCP server is `{command: <the absolute node running connect>,
 args: [<the entry's absolute file>]}`, so nothing comes from a session's PATH or environment.
 
 An artifact is approved by the exact digest of its `{kind, source, sha256, entries}`: one listed in
