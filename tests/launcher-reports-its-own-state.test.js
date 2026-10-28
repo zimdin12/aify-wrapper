@@ -60,3 +60,17 @@ test("the exported value is the SAME variable --check prints, not a second copy"
       `${name} must export the fingerprint it already set`);
   }
 });
+
+test("every launcher exports what the dashboard's bridge reads (docs/contracts/dashboard-launch-env.md)", () => {
+  // Bugs this catches: a renamed export the bridge then never sees (it read AIFY_ROLE, which nothing exported, until
+  // aify-dashboard 69accd19), a launcher overriding the operator's AIFY_MACHINE_ID, or a `cd` that moves the folder the
+  // bridge registers.
+  const REQUIRED = ["AIFY_AGENT_ID", "AIFY_RUNTIME", "AIFY_AGENT_ROLE", "AIFY_SESSION_MODE"];
+  for (const name of templates()) {
+    const text = fs.readFileSync(path.join(TEMPLATES, name), "utf8");
+    const found = exportsOf(text);
+    assert.deepEqual(REQUIRED.filter((v) => !found.has(v)), [], `${name} does not export what the bridge requires`);
+    assert.deepEqual(["AIFY_ROLE", "AIFY_MACHINE_ID"].filter((v) => found.has(v)), [], `${name} exports a name the contract forbids`);
+    assert.doesNotMatch(text, /^[ \t]*(cd|pushd|builtin cd)[ \t]/m, `${name} changes directory, so the bridge would register another folder`);
+  }
+});

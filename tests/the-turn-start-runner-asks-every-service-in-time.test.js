@@ -296,6 +296,16 @@ test("END TO END, THE PER-TURN READ CHECKS NO CUSTODY: a credential others can r
   assert.equal(svc.seen[0]?.headers["x-api-key"], KEY, "the widened credential was refused on the per-turn path");
 });
 
+test("END TO END, NO MOMENT: an input that names none sends no moment field at all (docs/contracts/dashboard-turn-start.md)", async (t) => {
+  // Bug this catches: `moment: null` or `""` on the wire, which the dashboard reads as "start" (any other value is),
+  // re-sending the full brief on every such turn, where an absent field keeps the service's own re-send.
+  const svc = await service(t, answer("OPERATOR RULE"));
+  const result = await runHook(host(t, { endpoint: svc.endpoint }), JSON.stringify({ session_id: "s-1", cwd: "C:/x", hook_event_name: "pre_llm_call" }));
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(svc.seen.length, 1, "control: the turn was asked");
+  assert.equal(Object.hasOwn(svc.seen[0].body, "moment"), false, JSON.stringify(svc.seen[0].body));
+});
+
 test("END TO END: the hook sends the runner-built request and prints the context", async (t) => {
   const svc = await service(t, answer("OPERATOR RULE"));
   const result = await runHook(host(t, { endpoint: svc.endpoint }), HOOK_INPUT);
