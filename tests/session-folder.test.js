@@ -46,6 +46,29 @@ test("the sessions folder is made owner-only and reads back so; one widened afte
   assert.notEqual(await folderCustodyProblemFor(sessionsRoot(home)), "", "the widened folder was narrowed behind the operator's back");
 });
 
+test("a sessions root granted beyond its owner WITHOUT inheritance, or one that is a link, refuses before anything is made in it", async (t) => {
+  // Review of the Linux pass: on Windows only the agent's folder was judged, and it inherits only the root's
+  // inheritable grants, so both of these roots passed and the session file was written into them.
+  const nonInheriting = (dir) => (WIN ? execFileSync("icacls", [dir, "/grant", "*S-1-1-0:(M)"], { stdio: "ignore", windowsHide: true }) : fs.chmodSync(dir, 0o757));
+  const home = freshHome(t);
+  assert.equal((await sessionFolder({ agentId: "first-agent", launcherPid: 1, home })).ok, true, "control: a fresh root is accepted");
+  nonInheriting(sessionsRoot(home));
+  const widened = await sessionFolder({ agentId: "later-agent", launcherPid: 1, home });
+  assert.equal(widened.ok, false, "a root granted to Everyone without inheritance was accepted");
+  assert.ok(widened.problem.startsWith(sessionsRoot(home)), widened.problem);
+  assert.equal(fs.existsSync(path.join(sessionsRoot(home), "later-agent")), false, "the agent's folder was made inside a refused root");
+
+  const linked = freshHome(t);
+  const target = path.join(linked, "elsewhere");
+  fs.mkdirSync(target);
+  fs.mkdirSync(path.dirname(sessionsRoot(linked)), { recursive: true });
+  fs.symlinkSync(target, sessionsRoot(linked), "junction");
+  const through = await sessionFolder({ agentId: "linked-agent", launcherPid: 1, home: linked });
+  assert.equal(through.ok, false, "a sessions root that is a link was accepted");
+  assert.match(through.problem, /link/);
+  assert.deepEqual(fs.readdirSync(target), [], "something was made through the link");
+});
+
 test("a session file is written whole, replacing the last one, and leaves no temp name behind", async (t) => {
   const home = freshHome(t);
   const { dir } = await sessionFolder({ agentId: "probe-agent", launcherPid: 1, home });
