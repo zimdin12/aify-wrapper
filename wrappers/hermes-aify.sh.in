@@ -602,9 +602,7 @@ if [ -r "$AIFY_NODE_22_SH" ]; then
   aify_ensure_node_ge_22
 fi
 
-# Bypass flags for the default TUI launch only. Mirrors claude-aify's
-# CLAUDE_PERMISSION_FLAGS — applied to the interactive chat/TUI launch, not to
-# explicit passthrough subcommands like `hermes-aify model list`.
+# Bypass flags for the default TUI launch only, as claude-aify's CLAUDE_PERMISSION_FLAGS; never `hermes-aify model list`.
 HERMES_PERMISSION_FLAGS=()
 if [ "$HERMES_AUTO" = true ]; then
   HERMES_PERMISSION_FLAGS+=(--yolo)
@@ -626,16 +624,10 @@ AIFY_HERMES_MANAGED_HOST_JS="$AIFY_HERMES_STDIO_DIR/hermes-managed-host.js"
 # `npm run build`. Empty → hermes builds/locates the TUI as before (no break).
 AIFY_HERMES_TUI_DIR="@@HERMES_TUI_DIR@@"
 
-# MCP tool-exposure pre-warm gate (2026-06-03). Hermes snapshots the agent's MCP
-# tool schema only ~0.75s after the session starts (hardcoded in hermes); if the
-# bridge loads slowly (cold page cache / slow fs), its comms_* tools miss that
-# window and never reach the model — the agent then can't call comms_send /
-# comms_register and resorts to hand-rolling its own MCP client. Warm the bridge
-# ONCE here (bounded; a side-effect-free module import — the entrypoint guard in
-# server.js means NO register/heartbeat/network runs) so the OS page cache is hot
-# before hermes spawns its OWN MCP child; that spawn then loads from cache and
-# lands inside the window. The native install already makes this ~0.3s — this is
-# the belt to that suspenders, so a slow load can never silently drop the tools.
+# MCP tool-exposure pre-warm (2026-06-03). Hermes snapshots the agent's MCP tool schema ~0.75 s after the session
+# starts; a bridge that loads slowly misses that window and its comms_* tools never reach the model. One bounded,
+# side-effect-free import of the bridge (server.js's entrypoint guard runs no register, heartbeat or network) warms
+# the page cache, so hermes' own MCP child loads inside the window.
 aify_hermes_warm_bridge() {
   command -v node >/dev/null 2>&1 || return 0
   local _probe="$AIFY_HERMES_STDIO_DIR/server.js"
@@ -682,6 +674,13 @@ aify_hermes_kill_prior() {
       ${_exclude:+--exclude "$_exclude"} </dev/null >/dev/null 2>&1 || true
   fi
 }
+
+# A HERMES CONFIG CHANGE AN INSTALL LEFT PENDING is applied here, before any hermes this launch starts, if no hermes runs
+# (bin/aify-hermes-pending-config.mjs, which says why when it waits). A launch with nothing pending pays one file test.
+if [ -e "$HOME/.aify/hermes-config-pending.json" ]; then
+  HERMES_RUNTIME_COMMAND="$HERMES_RUNTIME_COMMAND" node "$AIFY_WRAPPER_DIR_FWD/bin/aify-hermes-pending-config.mjs" apply \
+    --marker "$HOME/.aify/hermes-config-pending.json" </dev/null || { _s=$?; [ "$_s" = 75 ] || echo "[hermes-aify] the pending hermes config step exited $_s; this start goes on without it" >&2; }
+fi
 
 # Pre-warm the bridge before ANY interactive TUI launch (no passthrough args) so
 # hermes' 0.75s MCP discovery sees the comms_* tools. Cheap on the native install

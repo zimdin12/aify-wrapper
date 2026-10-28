@@ -67,8 +67,10 @@ test("CONTROL: the same install against a --wrapper-dir with the reader writes t
 test("a --wrapper-dir without a helper the launcher would skip without a word: refused, naming it, nothing written", () => {
   // Herdr's claim and profile for every launcher; Node >= 22 for hermes only, so a claude install does not need it.
   const reader = ["aify-definition.mjs", "aify-definition.sh"];
+  // And hermes' pending config step, without which a change an install recorded is never applied.
   for (const [client, files, missing] of [["claude", reader, "aify-herdr-launch.sh"], ["pi", [], "aify-herdr-launch.sh"],
-    ["hermes", [...reader, "aify-herdr-launch.sh"], "aify-node-22.sh"]]) {
+    ["hermes", [...reader, "aify-herdr-launch.sh"], "aify-node-22.sh"],
+    ["hermes", [...reader, "aify-herdr-launch.sh", "aify-node-22.sh"], "aify-hermes-pending-config.mjs"]]) {
     const { run, written } = install({ wrapper: wrapperWith(`wrapper-without-${missing}`, files), client });
     assert.equal(run.status, 78, `${client}: ${run.stdout}\n${run.stderr}`);
     assert.match(run.stderr, new RegExp(`has no bin/${missing.replaceAll(".", "\\.")}, which the ${client} launcher sources`));

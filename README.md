@@ -286,7 +286,9 @@ which its `--check` reports on a `session` line of its own.
 A service that opts into every session (`"sessionInject": {"mcp": true}` in `~/.aify/services.json`) reaches claude
 and codex sessions through their launchers. **For hermes it reaches every hermes session on the host**, hermes-aify
 or not: hermes has no per-session way in, so `install.sh` writes the server into the user's hermes config through
-hermes' own `config set`, marked as ours, and never over an entry the operator wrote. See docs/REGISTRY.md.
+hermes' own `config set`, marked as ours, and never over an entry the operator wrote. While hermes runs, the change
+waits for the first hermes-aify start that finds none, so a running agent never reloads mid-session; `aify-wrapper-check`
+shows it pending. See docs/REGISTRY.md.
 
 ### Exit codes
 

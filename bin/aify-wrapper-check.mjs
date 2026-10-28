@@ -4,7 +4,10 @@
 //   aify-wrapper-check              human-readable
 //   aify-wrapper-check --json       {ok, summary, current, stale, unknown}, plus errors when it refuses
 //   aify-wrapper-check --strict     exit 1 when anything is stale OR unreadable
-//   aify-wrapper-check --dest <dir> --registry <path>
+//   aify-wrapper-check --dest <dir> --registry <path> --pending <path>
+//
+// It also says whether an install left a hermes config change PENDING (lib/hermes-pending-config.mjs), which the
+// first hermes start that finds no hermes running applies: `hermesConfigPending` under --json, null when none is.
 //
 // IT READS. Every launcher is judged from its text and none is executed. A launcher does not know
 // `--check` unless it was built with the contract, so asking one about itself would forward the flag to
@@ -18,6 +21,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { PendingHermesConfig, pendingMarkerPath } from "../lib/hermes-pending-config.mjs";
 import { parseRegistry, fingerprint } from "../lib/registry.mjs";
 import { stalenessOf } from "../lib/staleness.mjs";
 
@@ -29,6 +33,7 @@ const flag = (name, fallback) => {
 
 const DEST = flag("--dest", join(homedir(), ".local", "bin"));
 const REGISTRY = flag("--registry", join(homedir(), ".aify", "services.json"));
+const PENDING = flag("--pending", pendingMarkerPath(homedir()));
 const asJson = args.includes("--json");
 const strict = args.includes("--strict");
 
@@ -82,6 +87,9 @@ function judge() {
 }
 
 const { refused, report } = judge();
+const pending = new PendingHermesConfig({ marker: PENDING }).read();
+report.hermesConfigPending = pending.state === "none" ? null
+  : pending.state === "pending" ? { recordedAt: pending.recordedAt, registry: pending.registry } : { problem: pending.problem };
 
 if (asJson) {
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
@@ -94,6 +102,11 @@ if (asJson) {
     process.stdout.write(`  ??    ${row.name}  no registry fingerprint — installed before this existed?\n`);
   }
   process.stdout.write(`\n${report.summary}\n`);
+}
+if (!asJson && pending.state === "pending") {
+  process.stdout.write(`hermes config pending since ${pending.recordedAt}: the first hermes start that finds no hermes running applies it\n`);
+} else if (!asJson && pending.state === "unreadable") {
+  process.stdout.write(`hermes config pending, unreadable: ${pending.problem}\n`);
 }
 
 // An exit CODE, never process.exit(): stdout to a pipe is asynchronous on POSIX, and exiting at once cuts
