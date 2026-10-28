@@ -18,6 +18,16 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BACKSLASH = String.fromCharCode(92);
 
+// A copy of the files with no .git (a container run of the suite) has no tracked files to inspect: that run says so and skips
+// these two, rather than failing on git. A checkout always runs them.
+const NOT_A_CHECKOUT = (() => {
+  try {
+    return execFileSync("git", ["-C", ROOT, "rev-parse", "--is-inside-work-tree"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() === "true"
+      ? false : "not a git work tree, so nothing is tracked to inspect";
+  } catch {
+    return "not a git work tree (or no git), so nothing is tracked to inspect";
+  }
+})();
 const tracked = () => execFileSync("git", ["-C", ROOT, "ls-files", "-z"], { encoding: "utf8" })
   .split(String.fromCharCode(0))
   .filter(Boolean);
@@ -71,12 +81,12 @@ test("the predicates say yes to the shapes that were actually committed", () => 
   assert.equal(isRenderedLauncher(template.split("@@WRAPPER_VERSION@@").join("0.5.7")), true);
 });
 
-test("no tracked path escaped its temp directory", () => {
+test("no tracked path escaped its temp directory", { skip: NOT_A_CHECKOUT }, () => {
   const strays = tracked().filter(looksLikeAnEscapedAbsolutePath);
   assert.deepEqual(strays, [], `tracked paths that look like flattened absolute paths: ${strays}`);
 });
 
-test("no tracked file is a rendered launcher", () => {
+test("no tracked file is a rendered launcher", { skip: NOT_A_CHECKOUT }, () => {
   const renders = tracked().filter((p) => {
     const full = path.join(ROOT, p);
     let text;

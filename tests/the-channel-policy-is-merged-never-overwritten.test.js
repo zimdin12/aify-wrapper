@@ -18,6 +18,10 @@ import { admitsOurChannel, CHANNEL_SPEC, effectivePolicy, OUR_ENTRY, parsePolicy
 const OTHER = { marketplace: "claude-plugins-official", plugin: "telegram" };
 const HKCU = "HKCU\\SOFTWARE\\Policies\\ClaudeCode";
 
+// A simulated Windows machine has its own environment: read from the host's, a Linux run had no ProgramFiles and every
+// admin file read as unknown.
+const WIN_ENV = Object.freeze({ ProgramFiles: "C:\\Program Files" });
+
 test("the spec claude-aify passes names our entry", () => {
   assert.equal(CHANNEL_SPEC, `plugin:${OUR_ENTRY.plugin}@${OUR_ENTRY.marketplace}`);
   assert.equal(CHANNEL_SPEC, "plugin:aify-channel@aify-local");
@@ -70,27 +74,27 @@ test("removal takes out only our entry, and the whole value only when nothing el
 const reader = (values) => (source) => values[source.key ?? source.path] ?? null;
 
 test("on Windows an admin source outranks the per-user value", () => {
-  const sources = policySources("win32");
+  const sources = policySources("win32", WIN_ENV);
   assert.deepEqual(sources.map((s) => s.admin), [true, true, true, false]);
   assert.deepEqual(sources.map((s) => s.kind), ["registry", "file", "dir", "registry"]);
   assert.equal(sources[3].key, HKCU);
   const fileText = JSON.stringify({ model: "x" });
-  const answer = effectivePolicy("win32", reader({ [sources[1].path]: fileText, [HKCU]: "{}" }));
+  const answer = effectivePolicy("win32", reader({ [sources[1].path]: fileText, [HKCU]: "{}" }), WIN_ENV);
   assert.deepEqual(answer.source, sources[1]);
   assert.equal(answer.text, fileText);
-  assert.deepEqual(effectivePolicy("win32", reader({})), { source: null, text: null });
+  assert.deepEqual(effectivePolicy("win32", reader({}), WIN_ENV), { source: null, text: null });
 });
 
 test("install writes the merged per-user value, does nothing when it already admits, refuses under an admin source", () => {
-  const plan = planInstall("win32", reader({ [HKCU]: JSON.stringify({ allowedChannelPlugins: [OTHER] }) }));
+  const plan = planInstall("win32", reader({ [HKCU]: JSON.stringify({ allowedChannelPlugins: [OTHER] }) }), WIN_ENV);
   assert.equal(plan.action, "write");
   assert.equal(plan.source.key, HKCU);
   assert.deepEqual(JSON.parse(plan.text).allowedChannelPlugins, [OTHER, OUR_ENTRY]);
-  assert.equal(planInstall("win32", reader({ [HKCU]: plan.text })).action, "none");
-  const hklm = policySources("win32")[0].key;
-  assert.equal(planInstall("win32", reader({ [hklm]: JSON.stringify({ model: "x" }) })).action, "refuse");
-  assert.equal(planInstall("win32", reader({ [hklm]: plan.text })).action, "none");
-  assert.equal(planInstall("win32", reader({ [HKCU]: "{" })).action, "refuse", "a malformed per-user value is left alone");
+  assert.equal(planInstall("win32", reader({ [HKCU]: plan.text }), WIN_ENV).action, "none");
+  const hklm = policySources("win32", WIN_ENV)[0].key;
+  assert.equal(planInstall("win32", reader({ [hklm]: JSON.stringify({ model: "x" }) }), WIN_ENV).action, "refuse");
+  assert.equal(planInstall("win32", reader({ [hklm]: plan.text }), WIN_ENV).action, "none");
+  assert.equal(planInstall("win32", reader({ [HKCU]: "{" }), WIN_ENV).action, "refuse", "a malformed per-user value is left alone");
 });
 
 test("the admin file is found through Program Files, and not knowing where that is refuses the install", () => {

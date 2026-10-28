@@ -15,6 +15,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { emptyRegistry } from "./sealed-registry.mjs";
+import { configureChannel } from "./configured-channel.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -57,6 +58,7 @@ function world(client) {
   const home = path.join(dir, "home");
   const bridge = path.join(dir, "bridge");
   for (const d of [out, stubs, path.join(home, ".codex", "sessions"), bridge]) fs.mkdirSync(d, { recursive: true });
+  configureChannel(home, bridge);
   fs.writeFileSync(path.join(bridge, "hermes-managed-host.js"), MANAGED_HOST);
   const rendered = spawnSync("bash", [INSTALL, "--registry", emptyRegistry(), "--client", client, "--endpoint", NOWHERE, "--render-only", out, "--bridge-dir", bridge],
     { encoding: "utf8", timeout: 120_000 });

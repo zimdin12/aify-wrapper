@@ -28,6 +28,8 @@ function machine({ policy = null, admin = null, writes = true, failing = [], rou
     state,
     bridgeDir: BRIDGE,
     platform: "win32",
+    // Its own environment, not the host running the test: on Linux the host has no ProgramFiles.
+    env: { ProgramFiles: "C:\\Program Files" },
     home: "/h",
     read: (source) => (source.admin ? admin : state.policy),
     write: (key, text) => { state.calls.push(`write ${key}`); if (writes) state.policy = text; return { ok: true }; },

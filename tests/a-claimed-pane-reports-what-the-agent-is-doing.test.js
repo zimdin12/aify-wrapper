@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import { AIFY_AGENT_SOURCE } from "../lib/herdr-pane.mjs";
 import { reportLines } from "./herdr-report-lines.mjs";
 import { emptyRegistry } from "./sealed-registry.mjs";
+import { configureChannel } from "./configured-channel.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -37,10 +38,7 @@ function launch({ env = {}, listFails = false } = {}) {
   const home = path.join(dir, "home");
   const bridge = path.join(dir, "bridge");
   for (const d of [out, stubs, home, bridge]) fs.mkdirSync(d, { recursive: true });
-  // A configured channel server, as the service installer leaves one: without it the launcher refuses (78) to start a
-  // session no message could reach, which is the launcher working, not what this test measures.
-  fs.writeFileSync(path.join(bridge, "claude-channel.js"), "// the channel\n");
-  fs.writeFileSync(path.join(home, ".claude.json"), JSON.stringify({ mcpServers: { "aify-comms-channel": { command: "node", args: [path.join(bridge, "claude-channel.js")] } } }));
+  configureChannel(home, bridge);
 
   const rendered = spawnSync("bash", [INSTALL, "--registry", emptyRegistry(), "--client", "claude", "--endpoint", NOWHERE,
     "--render-only", out, "--bridge-dir", bridge], { encoding: "utf8", timeout: 120_000 });
