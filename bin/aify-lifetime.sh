@@ -40,8 +40,10 @@ aify_lifetime_start() {
     && command -v aify-env >/dev/null 2>&1; then
     _capture="$(aify-env agents resident-start-binding "$_agent" "$_harness" "$_producer" </dev/null 2>/dev/null)" || _capture=""
   fi
-  if ! AIFY_LIFETIME="$(MSYS_NO_PATHCONV=1 node "$_helper" "$_root" "$_agent" residents "$_harness" "$_pid" "$0" "${_clock/./}" "${AIFY_HERDR_PANE_ID:-${HERDR_PANE_ID:-}}" ${_capture:+"$_capture"})"; then
-    echo "${0##*/}: cannot write the resident lifetime; nothing was started." >&2
+  local _status=0
+  AIFY_LIFETIME="$(MSYS_NO_PATHCONV=1 node "$_helper" "$_root" "$_agent" residents "$_harness" "$_pid" "$0" "${_clock/./}" "${AIFY_HERDR_PANE_ID:-${HERDR_PANE_ID:-}}" ${_capture:+"$_capture"})" || _status=$?
+  if [ "$_status" -ne 0 ]; then
+    echo "${0##*/}: cannot write the resident lifetime (aify-resident-record exited $_status); nothing was started." >&2
     return 78
   fi
   AIFY_RESIDENT_RECORD="$_root/$_agent.$AIFY_LIFETIME.json"

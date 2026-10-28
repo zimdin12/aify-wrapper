@@ -881,8 +881,10 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
   export HERMES_TUI_ACTIVE_SESSION_FILE="$HERMES_AIFY_ACTIVE_SESSION_FILE"
   export AIFY_HERMES_ACTIVE_SESSION_FILE="$HERMES_AIFY_ACTIVE_SESSION_FILE"
   # (2) Hidden gateway host → capture {port,token,wsUrl} as ONE JSON line.
-  if ! HERMES_HOST_JSON="$(node "$AIFY_WRAPPER_DIR_FWD/bin/aify-hermes-gateway.mjs" ensure "$HERMES_AIFY_AGENT_ID")"; then
-    echo "[hermes-aify] FATAL: managed gateway host for '$HERMES_AIFY_AGENT_ID' did not come up." >&2
+  _aify_status=0
+  HERMES_HOST_JSON="$(node "$AIFY_WRAPPER_DIR_FWD/bin/aify-hermes-gateway.mjs" ensure "$HERMES_AIFY_AGENT_ID")" || _aify_status=$?
+  if [ "$_aify_status" -ne 0 ]; then
+    echo "[hermes-aify] FATAL: managed gateway host for '$HERMES_AIFY_AGENT_ID' did not come up (aify-hermes-gateway exited $_aify_status)." >&2
     echo "[hermes-aify]   (aify-hermes-gateway ensure $HERMES_AIFY_AGENT_ID failed — see the error above)" >&2
     exit 1
   fi

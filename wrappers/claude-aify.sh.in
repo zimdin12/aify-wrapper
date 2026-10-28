@@ -915,10 +915,13 @@ fi
 # aify-env starts in its place claims and writes its own.
 AIFY_SESSION_CONFIG=""
 if [ "$CLAUDE_AIFY_SHARED" != true ] && [ -n "@@SESSION_MCP_B64@@@@SESSION_HTTP_B64@@" ]; then
-  if ! AIFY_SESSION_CONFIG="$(AIFY_SESSION_STDIO_B64="@@SESSION_MCP_B64@@" AIFY_SESSION_HTTP_B64="@@SESSION_HTTP_B64@@" AIFY_SESSION_STRICT="${AIFY_CLAUDE_STRICT_MCP:-0}" \
+  # THE CHILD'S STATUS IS SAID: a writer that died without a word (killed under load) read as an install problem.
+  _aify_status=0
+  AIFY_SESSION_CONFIG="$(AIFY_SESSION_STDIO_B64="@@SESSION_MCP_B64@@" AIFY_SESSION_HTTP_B64="@@SESSION_HTTP_B64@@" AIFY_SESSION_STRICT="${AIFY_CLAUDE_STRICT_MCP:-0}" \
       AIFY_SESSION_ENDPOINT="$HARNESS_ENDPOINT" AIFY_SESSION_LAUNCHER_PID="$(aify_lease_pid "$$")" AIFY_AGENT_ID="$CLAUDE_AIFY_AGENT_ID" \
-      node "$AIFY_WRAPPER_DIR_FWD/bin/aify-session-mcp.mjs")"; then
-    echo "[claude-aify] this session's MCP entries could not be written; re-run the installer." >&2
+      node "$AIFY_WRAPPER_DIR_FWD/bin/aify-session-mcp.mjs")" || _aify_status=$?
+  if [ "$_aify_status" -ne 0 ]; then
+    echo "[claude-aify] this session's MCP entries could not be written (aify-session-mcp exited $_aify_status; its reason is above if it gave one)." >&2
     exit "$HARNESS_EXIT_CONFIG"
   fi
   if [ -n "$AIFY_SESSION_CONFIG" ]; then CLAUDE_MCP_FLAGS+=("--mcp-config=$AIFY_SESSION_CONFIG"); fi

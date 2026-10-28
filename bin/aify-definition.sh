@@ -19,7 +19,7 @@
 # instructions yet, so a definition with them refuses even then. A managed launch whose definition the reader refuses
 # says so and starts.
 aify_read_definition() {
-  local _id="$1" _harness="$2" _out _reader="$AIFY_WRAPPER_DIR_FWD/bin/aify-definition.mjs" _managed=""
+  local _id="$1" _harness="$2" _out _reader="$AIFY_WRAPPER_DIR_FWD/bin/aify-definition.mjs" _managed="" _status=""
   if [ -z "$_id" ] || [ "$AIFY_IGNORE_DEFINITION" = true ]; then return 0; fi
   if [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ]; then
     [ "$_harness" != claude ] || return 0
@@ -28,8 +28,10 @@ aify_read_definition() {
   if [ ! -f "$_reader" ]; then
     echo "[${0##*/}] no definition reader at $_reader, so the definition of '$_id' cannot be checked." >&2
   fi
-  if [ ! -f "$_reader" ] || ! _out="$(node "$_reader" "$_id" "$_harness" $_managed)"; then
-    echo "[${0##*/}] the definition of '$_id' cannot be used (above), so nothing was started." >&2
+  # The reader's status is said with its refusal, so one that died without a word is told from one that refused.
+  if [ -f "$_reader" ]; then _status=0; _out="$(node "$_reader" "$_id" "$_harness" $_managed)" || _status=$?; fi
+  if [ "$_status" != 0 ]; then
+    echo "[${0##*/}] the definition of '$_id' cannot be used (${_status:+the reader exited $_status, }above), so nothing was started." >&2
     echo "              Fix the file or the install, or start with --aify-ignore-definition to launch without it." >&2
     exit "$HARNESS_EXIT_CONFIG"
   fi
@@ -42,12 +44,13 @@ aify_read_definition() {
 # else, and only from the revision its host admitted: a file at another one, or unreadable, refuses the start (78); a
 # host that binds none starts it without them and says so (lib/agent-definition-defaults.mjs managedBinding).
 aify_place_instructions() {
-  local _id="$1" _out _reader="$AIFY_WRAPPER_DIR_FWD/bin/aify-definition.mjs" _managed=""
+  local _id="$1" _out _reader="$AIFY_WRAPPER_DIR_FWD/bin/aify-definition.mjs" _managed="" _status=0
   if [ -z "$_id" ] || [ "$AIFY_IGNORE_DEFINITION" = true ]; then return 0; fi
   [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ] && _managed=--managed
   if [ -z "$_managed" ] && [ -z "$AIFY_DEF_FILE" ]; then return 0; fi
-  if ! _out="$(node "$_reader" "$_id" claude --write-instructions $_managed)"; then
-    echo "[${0##*/}] the instructions of '$_id' cannot be handed to the runtime (above), so nothing was started." >&2
+  _out="$(node "$_reader" "$_id" claude --write-instructions $_managed)" || _status=$?
+  if [ "$_status" -ne 0 ]; then
+    echo "[${0##*/}] the instructions of '$_id' cannot be handed to the runtime (the reader exited $_status, above), so nothing was started." >&2
     exit "$HARNESS_EXIT_CONFIG"
   fi
   eval "$_out"
