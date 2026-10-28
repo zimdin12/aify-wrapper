@@ -30,6 +30,14 @@ const bashDir = () => winPath(execFileSync("bash", ["-c", 'dirname "$(command -v
 const REGISTRY = { version: 1, services: { "aify-comms": { endpoint: NOWHERE, endpointEnv: ["AIFY_SERVER_URL", "CLAUDE_MCP_SERVER_URL"], credentialRef: "aify-comms.key", mcp: [{ name: "aify-comms", command: "node", args: ["/b/server.js"] }] } } };
 
 function launch({ transport, env = {}, withEntry = true }) {
+  const world = install({ transport, withEntry });
+  const result = start(world, { env });
+  fs.rmSync(world.dir, { recursive: true, force: true });
+  return result;
+}
+
+/** The real installer's launcher, with a stub `claude` and `aify-env` that record what they were handed. */
+function install({ transport, withEntry = true }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-http-launch-"));
   const [out, stubs, home, bridge, seen] = ["out", "stubs", "home", "bridge", "seen"].map((d) => path.join(dir, d));
   for (const d of [out, stubs, home, bridge, seen]) fs.mkdirSync(d, { recursive: true });
@@ -57,18 +65,40 @@ function launch({ transport, env = {}, withEntry = true }) {
     "",
   ].join(String.fromCharCode(10)));
   fs.chmodSync(path.join(stubs, "claude"), 0o755);
-  const run = spawnSync("bash", [path.join(out, "claude-aify")], {
+  fs.writeFileSync(path.join(stubs, "aify-env"), `#!/bin/sh\nprintf '%s\\n' "$@" > "${s}/aify-env"\nexit 0\n`);
+  fs.chmodSync(path.join(stubs, "aify-env"), 0o755);
+  return { dir, home, out, wrapper, seen, stubs, document: path.join(home, ".aify", "sessions", "probe-agent", "mcp.json") };
+}
+
+/**
+ * A lease whose claim refuses as the real one does for an agent already running (75), so no runtime starts. In the
+ * wrapper's bin/, where the launcher sources it; without it the launcher's own stubs admit every start.
+ */
+const REFUSING_LEASE = [
+  'aify_lease_take_intent() { AIFY_LEASE_ARGS=("$@"); }',
+  'aify_lease_claim() { echo "[lease] $1 is already running here" >&2; return 75; }',
+  "aify_lease_attach() { :; }", "aify_lease_release() { :; }", "aify_lifetime_start() { :; }", "aify_lifetime_release() { :; }",
+  "aify_lease_pid() { printf '%s' \"$1\"; }", "",
+].join("\n");
+
+/** Run the installed launcher once; what each stub recorded is this run's alone. */
+function start(world, { env = {}, args = [], lease = null, cwd } = {}) {
+  const { dir, home, out, wrapper, seen, stubs } = world;
+  for (const f of fs.readdirSync(seen)) fs.rmSync(path.join(seen, f));
+  const leaseFile = path.join(wrapper, "bin", "aify-lease.sh");
+  if (lease) fs.writeFileSync(leaseFile, lease);
+  else fs.rmSync(leaseFile, { force: true });
+  const run = spawnSync("bash", [path.join(out, "claude-aify"), ...args], {
     encoding: "utf8",
+    cwd,
     env: { PATH: [winPath(stubs), path.dirname(process.execPath), bashDir()].join(SEP), HOME: posix(home), USERPROFILE: home, ...ownerEnv(),
       AIFY_MACHINE_ID: "host-a", ...definitionsEnv(path.join(dir, "defs")), HARNESS_IDENTITY: "probe-agent", ...env },
     timeout: 60_000,
   });
   const read = (name) => (fs.existsSync(path.join(seen, name)) ? fs.readFileSync(path.join(seen, name), "utf8") : "");
   const configs = fs.readdirSync(seen).filter((f) => f.startsWith("config-")).sort().map((f) => JSON.parse(fs.readFileSync(path.join(seen, f), "utf8")));
-  const result = { run, args: read("argv").split("\n").filter(Boolean), commsMcp: read("env").trim(), configs,
-    paths: read("paths").split("\n").filter(Boolean) };
-  fs.rmSync(dir, { recursive: true, force: true });
-  return result;
+  return { run, args: read("argv").split("\n").filter(Boolean), commsMcp: read("env").trim(), configs,
+    paths: read("paths").split("\n").filter(Boolean), handedToHost: read("aify-env").split("\n").filter(Boolean) };
 }
 
 /** The entry the own service gets: at the endpoint the launch resolved, as its agent, with its credential's key. */
@@ -122,6 +152,42 @@ test("an entry that cannot be written stops the launch rather than starting it w
   assert.equal(run.status, 78, run.stderr);
   assert.match(run.stderr, /this session's MCP entries could not be written/);
   assert.deepEqual(args, [], "claude was started anyway");
+});
+
+// THE FILE IS THE AGENT'S ONE, so only a start the lease admits may write it: written above the claim, a second launch
+// of a running agent, refused with 75, rewrote the running session's document with its own endpoint and folder
+// (review of f177604).
+test("a second launch the lease refuses leaves the running agent's document as it was", () => {
+  const world = install({ transport: "http" });
+  try {
+    const first = start(world, { cwd: world.home });
+    assert.equal(first.run.status, 0, first.run.stderr);
+    const before = fs.readFileSync(world.document);
+    const elsewhere = path.join(world.dir, "refused-work");
+    fs.mkdirSync(elsewhere);
+    const refused = start(world, { lease: REFUSING_LEASE, cwd: elsewhere, env: { AIFY_COMMS_URL: "http://127.0.0.2:2" } });
+    assert.equal(refused.run.status, 75, refused.run.stderr);
+    assert.deepEqual(refused.args, [], "claude was started anyway");
+    assert.ok(fs.readFileSync(world.document).equals(before), `the running agent's document was rewritten:\n${fs.readFileSync(world.document, "utf8")}`);
+    // CONTROL: the same changed launch, admitted, does rewrite it, so an unchanged file above is not one nothing could change.
+    const admitted = start(world, { cwd: elsewhere, env: { AIFY_COMMS_URL: "http://127.0.0.2:2" } });
+    assert.equal(admitted.run.status, 0, admitted.run.stderr);
+    assert.notDeepEqual(fs.readFileSync(world.document), before);
+  } finally {
+    fs.rmSync(world.dir, { recursive: true, force: true });
+  }
+});
+
+test("a --shared launch writes no document: the run the host starts in its place claims and writes its own", () => {
+  const world = install({ transport: "http" });
+  try {
+    const shared = start(world, { args: ["--shared"] });
+    assert.equal(shared.run.status, 0, shared.run.stderr);
+    assert.ok(shared.handedToHost.includes("run"), `control: the launch was handed to aify-env: ${shared.run.stderr}`);
+    assert.equal(fs.existsSync(world.document), false, "a --shared launch wrote the agent's document");
+  } finally {
+    fs.rmSync(world.dir, { recursive: true, force: true });
+  }
 });
 
 // Hermes has no per-launch MCP flag: its comms entry is the installed one (aify-comms' install.sh). What its launcher

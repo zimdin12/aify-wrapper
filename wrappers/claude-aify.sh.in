@@ -825,23 +825,8 @@ else
     echo "              Set AIFY_CLAUDE_STRICT_MCP=1 to use it, or unset it. Continuing with the built-in bridge." >&2
   fi
 fi
-# THIS SESSION'S SERVICES, PER LAUNCH (bin/aify-session-mcp.mjs): the stdio servers a service opted into every session
-# with, and the services reached over HTTP (this one's own when installed for http, as this agent from this folder),
-# added BESIDE the operator's own servers in one file that can hold keys: nothing edits ~/.claude.json, which running
-# sessions rewrite. The file is the agent's one owner-only ~/.aify/sessions/<id>/mcp.json, never the session's temp:
-# a launcher killed the way aify-env stops one skips every trap. Strict mode takes only this service's own. Base64 for
-# the reason the strict branch gives. One word, with `=`: the spaced form reads a later bare word as a second config
-# path (measured on Claude Code 2.1.286, 2026-10-01). The switch below is this install's, never a shell's.
-AIFY_SESSION_CONFIG=""; unset AIFY_COMMS_MCP
-if [ -n "@@SESSION_MCP_B64@@@@SESSION_HTTP_B64@@" ]; then
-  if ! AIFY_SESSION_CONFIG="$(AIFY_SESSION_STDIO_B64="@@SESSION_MCP_B64@@" AIFY_SESSION_HTTP_B64="@@SESSION_HTTP_B64@@" AIFY_SESSION_STRICT="${AIFY_CLAUDE_STRICT_MCP:-0}" \
-      AIFY_SESSION_ENDPOINT="$HARNESS_ENDPOINT" AIFY_SESSION_LAUNCHER_PID="$(aify_lease_pid "$$")" AIFY_AGENT_ID="$CLAUDE_AIFY_AGENT_ID" \
-      node "$AIFY_WRAPPER_DIR_FWD/bin/aify-session-mcp.mjs")"; then
-    echo "[claude-aify] this session's MCP entries could not be written; re-run the installer." >&2
-    exit "$HARNESS_EXIT_CONFIG"
-  fi
-  if [ -n "$AIFY_SESSION_CONFIG" ]; then CLAUDE_MCP_FLAGS+=("--mcp-config=$AIFY_SESSION_CONFIG"); fi
-fi
+# The comms switch is this install's, never a shell's. This session's own MCP file is written below the lease claim.
+unset AIFY_COMMS_MCP
 if [ "@@MCP_TRANSPORT@@" = "http" ]; then export AIFY_COMMS_MCP=http; fi  # the channel holds the resident duties (comms resident-duties.mjs)
 
 # Session-id truth capture (2026-05-30, #138): install SessionStart +
@@ -923,6 +908,27 @@ trap 'rm -f "$AIFY_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null; _aify_runtime_
 # instance the claim would then have refused.
 if [ "$CLAUDE_AIFY_SHARED" != true ]; then
   aify_lease_claim "${CLAUDE_AIFY_AGENT_ID:-}" claude-code "${AIFY_SESSION_MODE:-}" || exit $?
+fi
+
+# THIS SESSION'S SERVICES, PER LAUNCH (bin/aify-session-mcp.mjs): the stdio servers a service opted into every session
+# with, and the services reached over HTTP (this one's own when installed for http, as this agent from this folder),
+# added BESIDE the operator's own servers in one file that can hold keys: nothing edits ~/.claude.json, which running
+# sessions rewrite. The file is the agent's one owner-only ~/.aify/sessions/<id>/mcp.json, never the session's temp:
+# a launcher killed the way aify-env stops one skips every trap. Strict mode takes only this service's own. Base64 for
+# the reason the strict branch gives. One word, with `=`: the spaced form reads a later bare word as a second config
+# path (measured on Claude Code 2.1.286, 2026-10-01).
+# ONLY ONCE THE CLAIM ADMITS THIS START, because the file is the agent's one: written above it, a second launch the
+# lease refused rewrote the running agent's document (review of f177604). A --shared launch writes none: the run
+# aify-env starts in its place claims and writes its own.
+AIFY_SESSION_CONFIG=""
+if [ "$CLAUDE_AIFY_SHARED" != true ] && [ -n "@@SESSION_MCP_B64@@@@SESSION_HTTP_B64@@" ]; then
+  if ! AIFY_SESSION_CONFIG="$(AIFY_SESSION_STDIO_B64="@@SESSION_MCP_B64@@" AIFY_SESSION_HTTP_B64="@@SESSION_HTTP_B64@@" AIFY_SESSION_STRICT="${AIFY_CLAUDE_STRICT_MCP:-0}" \
+      AIFY_SESSION_ENDPOINT="$HARNESS_ENDPOINT" AIFY_SESSION_LAUNCHER_PID="$(aify_lease_pid "$$")" AIFY_AGENT_ID="$CLAUDE_AIFY_AGENT_ID" \
+      node "$AIFY_WRAPPER_DIR_FWD/bin/aify-session-mcp.mjs")"; then
+    echo "[claude-aify] this session's MCP entries could not be written; re-run the installer." >&2
+    exit "$HARNESS_EXIT_CONFIG"
+  fi
+  if [ -n "$AIFY_SESSION_CONFIG" ]; then CLAUDE_MCP_FLAGS+=("--mcp-config=$AIFY_SESSION_CONFIG"); fi
 fi
 
 # Managed kill-prior (2026-05-31): exactly one managed claude per agent. Reap
