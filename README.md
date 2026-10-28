@@ -264,7 +264,10 @@ it says so and starts without them.
 **Its agent's instructions.** A claude definition's `agent.instructions` is written to
 `~/.aify/sessions/<id>/instructions.txt` (a folder only its owner can open), and Claude gets it with
 `--append-system-prompt-file` and `--system-prompt-snapshot off`, so a resumed conversation picks up today's
-text rather than the text it started with. Empty instructions remove the file. Codex and hermes cannot
+text rather than the text it started with. Empty instructions remove the file. A managed launch takes them
+only from the revision aify-env admitted it at (`AIFY_DEFINITION_INCARNATION`, `AIFY_DEFINITION_REVISION`): a
+definition edited, withdrawn or unreadable since then refuses the start with 78, and an aify-env that sets
+neither starts it without them, saying so. Codex and hermes cannot
 take instructions yet, so their definitions with instructions refuse with 78. **Instructions are no place for
 secrets:** the text sits in a file on disk and in the model's context, where the agent can repeat it.
 

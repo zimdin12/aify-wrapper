@@ -9,7 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { definitionsDir, EXIT_REFUSED, instructionsAssignment, readDefinition, shellAssignments } from "../lib/agent-definition-defaults.mjs";
+import { definitionsDir, EXIT_REFUSED, instructionsAssignment, managedBinding, readDefinition, shellAssignments } from "../lib/agent-definition-defaults.mjs";
 
 const COMMAND = fileURLToPath(new URL("../bin/aify-definition.mjs", import.meta.url));
 const body = (over = {}) => ({ version: 1, agent: { id: "lead", name: "Lead", role: "reviewer", harness: "claude",
@@ -26,9 +26,12 @@ test("definitionsDir: the test override, else aify-env's default under the home"
 });
 
 test("readDefinition: found, missing, and every refusal", () => {
-  const dir = dirWith({ "lead.json": JSON.stringify(body()), "bad.json": "{ not json", "other.json": JSON.stringify(body({ id: "other", harness: "codex" })) });
+  const dir = dirWith({ "lead.json": JSON.stringify(body()), "bad.json": "{ not json", "other.json": JSON.stringify(body({ id: "other", harness: "codex" })),
+    "bound.json": JSON.stringify({ ...body({ id: "bound" }), incarnation: 3, revision: 7 }) });
   assert.deepEqual(readDefinition({ id: "lead", harness: "claude", dir }),
-    { outcome: "found", file: path.join(dir, "lead.json"), role: "reviewer", model: "opus", effort: "high", instructions: "" });
+    { outcome: "found", file: path.join(dir, "lead.json"), role: "reviewer", model: "opus", effort: "high", instructions: "", incarnation: undefined, revision: undefined });
+  const bound = readDefinition({ id: "bound", harness: "claude", dir });
+  assert.deepEqual([bound.incarnation, bound.revision], [3, 7], "the file's own binding, for a managed start to compare");
   assert.deepEqual(readDefinition({ id: "nobody", harness: "claude", dir }), { outcome: "missing", file: path.join(dir, "nobody.json") });
   assert.deepEqual(readDefinition({ id: "bad", harness: "claude", dir }).problems, ["file: not-json"]);
   assert.deepEqual(readDefinition({ id: "other", harness: "claude", dir }).problems, ["it defines a codex agent, and this is the claude launcher"]);
@@ -70,4 +73,21 @@ test("THE COMMAND: assignments and 0, or the problems and EXIT_REFUSED", () => {
   assert.equal(bad.status, EXIT_REFUSED);
   assert.match(bad.stderr, /the definition of bad .* is refused: file: not-json/);
   assert.equal(run("nobody", "claude").stdout, "AIFY_DEF_FILE=''\n");
+});
+
+test("managedBinding: a binding that is not two counters, or only half of one, refuses; a match uses the file", () => {
+  const found = { outcome: "found", file: "f", instructions: "x", incarnation: 3, revision: 7 };
+  for (const env of [{ AIFY_DEFINITION_INCARNATION: "3" }, { AIFY_DEFINITION_INCARNATION: "3", AIFY_DEFINITION_REVISION: "7.0" },
+    { AIFY_DEFINITION_INCARNATION: "03", AIFY_DEFINITION_REVISION: "7" }]) {
+    assert.match(managedBinding(found, env).refuse ?? "", /not two counters/, JSON.stringify(env));
+  }
+  assert.deepEqual(managedBinding(found, { AIFY_DEFINITION_INCARNATION: "3", AIFY_DEFINITION_REVISION: "7" }), { use: true });
+  assert.match(managedBinding(found, { AIFY_DEFINITION_INCARNATION: "4", AIFY_DEFINITION_REVISION: "7" }).refuse, /is now incarnation 3 revision 7/);
+  assert.deepEqual(managedBinding({ ...found, instructions: "" }, {}), {}, "unbound, no instructions: nothing to say");
+});
+
+test("the binding is the session's: a launch from inside a managed agent's shell that names no agent drops it", async () => {
+  // Inherited, a stray binding would refuse an unrelated start, or bind it to another agent's revision.
+  const { NAMES_THE_SESSION } = await import("../lib/inherited-session.mjs");
+  for (const name of ["AIFY_DEFINITION_INCARNATION", "AIFY_DEFINITION_REVISION"]) assert.ok(NAMES_THE_SESSION.includes(name), name);
 });

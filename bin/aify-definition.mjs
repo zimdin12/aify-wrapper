@@ -8,7 +8,9 @@
 // problems on stderr when it is refused. The launcher evaluates stdout only on exit 0.
 //
 // --managed: a launch the host started, whose payload carries the defaults the host already checked. Nothing else is
-// printed, and a definition this launcher cannot read does not stop it: it says so and starts without instructions.
+// printed. Claude's instructions come only from the revision the host admitted (AIFY_DEFINITION_INCARNATION and
+// _REVISION, lib/agent-definition-defaults.mjs managedBinding): a file at another revision, or unreadable, refuses the
+// start; a host that binds none gets a start without them, and a warning.
 //
 // THE INSTRUCTIONS. A claude definition's `agent.instructions` is written to the agent's owner-only
 // ~/.aify/sessions/<id>/instructions.txt (lib/session-folder.mjs) by `--write-instructions`, which prints
@@ -22,7 +24,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-import { definitionsDir, EXIT_REFUSED, instructionsAssignment, readDefinition, shellAssignments } from "../lib/agent-definition-defaults.mjs";
+import { definitionsDir, EXIT_REFUSED, instructionsAssignment, managedBinding, readDefinition, shellAssignments } from "../lib/agent-definition-defaults.mjs";
 import { isMainModule } from "../lib/main-module.mjs";
 import { sessionFolder, sessionsRoot, writeSessionFile } from "../lib/session-folder.mjs";
 
@@ -53,7 +55,16 @@ if (isMainModule(import.meta.url)) {
   const [id = "", harness = "", ...flags] = process.argv.slice(2);
   const managed = flags.includes("--managed");
   const result = readDefinition({ id, harness, dir: definitionsDir() });
-  if (result.outcome === "refused" && managed) {
+  if (managed && flags.includes("--write-instructions")) {
+    // Claude's managed write, after the lease claim: only from the revision aify-env admitted (managedBinding).
+    const verdict = managedBinding(result, process.env);
+    if (verdict.refuse) refuse(id, result.file, [verdict.refuse]);
+    else {
+      if (verdict.warn) process.stderr.write(`the definition of ${id}: ${verdict.warn}; this managed launch starts WITHOUT its instructions\n`);
+      const file = verdict.use ? await placeInstructions(id, result) : "";
+      if (!process.exitCode) process.stdout.write(`${instructionsAssignment(file)}\n`);
+    }
+  } else if (result.outcome === "refused" && managed) {
     // The host checked this definition and launched on it; a launcher that disagrees does not stop the fleet over it.
     // It says so, loudly, because the agent then starts without whatever instructions the file holds.
     process.stderr.write(`the definition of ${id} (${result.file}) cannot be read here (${result.problems.join("; ")}): `

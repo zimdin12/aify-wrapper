@@ -39,7 +39,8 @@ aify_read_definition() {
 # CLAUDE'S INSTRUCTIONS, as AIFY_DEF_INSTRUCTIONS_FILE: `aify_place_instructions <id>`, called only once the lease has
 # admitted the start. The file is the agent's one, so a second launch the lease refuses must not rewrite the running
 # session's (the review of f177604 found mcp.json doing so). A managed launch reads the instructions here and nothing
-# else; one that cannot says so and starts without them, because the host checked the definition and launched on it.
+# else, and only from the revision its host admitted: a file at another one, or unreadable, refuses the start (78); a
+# host that binds none starts it without them and says so (lib/agent-definition-defaults.mjs managedBinding).
 aify_place_instructions() {
   local _id="$1" _out _reader="$AIFY_WRAPPER_DIR_FWD/bin/aify-definition.mjs" _managed=""
   if [ -z "$_id" ] || [ "$AIFY_IGNORE_DEFINITION" = true ]; then return 0; fi

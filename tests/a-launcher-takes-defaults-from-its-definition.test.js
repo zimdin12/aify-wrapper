@@ -126,15 +126,18 @@ const appended = (args) => {
   return { file: at < 0 ? null : args[at + 1], snapshot: args[args.indexOf("--system-prompt-snapshot") + 1] };
 };
 const withInstructions = (id, instructions = INSTRUCTIONS) => ({ [id]: definition({ id, instructions }) });
+// A definition as aify-env writes it, at incarnation 3 revision `revision`, and the binding a start admitted there.
+const atRevision = (id, revision, instructions = INSTRUCTIONS) => ({ [id]: { ...definition({ id, instructions }), incarnation: 3, revision } });
+const ADMITTED = { AIFY_DEFINITION_INCARNATION: "3", AIFY_DEFINITION_REVISION: "7" };
 
 test("CLAUDE: instructions reach the runtime as an appended prompt file, on a launch, a resume, and a managed launch", () => {
   const cases = [
     ["named", ["--aify-agent", "lead"], "lead", {}],
     ["resumed: read for the agent the handle names", ["--resume", KNOWN], "claude-code-recovered", {}],
-    ["managed", ["--aify-agent", "lead"], "lead", { AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_AGENT_ID: "lead" }],
+    ["managed, at the revision its host admitted", ["--aify-agent", "lead"], "lead", { AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_AGENT_ID: "lead", ...ADMITTED }],
   ];
   for (const [label, args, id, env] of cases) {
-    const r = launch("claude", args, { definitions: withInstructions(id), env: { ...ownerEnv(), ...env } });
+    const r = launch("claude", args, { definitions: atRevision(id, 7), env: { ...ownerEnv(), ...env } });
     assert.equal(r.run.status, 0, `${label}: ${r.run.stderr}`);
     const { file, snapshot } = appended(r.args);
     assert.ok(file, `${label}: no --append-system-prompt-file in ${r.args.join(" ")}`);
@@ -164,6 +167,33 @@ test("CLAUDE: a managed launch that cannot read its definition, or has no reader
     assert.equal(appended(r.args).file, null, label);
     assert.match(r.run.stderr, said, `${label}: the host decides, but the agent is told nothing: say so`);
   }
+});
+
+// ONE REVISION PER START (comms P0 C7; review of c4818238, P2). The host admitted the start at one revision and its
+// payload's model, effort and role are that revision's; the file is read after the claim, so an edit in between must
+// stop the start, never pair two revisions. An aify-env that binds nothing gets the start it had before.
+test("CLAUDE: a managed launch takes instructions only from the revision its host admitted", () => {
+  const managed = { ...ownerEnv(), AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_AGENT_ID: "lead" };
+  const left = { "<home>/.aify/sessions/lead/instructions.txt": "the running session's rules" };
+  for (const [label, definitions, said] of [
+    ["edited after admission", atRevision("lead", 8), /admitted at incarnation 3 revision 7, and the definition is now incarnation 3 revision 8; start it again/],
+    ["unreadable after admission", { lead: "{ not json" }, /admitted at incarnation 3 revision 7, and the definition cannot be read now/],
+    ["withdrawn after admission", {}, /admitted at incarnation 3 revision 7, and the definition is gone/],
+  ]) {
+    const r = launch("claude", ["--aify-agent", "lead"], { definitions, env: { ...managed, ...ADMITTED }, files: left });
+    assert.equal(r.run.status, 78, `${label}: ${r.run.stderr}`);
+    assert.match(r.run.stderr, said, label);
+    assert.deepEqual(r.args, [], `${label}: the runtime started`);
+    assert.equal(r.sessionFiles["lead/instructions.txt"], "the running session's rules", `${label}: the file was touched`);
+  }
+  const unbound = launch("claude", ["--aify-agent", "lead"], { definitions: atRevision("lead", 7), env: managed, files: left });
+  assert.equal(unbound.run.status, 0, unbound.run.stderr);
+  assert.equal(appended(unbound.args).file, null, "instructions from an unbound read");
+  assert.match(unbound.run.stderr, /instructions not loaded: this aify-env does not bind the definition revision/);
+  assert.equal(unbound.sessionFiles["lead/instructions.txt"], "the running session's rules", "an unbound launch wrote or removed the file");
+  const plain = launch("claude", ["--aify-agent", "lead"], { definitions: atRevision("lead", 7, ""), env: managed });
+  assert.equal(plain.run.status, 0, plain.run.stderr);
+  assert.equal(plain.run.stderr.includes("instructions not loaded"), false, "a definition with no instructions owes no warning");
 });
 
 // THE FILE IS THE AGENT'S ONE, so only a start the lease admits may write it (the review of f177604 found mcp.json
