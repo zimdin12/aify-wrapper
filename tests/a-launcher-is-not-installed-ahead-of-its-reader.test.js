@@ -43,9 +43,12 @@ function wrapperWith(name, files) {
   return wrapper;
 }
 
+/** The helpers a launcher skips without a word, which install.sh requires beside the reader. */
+const SILENT_HELPERS = ["aify-herdr-launch.sh", "aify-node-22.sh"];
+
 test("a --wrapper-dir with no reader, or half of one: refused, naming the option, and nothing written", () => {
-  for (const wrapper of [tmp("wrapper-without-reader"), wrapperWith("wrapper-without-shell-side", ["aify-definition.mjs"]),
-    wrapperWith("wrapper-without-node-side", ["aify-definition.sh"])]) {
+  for (const wrapper of [wrapperWith("wrapper-without-reader", SILENT_HELPERS), wrapperWith("wrapper-without-shell-side", ["aify-definition.mjs", ...SILENT_HELPERS]),
+    wrapperWith("wrapper-without-node-side", ["aify-definition.sh", ...SILENT_HELPERS])]) {
     const { run, written } = install({ wrapper });
     assert.equal(run.status, 78, `${wrapper}: ${run.stdout}\n${run.stderr}`);
     assert.match(run.stderr, /has no definition reader \(bin\/aify-definition\.mjs and bin\/aify-definition\.sh\)/);
@@ -55,15 +58,29 @@ test("a --wrapper-dir with no reader, or half of one: refused, naming the option
 });
 
 test("CONTROL: the same install against a --wrapper-dir with the reader writes the launcher", () => {
-  const wrapper = wrapperWith("wrapper-with-reader", ["aify-definition.mjs", "aify-definition.sh"]);
+  const wrapper = wrapperWith("wrapper-with-reader", ["aify-definition.mjs", "aify-definition.sh", ...SILENT_HELPERS]);
   const { run, written } = install({ wrapper });
   assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
   assert.ok(written.includes("claude-aify"), `written: ${written}`);
 });
 
+test("a --wrapper-dir without a helper the launcher would skip without a word: refused, naming it, nothing written", () => {
+  // Herdr's claim and profile for every launcher; Node >= 22 for hermes only, so a claude install does not need it.
+  const reader = ["aify-definition.mjs", "aify-definition.sh"];
+  for (const [client, files, missing] of [["claude", reader, "aify-herdr-launch.sh"], ["pi", [], "aify-herdr-launch.sh"],
+    ["hermes", [...reader, "aify-herdr-launch.sh"], "aify-node-22.sh"]]) {
+    const { run, written } = install({ wrapper: wrapperWith(`wrapper-without-${missing}`, files), client });
+    assert.equal(run.status, 78, `${client}: ${run.stdout}\n${run.stderr}`);
+    assert.match(run.stderr, new RegExp(`has no bin/${missing.replaceAll(".", "\\.")}, which the ${client} launcher sources`));
+    assert.deepEqual(written, [], `${client}: written anyway`);
+  }
+  const { run } = install({ wrapper: wrapperWith("wrapper-for-claude", [...reader, "aify-herdr-launch.sh"]), client: "claude" });
+  assert.equal(run.status, 0, `CONTROL: claude needs no Node 22 helper: ${run.stderr}`);
+});
+
 test("a launcher that reads no definition is written without the reader (pi; review of 0.8.2)", () => {
   // Which launchers are held is read from their templates; pi's has no reader call, so holding it held nothing.
-  const { run, written } = install({ wrapper: tmp("wrapper-without-reader"), client: "pi" });
+  const { run, written } = install({ wrapper: wrapperWith("wrapper-without-reader", ["aify-herdr-launch.sh"]), client: "pi" });
   assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
   assert.ok(written.includes("pi-aify"), `written: ${written}`);
 });

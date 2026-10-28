@@ -37,6 +37,10 @@ function launch({ env = {}, listFails = false } = {}) {
   const home = path.join(dir, "home");
   const bridge = path.join(dir, "bridge");
   for (const d of [out, stubs, home, bridge]) fs.mkdirSync(d, { recursive: true });
+  // A configured channel server, as the service installer leaves one: without it the launcher refuses (78) to start a
+  // session no message could reach, which is the launcher working, not what this test measures.
+  fs.writeFileSync(path.join(bridge, "claude-channel.js"), "// the channel\n");
+  fs.writeFileSync(path.join(home, ".claude.json"), JSON.stringify({ mcpServers: { "aify-comms-channel": { command: "node", args: [path.join(bridge, "claude-channel.js")] } } }));
 
   const rendered = spawnSync("bash", [INSTALL, "--registry", emptyRegistry(), "--client", "claude", "--endpoint", NOWHERE,
     "--render-only", out, "--bridge-dir", bridge], { encoding: "utf8", timeout: 120_000 });
@@ -142,7 +146,10 @@ test("A CLAIMED PANE FOLLOWS THE AGENT: working, blocked, working again, idle", 
 test("OUTSIDE HERDR the settings are exactly what they were", { skip: WIN }, () => {
   const { config, reports } = launch();
   assert.deepEqual(Object.keys(config.hooks).sort(), ["SessionStart", "UserPromptSubmit"]);
-  assert.equal(config.hooks.UserPromptSubmit[0].hooks.length, 1);
+  // Counted once, and broken when the turn-start runner joined UserPromptSubmit; what Herdr adds is what is measured.
+  const commands = config.hooks.UserPromptSubmit.flatMap((group) => group.hooks.map((hook) => hook.command));
+  assert.deepEqual(commands.filter((command) => /aify-herdr-state/.test(command)), [], commands.join("\n"));
+  assert.match(commands[0], /claude-session-hook\.js/, "the session-id hook the launcher always had is still first");
   assert.deepEqual(reports(), []);
 });
 

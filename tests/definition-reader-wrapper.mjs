@@ -21,6 +21,8 @@ export const READER_FILES = Object.freeze([
   "bin/aify-definition.mjs", "bin/aify-definition.sh", "lib/agent-definition-defaults.mjs", "lib/agent-definition-schema.mjs", "lib/main-module.mjs",
   "bin/aify-claude-default-model.mjs", "lib/claude-default-model.mjs",
   "bin/aify-tool-hook-json.sh",
+  // The helpers install.sh requires because a launcher skips them without a word (Herdr's claim, hermes' Node >= 22).
+  "bin/aify-herdr-launch.sh", "bin/aify-node-22.sh",
   // The per-launch session entries claude-aify writes (bin/aify-session-mcp.mjs), with the credential store's reader.
   "bin/aify-session-mcp.mjs", "lib/session-http.mjs", "lib/credential-custody.mjs", "lib/registry.mjs", "lib/session-hermes.mjs", "lib/session-codex.mjs",
   "lib/credential-file.mjs", "lib/machine-id.mjs", "lib/session-folder.mjs", "lib/process-identity.mjs",

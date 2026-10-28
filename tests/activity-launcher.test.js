@@ -20,7 +20,7 @@ function fixture({ enabled = '1', managed = false, claimed = false, rewrite = fa
   for (const k of ['HOME', 'USERPROFILE', 'TEMP', 'TMP', 'TMPDIR', 'APPDATA', 'LOCALAPPDATA', 'HERMES_HOME']) env[k] = dir;
   const out = path.join(dir, 'out'), bridge = path.join(dir, 'bridge'), wrapper = path.join(dir, 'wrapper with spaces'), stubs = path.join(dir, 'stubs');
   for (const d of [out, bridge, wrapper, stubs]) fs.mkdirSync(d);
-  for (const file of ['bin/aify-tool-event.mjs', 'bin/aify-tool-hook-json.sh', 'bin/aify-herdr-state.sh', 'bin/aify-herdr-pane.mjs', ...fs.readdirSync(path.join(ROOT, 'lib')).filter(n => n.endsWith('.mjs')).map(n => `lib/${n}`)]) {
+  for (const file of ['bin/aify-tool-event.mjs', 'bin/aify-tool-hook-json.sh', 'bin/aify-herdr-state.sh', 'bin/aify-herdr-pane.mjs', 'bin/aify-herdr-launch.sh', ...fs.readdirSync(path.join(ROOT, 'lib')).filter(n => n.endsWith('.mjs')).map(n => `lib/${n}`)]) {
     const to = path.join(wrapper, file); fs.mkdirSync(path.dirname(to), { recursive: true }); fs.copyFileSync(path.join(ROOT, file), to);
   }
   const registry = path.join(dir, 'registry'); fs.writeFileSync(registry, '');

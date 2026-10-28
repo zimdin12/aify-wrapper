@@ -52,6 +52,10 @@ function launch({ env = {}, listFails = false } = {}) {
   const home = path.join(dir, "home");
   const bridge = path.join(dir, "bridge");
   for (const d of [out, stubs, home, bridge]) fs.mkdirSync(d, { recursive: true });
+  // A configured channel server, as the service installer leaves one: without it the launcher refuses (78) to start a
+  // session no message could reach, which is the launcher working, not what this test measures.
+  fs.writeFileSync(path.join(bridge, "claude-channel.js"), "// the channel\n");
+  fs.writeFileSync(path.join(home, ".claude.json"), JSON.stringify({ mcpServers: { "aify-comms-channel": { command: "node", args: [path.join(bridge, "claude-channel.js")] } } }));
 
   const rendered = spawnSync("bash", [INSTALL, "--registry", emptyRegistry(), "--client", "claude", "--endpoint", NOWHERE,
     "--render-only", out, "--bridge-dir", bridge], { encoding: "utf8", timeout: 120_000 });

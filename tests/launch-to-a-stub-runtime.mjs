@@ -8,6 +8,9 @@
 // past waiting for it. Nothing contacts a service: the endpoint is 127.0.0.2:1. HOME, the temp
 // directories and the definitions directory are the run's own; nothing of this machine's environment
 // reaches the launcher but what a shell needs.
+//
+// IMPORTED BY AIFY-ENV, by path (its instructions composition test): `launch(client, args, {definitions, env})`
+// and the result's `run`, `args`, `sessionFiles` and `home` are an interface across repos. Tell aify-env first.
 
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";

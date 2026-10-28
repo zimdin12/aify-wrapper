@@ -76,82 +76,13 @@ fi
 # one the moment either side changes -- and the drift would only show up after a reboot.
 AIFY_HERDR_ARGV=("$0" "$@")
 
-# ── Herdr: give this agent back the profile the HOST had ───
-#
-# `herdr-aify` runs an isolated Herdr whose XDG roots point inside one invocation's directory, and
-# everything started in a pane inherits them. That isolation is Herdr's, not the agent's: an agent
-# that kept it would write its profile and logs into a directory that is deleted when the invocation
-# ends. The launcher records what the host had, and this puts it back.
-#
-# `${VAR+set}` DISTINGUISHES SET-BUT-EMPTY FROM NEVER-SET, so a host with no XDG_CONFIG_HOME leaves
-# the agent without one instead of being handed an empty string.
-#
-# An ordinary launch never enters this: nothing sets AIFY_HERDR_ISOLATED outside a dedicated instance.
-if [ "${AIFY_HERDR_ISOLATED:-}" = "1" ]; then
-  if [ -n "${AIFY_HERDR_HOST_XDG_CONFIG_HOME+set}" ]; then
-    export XDG_CONFIG_HOME="$AIFY_HERDR_HOST_XDG_CONFIG_HOME"
-  else
-    unset XDG_CONFIG_HOME
-  fi
-  if [ -n "${AIFY_HERDR_HOST_XDG_STATE_HOME+set}" ]; then
-    export XDG_STATE_HOME="$AIFY_HERDR_HOST_XDG_STATE_HOME"
-  else
-    unset XDG_STATE_HOME
-  fi
-fi
-
-# ── Herdr: claim this pane so it comes back as this wrapper, not as a bare agent ───
-#
-# WHAT IT BUYS. Start this wrapper in a Herdr pane, restart the machine, and the pane comes back
-# running this wrapper again instead of the bare CLI underneath it.
-#
-# HOW, measured against Herdr 0.9.0 rather than assumed: the claim labels the pane and reports the
-# agent under the source `herdr:aify`, which is NOT one of the (source, agent) pairs Herdr's own
-# allowlist contains. Herdr therefore persists no agent session for this pane, and on restore leaves
-# it an empty shell carrying its label -- which the aify plugin's startup hook matches against its
-# ledger and fills with this exact command. Panes running a bare `claude` or `hermes` are untouched
-# and keep Herdr's native resume, which is the half of the contract that must not regress.
-#
-# GATED ON HERDR_ENV so an ordinary terminal launch pays nothing: that variable is set only inside a
-# pane, and without it this block never starts node at all. A managed worker whose pane aify-env
-# names in AIFY_HERDR_PANE_FILE resolves the paths too, for the status hooks below, but claims nothing.
-#
-# IT CAN NEVER FAIL THE LAUNCH. This runs on the path of the operator starting an agent, so a Herdr
-# that is busy, mid-handoff or gone costs the pane its label and never costs the agent its start.
-if [ "${HERDR_ENV:-}" = "1" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then
-  # From the wrapper's own install root, converted for node once at the top of this file.
-  AIFY_HERDR_HELPER="$AIFY_WRAPPER_DIR_FWD/bin/aify-herdr-pane.mjs"
-  # STDERR GOES TO A LOG, NOT TO NOWHERE. It used to go to /dev/null, which made every failure of
-  # this feature -- a lost record, a pane labelled but never reported, a refused relaunch -- invisible
-  # until a reboot did not bring an agent back, with nothing anywhere saying why. It stays off the
-  # agent's terminal, because this must not print into the operator's session.
-  # The log directory may not exist on a host where no wrapper has ever claimed a pane, and a
-  # redirect into a missing directory fails IN THE SHELL before node runs -- printing its own
-  # error into the operator's terminal. So it is created first, and the log falls back to nowhere
-  # if it cannot be. Both lines return 0 whatever happens.
-  AIFY_HERDR_LOG="${HOME:-.}/.aify/herdr/claim.log"
-  mkdir -p "${HOME:-.}/.aify/herdr" 2>/dev/null || AIFY_HERDR_LOG=/dev/null
-  # The claim prints `claimed` only when the pane is ours, which is what lets the agent's hooks report
-  # its state. `|| AIFY_HERDR_CLAIM=""` keeps a failed claim from aborting under `set -e`.
-  if [ "${HERDR_ENV:-}" = "1" ]; then
-    AIFY_HERDR_CLAIM="$(node "$AIFY_HERDR_HELPER" claim --wrapper "${0##*/}" -- "${AIFY_HERDR_ARGV[@]}" 2>>"$AIFY_HERDR_LOG")" || AIFY_HERDR_CLAIM=""
-    # HERDR'S OWN AGENT INTEGRATION MUST NOT SPEAK FOR A PANE THIS CLAIM OWNS. Herdr installs a
-    # SessionStart hook into the agent's own configuration -- `HERDR_INTEGRATION_ID=hermes` -- and that
-    # hook runs INSIDE the agent this launcher starts. It sends `pane.report_agent_session` under Herdr's
-    # own source with the agent's session id, which OVERWRITES the `herdr:aify` report the claim just
-    # made. Herdr then persists a resumable session for the pane after all and, at the next start,
-    # natively types a BARE agent command into it: no wrapper, no lease, no bridge, and the aify restore
-    # refuses the pane because Herdr reported an agent on it. Measured 2026-09-16 against Herdr 0.9.0.
-    #
-    # THE HOOK GATES ON HERDR_PANE_ID, so taking that one variable out of the agent's environment is what
-    # stops it, and it stops nothing else. aify's own state hooks read the pane from AIFY_HERDR_PANE_ID
-    # instead, and a pane this launcher did NOT claim keeps its variable, its integration and Herdr's
-    # native resume exactly as before -- which is the half of the contract that must not regress.
-    if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] && [ -n "${HERDR_PANE_ID:-}" ]; then
-      export AIFY_HERDR_PANE_ID="$HERDR_PANE_ID"
-      unset HERDR_PANE_ID
-    fi
-  fi
+# ── Herdr: the host's profile given back, and this pane claimed (bin/aify-herdr-launch.sh) ───
+# A wrapper without the helper does neither, as an ordinary terminal launch does not; neither can fail the launch.
+AIFY_HERDR_LAUNCH_SH="@@WRAPPER_DIR@@/bin/aify-herdr-launch.sh"
+if [ -r "$AIFY_HERDR_LAUNCH_SH" ]; then
+  . "$AIFY_HERDR_LAUNCH_SH"
+  aify_herdr_restore_profile
+  aify_herdr_claim_pane
 fi
 
 # The version this wrapper was GENERATED from, read by `aify-comms doctor`'s wrapper-current check.
@@ -663,70 +594,13 @@ if [ -n "${AIFY_AGENT_ID:-}" ]; then
   fi
 fi
 
-# Node >=22 guarantee. The Hermes Ink TUI's gateway client attaches over a
-# WebSocket using the global `WebSocket` constructor, which only exists in
-# Node 22+. When the aify-comms bridge spawns this wrapper as a managed
-# worker it runs under a non-interactive login shell (e.g. `zsh -lc`), which
-# does NOT source .zshrc — so an nvm default of Node 22 is invisible and PATH
-# falls back to a system Node 20. The TUI then dies with "gateway exited",
-# but the SAME wrapper works when launched from an interactive terminal. Pin
-# a Node >=22 here so managed and interactive launches behave identically.
-# Opt out with AIFY_HERMES_SKIP_NODE_CHECK=1.
-aify_node_major_of() {
-  local nbin="$1" ver
-  ver="$("$nbin" -v 2>/dev/null)" || return 1
-  ver="${ver#v}"
-  printf '%s' "${ver%%.*}"
-}
-
-aify_ensure_node_ge_22() {
-  [ "${AIFY_HERMES_SKIP_NODE_CHECK:-0}" = "1" ] && return 0
-  local current_major=""
-  if command -v node >/dev/null 2>&1; then
-    current_major="$(aify_node_major_of node || true)"
-  fi
-  if [ -n "$current_major" ] && [ "$current_major" -ge 22 ] 2>/dev/null; then
-    return 0
-  fi
-  # 1. Honor an explicitly configured HERMES_NODE if it is >=22.
-  if [ -n "${HERMES_NODE:-}" ] && [ -x "${HERMES_NODE:-}" ]; then
-    local hm
-    hm="$(aify_node_major_of "$HERMES_NODE" || true)"
-    if [ -n "$hm" ] && [ "$hm" -ge 22 ] 2>/dev/null; then
-      PATH="$(dirname "$HERMES_NODE"):$PATH"
-      export PATH HERMES_NODE
-      return 0
-    fi
-  fi
-  # 2. Scan nvm-installed versions for the highest major >=22 (parse the
-  #    version dir name so we don't exec every candidate during the scan).
-  local nvm_root="${NVM_DIR:-$HOME/.nvm}"
-  local best_bin="" best_major=0 candidate vdir cand_major
-  if [ -d "$nvm_root/versions/node" ]; then
-    for candidate in "$nvm_root"/versions/node/v*/bin/node; do
-      [ -x "$candidate" ] || continue
-      vdir="$(basename "$(dirname "$(dirname "$candidate")")")"
-      cand_major="${vdir#v}"; cand_major="${cand_major%%.*}"
-      case "$cand_major" in ''|*[!0-9]*) continue ;; esac
-      if [ "$cand_major" -ge 22 ] && [ "$cand_major" -gt "$best_major" ]; then
-        best_major="$cand_major"
-        best_bin="$candidate"
-      fi
-    done
-  fi
-  if [ -n "$best_bin" ]; then
-    PATH="$(dirname "$best_bin"):$PATH"
-    export PATH
-    export HERMES_NODE="$best_bin"
-    return 0
-  fi
-  # 3. Nothing suitable found. Warn; the TUI may fail with "gateway exited".
-  echo "[hermes-aify] WARNING: Node >=22 not found (current node: ${current_major:-none})." >&2
-  echo "[hermes-aify]   The Hermes TUI gateway client needs Node 22+ (global WebSocket)." >&2
-  echo "[hermes-aify]   Install via nvm (nvm install 22) or set HERMES_NODE to a Node>=22 binary." >&2
-  return 0
-}
-aify_ensure_node_ge_22
+# Node >= 22 for the Hermes TUI's gateway client, and why (bin/aify-node-22.sh). Without the helper the launch goes on with
+# whatever node is on PATH, as it would with AIFY_HERMES_SKIP_NODE_CHECK=1.
+AIFY_NODE_22_SH="@@WRAPPER_DIR@@/bin/aify-node-22.sh"
+if [ -r "$AIFY_NODE_22_SH" ]; then
+  . "$AIFY_NODE_22_SH"
+  aify_ensure_node_ge_22
+fi
 
 # Bypass flags for the default TUI launch only. Mirrors claude-aify's
 # CLAUDE_PERMISSION_FLAGS — applied to the interactive chat/TUI launch, not to

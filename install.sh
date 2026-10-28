@@ -305,6 +305,22 @@ if [ -z "$RENDER_ONLY" ] && [ "${#READING_CLIENTS[@]}" -gt 0 ] \
   echo "            Point --wrapper-dir at an installed aify-wrapper, or leave it out to use this one." >&2
   exit "$EXIT_CONFIG"
 fi
+# THE SAME FOR THE HELPERS A LAUNCHER SKIPS WITHOUT A WORD: Herdr's claim and profile (bin/aify-herdr-launch.sh) and
+# hermes' Node >= 22 (bin/aify-node-22.sh). Neither can fail a launch, so a --wrapper-dir without one would install
+# launchers that silently lose what it does. Which launchers need which is read from their templates.
+if [ -z "$RENDER_ONLY" ]; then
+  for _helper in aify-herdr-launch.sh aify-node-22.sh; do
+    _needing=()
+    for _client in "${CLIENTS[@]}"; do
+      if grep -q "bin/$_helper" "$HERE/wrappers/$_client-aify.sh.in" 2>/dev/null; then _needing+=("$_client"); fi
+    done
+    if [ "${#_needing[@]}" -gt 0 ] && [ ! -f "$WRAPPER_DIR/bin/$_helper" ]; then
+      echo "install.sh: $WRAPPER_DIR has no bin/$_helper, which the ${_needing[*]} launcher sources." >&2
+      echo "            Point --wrapper-dir at an installed aify-wrapper, or leave it out to use this one." >&2
+      exit "$EXIT_CONFIG"
+    fi
+  done
+fi
 
 # The same session services for codex, as NUL-terminated `-c` words in base64, built only when a codex
 # launcher is being written. What the verb refuses is codex's own limit (a server name that is not a bare
