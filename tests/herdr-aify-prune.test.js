@@ -19,7 +19,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 
-import { invocationsOnDisk, prunePlan, pruneInvocations } from "../bin/herdr-aify.mjs";
+import { invocationsOnDisk, prunePlan, pruneInvocations } from "../lib/herdr-records.mjs";
 
 /** A profile root holding the invocations named, each with the receipts of a finished launch. */
 function profileWith(invocations, { spent = true } = {}) {

@@ -32,8 +32,6 @@
 
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import process from "node:process";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -44,13 +42,9 @@ import { resolveHerdrBinary } from "../lib/herdr-binary.mjs";
 import { herdrServerEnv, profilePaths, residentPaths } from "../lib/herdr-profile.mjs";
 import { ensureResident, serverEnvFor } from "../lib/herdr-resident.mjs";
 import { HerdrOwner, claimStart, clearProfileOwner, profileOwnerState, writeProfileOwner } from "../lib/herdr-owner.mjs";
+import { defaultProfileRoot, invocationStatus, pruneInvocations } from "../lib/herdr-records.mjs";
 import { stopRecorded, stopTarget } from "../lib/herdr-stop.mjs";
 import { HerdrAifyInstance } from "../lib/herdr-supervisor.mjs";
-
-/** Every invocation of every herdr-aify on this host lives under here. */
-export function defaultProfileRoot({ home = os.homedir() } = {}) {
-  return path.join(home, ".aify", "herdr");
-}
 
 /** The real process control the supervisor is given. Injected there; concrete only here. */
 const processes = {
@@ -124,24 +118,6 @@ const clock = {
   sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
 };
 
-/** What previous invocations left on this host, for an operator who wants to look. */
-export function invocationsOnDisk({ profileRoot = defaultProfileRoot(), io = fs } = {}) {
-  const dir = path.join(profileRoot, "invocations");
-  let names = [];
-  try {
-    names = io.readdirSync(dir);
-  } catch {
-    return [];
-  }
-  return names.map(name => {
-    const root = path.join(dir, name);
-    const used = ["owned-processes.json", "ready.json", "claimed.json"].filter(file =>
-      io.existsSync(path.join(root, file)),
-    );
-    return { invocation: name, root, used, spent: used.length > 0 };
-  });
-}
-
 /**
  * What the operator is told a teardown did.
  *
@@ -173,78 +149,6 @@ export function teardownLine(result) {
       ? "could not confirm it is gone - check herdr-aify --status"
       : "STILL ANSWERING - check herdr-aify --status";
   return `herdr-aify: stopped (${how}, ${outcome})`;
-}
-
-/**
- * Which recorded invocations may be deleted, given which ones something is still answering for.
- *
- * PURE, and separate from the deleting, because the deciding is the part that can be wrong in a way
- * nobody notices until state is already gone.
- *
- * A LIVE INVOCATION IS ONE WHOSE OWN SOCKET ANSWERS, not one the owner pointer happens to name. The
- * pointer records a single current instance, so keying on it would delete the directory of a Herdr
- * that is still running because its launcher was killed without a signal -- which is the exact
- * situation this feature already has a command for.
- *
- * A DIRECTORY WHOSE NAME IS NOT AN INVOCATION IS LEFT ALONE. Nothing here put it there, so nothing
- * here should decide it is rubbish.
- */
-export function prunePlan(records, { live = [], unknown = [] } = {}) {
-  const answering = new Set(live);
-  // A PROBE THAT COULD NOT TELL KEEPS THE DIRECTORY. Deleting on a timeout would remove the receipts
-  // of an instance that is merely slow -- the receipts that stop a later launch adopting its workers.
-  const unanswered = new Set(unknown);
-  const remove = [];
-  const keep = [];
-  for (const record of records) {
-    if (!UUID_V4.test(record.invocation)) keep.push({ ...record, why: "not an invocation" });
-    else if (answering.has(record.invocation)) keep.push({ ...record, why: "still answering" });
-    else if (unanswered.has(record.invocation)) keep.push({ ...record, why: "could not tell whether it is running" });
-    else remove.push(record);
-  }
-  return Object.freeze({ remove, keep });
-}
-
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-
-/**
- * Delete what previous invocations left behind, keeping anything still running.
- *
- * WHY THIS EXISTS. Every launch mints a directory and nothing ever removed one, so `--status` -- the
- * command an operator reaches for when something is wrong -- grows a page longer every time the
- * feature is used, and the useful line is buried under the residue of launches that failed months
- * ago. Twelve had accumulated in a day of testing.
- *
- * EACH ONE IS PROBED ON ITS OWN SOCKET before it is deleted, so a running instance whose launcher
- * was killed keeps its context file and its receipts -- which are what stop a later invocation
- * adopting its workers.
- */
-export function pruneInvocations({ profileRoot = defaultProfileRoot(), env = process.env, io = fs, cli = herdr } = {}) {
-  const records = invocationsOnDisk({ profileRoot, io });
-  const answers = records
-    .filter(record => UUID_V4.test(record.invocation))
-    .map(record => {
-      const paths = profilePaths({ profileRoot, invocation: record.invocation });
-      const read = cli(["pane", "list"], { bin: resolveHerdrBinary({ env }).bin, env: herdrServerEnv(env, paths) });
-      return { invocation: record.invocation, answer: serverAnswer(read) };
-    });
-  // ONLY HERDR SAYING "NOTHING IS RUNNING HERE" MAKES A DIRECTORY REMOVABLE. See `serverAnswer`.
-  const live = answers.filter(a => a.answer === "serving").map(a => a.invocation);
-  const unknown = answers.filter(a => a.answer === "unknown").map(a => a.invocation);
-
-  const plan = prunePlan(records, { live, unknown });
-  let removed = 0;
-  for (const record of plan.remove) {
-    try {
-      io.rmSync(record.root, { recursive: true, force: true });
-      removed += 1;
-    } catch (err) {
-      process.stderr.write(`herdr-aify: could not remove ${record.invocation}: ${err?.message || err}\n`);
-    }
-  }
-  const kept = plan.keep.map(record => `${record.invocation} (${record.why})`);
-  process.stderr.write(`herdr-aify: removed ${removed} of ${records.length} invocation(s)${kept.length ? `; kept ${kept.join(", ")}` : ""}\n`);
-  return 0;
 }
 
 /**
@@ -646,17 +550,18 @@ const USAGE = [
   "  herdr-aify env    a dedicated Herdr with its own aify-env, for MANAGED work. Leaving it DETACHES;",
   "                    a second `herdr-aify env` attaches to it. A new one never adopts an ended one's workers.",
   "                    It needs a terminal with a size, and refuses without one; `--no-attach` starts it headless.",
-  "  --status          every invocation on disk. spent = used (its id is never reused), not dead.",
+  "  --status          every invocation on disk. spent = used (its id is never reused), not dead; `current` is the one",
+  "                    `herdr-aify env` attaches to, and `serving` (true, false or \"unknown\") says whether it is running.",
   "  --stop            end this host's herdr; `herdr-aify env --stop` ends the env instance. `herdr server stop` cannot:",
   "                    this profile keeps its own socket, which is what isolates it from your herdr.",
 ].join(String.fromCharCode(10)) + String.fromCharCode(10);
 
-async function main(argv, { io = process, runner = run } = {}) {
+async function main(argv, { io = process, runner = run, status = invocationStatus } = {}) {
   // `stop`, `server stop`, `status`, `prune`: the spelling herdr itself uses, answered rather than refused.
   const asFlag = flagForSubcommand(argv);
   if (asFlag) argv = [...argv, asFlag];
   if (argv.includes("--status")) {
-    process.stdout.write(`${JSON.stringify(invocationsOnDisk(), null, 1)}\n`);
+    io.stdout.write(`${JSON.stringify(await status(), null, 1)}\n`);
     return 0;
   }
   if (argv.includes("--stop")) return stopRecorded({ profileRoot: defaultProfileRoot(), target: stopTarget(argv) });

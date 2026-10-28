@@ -17,7 +17,7 @@ import path from "node:path";
 import { test } from "node:test";
 
 import { installPlugin, parseArgs } from "../bin/aify-herdr-pane.mjs";
-import { defaultProfileRoot, invocationsOnDisk } from "../bin/herdr-aify.mjs";
+import { defaultProfileRoot, invocationStatus, invocationsOnDisk } from "../lib/herdr-records.mjs";
 
 test("the wrapper's own argv is taken verbatim from after the separator", () => {
   // It is replayed by a restore, so anything this parser 'understood' would be a way for the replayed
@@ -62,6 +62,56 @@ test("a spent invocation is reported as spent, which is what makes resurrection 
 
 test("a host that has never run the command reports nothing rather than failing", () => {
   assert.deepEqual(invocationsOnDisk({ profileRoot: path.join(os.tmpdir(), "aify-herdr-never-run-here") }), []);
+});
+
+/** A profile holding two spent invocations, and the socket answer `--status` will be given for the current one. */
+async function statusWith(current, result) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "aify-herdr-current-"));
+  const ids = ["33333333-3333-4333-8333-333333333333", "44444444-4444-4444-8444-444444444444"];
+  for (const id of ids) {
+    fs.mkdirSync(path.join(root, "invocations", id), { recursive: true });
+    fs.writeFileSync(path.join(root, "invocations", id, "ready.json"), "{}");
+  }
+  const asked = [];
+  const rows = await invocationStatus({
+    profileRoot: root, env: { HERDR_BIN_PATH: "herdr-this-test-never-runs" },
+    owner: async () => (current ? { owned: false, reason: "stale-pointer", invocation: ids[current] } : { owned: false, reason: "no-pointer" }),
+    cli: (argv, { env }) => (asked.push(env.XDG_CONFIG_HOME), result),
+  });
+  return { root, ids, asked, byId: Object.fromEntries(rows.map(row => [row.invocation, row])) };
+}
+
+test("--status says which invocation is current and asks only its own socket whether it is serving", async () => {
+  // THE WORK-PC REHEARSAL (2026-10-28): `spent: true` was read as "finished" on an instance that was running. Spent
+  // stays what it is; `current` and `serving` answer the question. The pointer's launcher being gone (detached) is the
+  // ordinary case, so it decides nothing here: the socket does.
+  for (const [result, serving] of [[{ ok: true }, true], [{ ok: false, code: "server_not_running" }, false], [{ ok: false, error: "timed out" }, "unknown"]]) {
+    const { root, ids, asked, byId } = await statusWith(1, result);
+    assert.equal(byId[ids[1]].current, true);
+    assert.equal(byId[ids[1]].serving, serving, JSON.stringify(result));
+    assert.equal(byId[ids[1]].spent, true, "spent is still reported, unchanged");
+    assert.equal(byId[ids[0]].current, false);
+    assert.equal("serving" in byId[ids[0]], false, "a row nobody asked about claims nothing");
+    assert.deepEqual(asked, [path.join(root, "invocations", ids[1], "herdr-config")], "asked another socket, or more than one");
+  }
+});
+
+test("`herdr-aify --status` and `status` print what invocationStatus says, as JSON", async () => {
+  // The command's own wiring: it printed invocationsOnDisk, which has no `current`, for as long as nothing drove it.
+  const { main } = await import("../bin/herdr-aify.mjs");
+  const rows = [{ invocation: "x", spent: true, current: true, serving: true }];
+  for (const argv of [["--status"], ["status"]]) {
+    let printed = "";
+    const io = { stdout: { write: chunk => (printed += chunk) }, stderr: { write: () => true } };
+    assert.equal(await main(argv, { io, status: async () => rows, runner: () => assert.fail("--status started something") }), 0);
+    assert.deepEqual(JSON.parse(printed), rows, argv.join(" "));
+  }
+});
+
+test("--status with no pointer: every row is not current, and no socket is asked", async () => {
+  const { ids, asked, byId } = await statusWith(null, { ok: true });
+  assert.deepEqual(ids.map(id => byId[id].current), [false, false]);
+  assert.deepEqual(asked, []);
 });
 
 test("the plugin link points at a directory that really holds the manifest", () => {

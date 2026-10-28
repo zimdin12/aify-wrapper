@@ -43,7 +43,7 @@ hand -- the resident links it into its own profile:
 herdr-aify                       # this host's persistent Herdr: residents only, no aify-env
 herdr-aify env                   # an isolated Herdr with a dedicated aify-env in its first space
 herdr-aify env --no-attach       # the same, headless: without a terminal, plain `env` refuses
-herdr-aify --status              # what previous invocations left on this host (spent = used, not dead)
+herdr-aify --status              # what previous invocations left (spent = used, not dead); `current` and `serving` say which one runs
 herdr-aify --stop                # end this host's resident Herdr, from any shell
 herdr-aify env --stop            # end the env instance: its Herdr, its aify-env and their workers
 herdr-aify --prune               # delete what dead invocations left behind
