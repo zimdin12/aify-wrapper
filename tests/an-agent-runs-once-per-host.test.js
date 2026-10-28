@@ -43,9 +43,16 @@ async function grandchildOf(proc) {
 function alive(pid) {
   try {
     process.kill(pid, 0);
-    return true;
   } catch {
     return false;
+  }
+  // A ZOMBIE IS NOT RUNNING. A stopped runtime is a grandchild nobody here waits on, so it is reaped only by PID 1, and
+  // in a container whose PID 1 reaps nothing it stays a zombie that signal 0 still finds (Linux run, 2026-10-28).
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+    return stat[stat.lastIndexOf(")") + 2] !== "Z";
+  } catch {
+    return true;
   }
 }
 
