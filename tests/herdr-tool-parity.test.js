@@ -38,7 +38,7 @@ for (const [name, extra, contents] of cases) test(`combined working preserves pr
   const calls = () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse) : [];
   const old = spawnSync('sh', [path.join(ROOT, 'bin/aify-herdr-state.sh').replaceAll('\\', '/'), 'working'], { env, input: '{}', encoding: 'utf8' });
   assert.equal(old.status, 0); assert.equal(old.stdout + old.stderr, ''); const expected = calls();
-  // The report itself, not its delivery: reportToolWorking gives herdr 1500 ms, and this fake herdr is a node start,
+  // The report itself, not its delivery: reportToolWorking gives herdr 4000 ms (it was 1500), and this fake herdr is a node start,
   // which a loaded host took 3.4 s to make, so a spawned comparison read a missed deadline as divergence.
   // bin/aify-tool-event.mjs hands this function process.env; activity-launcher.test.js holds the delivery.
   const report = herdrToolReport({ env, firedAt: Date.now() });

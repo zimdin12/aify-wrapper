@@ -34,7 +34,7 @@ function fixture({ enabled = '1', managed = false, claimed = false, rewrite = fa
   if (managed) env.AIFY_HERDR_PANE_FILE = path.join(dir, 'pane');
   const trace = path.join(dir, 'trace'), preload = path.join(dir, 'private-native-sink.mjs');
   fs.writeFileSync(preload, `import fs from 'node:fs'; fs.appendFileSync(process.env.ACTIVITY_TRACE,JSON.stringify({exe:process.execPath,version:process.version,args:process.argv.slice(1)})+'\\n');`);
-  // Herdr is bash running `pane` from PATH, not node: the working report gives herdr 1500 ms, and a node start with this
+  // Herdr is bash running `pane` from PATH, not node: the working report gives herdr 4000 ms (it was 1500), and a node start with this
   // preload took up to 3.4 s on a loaded host, which read as a missing report. The script uses only builtins.
   fs.writeFileSync(path.join(stubs, 'pane'), `printf '{"exe":"herdr","args":["pane","%s"]}\\n' "$1" >> "$ACTIVITY_TRACE"\nif [ "$1" = list ]; then printf '%s' '{"result":{"panes":[{"pane_id":"wA:pB","terminal_id":"owned-terminal"}]}}'; fi\n`);
   Object.assign(env, { HERDR_BIN_PATH: bash, NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`, ACTIVITY_TRACE: trace });

@@ -17,3 +17,7 @@ AIFY_ENV_REPO="C:/path/to/aify-env" AIFY_COMMS_REPO="C:/path/to/aify-comms" npm 
 Install dependencies in the env checkout and the comms checkout's `mcp/stdio` package first. The maintained runner supplies private homes and temporary roots. Tests execute rendered hook commands with synthetic tool input and reopen the files written. This does not establish live Claude timing, network delivery or activation.
 
 Native logs, compiling mutation controls, calibrated write-byte measurements and executed drivers remain in ignored clone storage for owner review, not in this public directory.
+
+## The working report's budget (2026-10-28)
+
+`activity-launcher.test.js`, "malformed input ... cannot suppress working", failed in three of four full runs on 2026-10-28 (3, 4 and 3 of 5 reports seen) and passed every time its file ran alone. The budget it met was the product's own: `reportToolWorking` killed the herdr call at 1500 ms, which a loaded Windows host exceeds; its cost there was not timed, only inferred, because the kill is the one path that drops a report from the same inputs. Fixed, not called flaky: the budget is 4000 ms, inside the hook's 5 s, which is the only bound the shell owner it replaced ever had. If the test still drops reports in full runs, the cause is not this budget and the call gets timed.
