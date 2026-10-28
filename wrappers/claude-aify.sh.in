@@ -843,7 +843,7 @@ fi
 # THE SERVICE'S TOOLS, PER LAUNCH (0.9.11). Installed with --mcp-transport http, the comms tools are the service's
 # /mcp/http called as this agent, a header nothing machine-wide can hold. The service's installed copy prints the
 # entry (URL and header are its contract); this places it, and the EXIT trap removes it.
-AIFY_COMMS_MCP_CONFIG=""
+AIFY_COMMS_MCP_CONFIG=""; unset AIFY_COMMS_MCP  # the switch is this install's, never a shell's an http launch exported
 if [ "@@MCP_TRANSPORT@@" = "http" ]; then
   AIFY_COMMS_MCP_CONFIG="$(mktemp -t @@SERVICE_NAME@@-mcp.XXXXXX.json 2>/dev/null || mktemp -t @@SERVICE_NAME@@-mcp)"
   if ! node "$AIFY_BRIDGE_DIR_FWD/comms-http-entry.mjs" "$HARNESS_ENDPOINT" "@@SERVICE_NAME@@" "$CLAUDE_AIFY_AGENT_ID" > "$AIFY_COMMS_MCP_CONFIG"; then

@@ -96,6 +96,8 @@ started = time.monotonic()
 results = [callback(**call) for call in options["calls"] for callback in ctx.hooks.get("post_tool_call", [])]
 took = time.monotonic() - started
 in_flight = len(module._pending)
+if options.get("release"):
+    pathlib.Path(options["release"]).touch()
 if options.get("realHandOff"):
     deadline = time.monotonic() + 15
     while module._pending and time.monotonic() < deadline:
@@ -151,11 +153,16 @@ test("the tool call does not wait for the event writer", { skip: NO_PYTHON }, ()
 test("at most eight writers run at once, and the calls above the cap are dropped", { skip: NO_PYTHON }, () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-hermes-cap-"));
   try {
-    const slow = path.join(dir, "slow-writer.mjs");
-    fs.writeFileSync(slow, "setTimeout(() => {}, 3000);\n");
+    // Held until the driver has counted, not for a fixed time: on a loaded host twelve calls took 14.6 s, so a writer
+    // that slept 3 s had exited, and freed its slot, before the count was taken.
+    const held = (name) => {
+      const release = path.join(dir, `${name}.release`), writer = path.join(dir, `${name}-writer.mjs`);
+      fs.writeFileSync(writer, `import fs from "node:fs";\nconst at = Date.now();\nsetInterval(() => { if (fs.existsSync(${JSON.stringify(release)}) || Date.now() - at > 60000) process.exit(0); }, 20);\n`);
+      return { realHandOff: true, attrs: { _EVENT: writer }, release };
+    };
     const twelve = Array.from({ length: 12 }, (_, n) => call({ tool_call_id: `c${n}` }));
-    assert.equal(drive({ calls: twelve, realHandOff: true, attrs: { _EVENT: slow } }).inFlight, 8);
-    assert.equal(drive({ calls: twelve.slice(0, 3), realHandOff: true, attrs: { _EVENT: slow } }).inFlight, 3, "control: under the cap, every call starts");
+    assert.equal(drive({ calls: twelve, ...held("twelve") }).inFlight, 8);
+    assert.equal(drive({ calls: twelve.slice(0, 3), ...held("three") }).inFlight, 3, "control: under the cap, every call starts");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

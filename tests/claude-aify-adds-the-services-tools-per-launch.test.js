@@ -94,8 +94,10 @@ test("in strict mode the service's tools come from the same per-launch file, bes
   assert.deepEqual(configs[1].mcpServers["aify-comms"], httpEntry);
 });
 
-test("control: a stdio install launches as before, with no per-launch entry and no switch", () => {
-  const { run, configs, commsMcp } = launch({ transport: "stdio" });
+// Started from a shell an http launch exported the switch into (a Herdr pane, an agent's own terminal), a stdio
+// launch still says stdio: the channel and the hermes plugin act on the switch alone.
+test("control: a stdio install launches as before, with no per-launch entry and no switch, even one inherited", () => {
+  const { run, configs, commsMcp } = launch({ transport: "stdio", env: { AIFY_COMMS_MCP: "http" } });
   assert.equal(run.status, 0, run.stderr);
   assert.deepEqual([configs, commsMcp], [[], "<unset>"]);
 });
@@ -109,7 +111,7 @@ test("a bridge that cannot write the entry stops the launch rather than starting
 
 // Hermes has no per-launch MCP flag: its comms entry is the installed one (aify-comms' install.sh). What its launcher
 // owns is the switch that makes the delivery loop register the agent. Rendered by the real installer, and the
-// rendered line run, for both transports.
+// rendered lines run in their order, for both transports, from a shell that already holds an inherited switch.
 test("hermes-aify exports the switch only from an http install", () => {
   const exported = (transport) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-hermes-render-"));
@@ -122,7 +124,14 @@ test("hermes-aify exports the switch only from an http install", () => {
     fs.rmSync(dir, { recursive: true, force: true });
     const lines = text.split("\n").filter((l) => l.includes("export AIFY_COMMS_MCP=http"));
     assert.equal(lines.length, 1, "the switch line is missing or repeated");
-    return spawnSync("bash", ["-c", `${lines[0]}; printf %s "\${AIFY_COMMS_MCP-unset}"`], { encoding: "utf8" }).stdout;
+    // At top level and before the switch, so no launch, whatever its arguments, keeps a shell's switch.
+    const clear = text.split("\n").filter((l) => /^unset AIFY_COMMS_MCP\b/.test(l));
+    assert.equal(clear.length, 1, "the inherited switch is not cleared at top level");
+    assert.ok(text.indexOf(clear[0]) < text.indexOf(lines[0]), "the switch is cleared after it is set");
+    const run = spawnSync("bash", ["-c", [clear[0], lines[0], 'printf %s "${AIFY_COMMS_MCP-unset}"'].join("\n")],
+      { encoding: "utf8", env: { ...process.env, AIFY_COMMS_MCP: "http" } });
+    assert.equal(run.status, 0, run.stderr);
+    return run.stdout;
   };
   assert.deepEqual([exported("http"), exported("stdio")], ["http", "unset"]);
 });

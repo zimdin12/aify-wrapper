@@ -825,6 +825,7 @@ aify_hermes_kill_prior() {
 # Pre-warm the bridge before ANY interactive TUI launch (no passthrough args) so
 # hermes' 0.75s MCP discovery sees the comms_* tools. Cheap on the native install
 # (~0.3s, page cache); bounded + best-effort so it never blocks the launch.
+unset AIFY_COMMS_MCP  # the switch is this install's (set below), never a shell's an http launch exported
 if [ ${#HERMES_ARGS[@]} -eq 0 ]; then aify_hermes_warm_bridge; fi
 
 # GATEWAY-HOST launch (visible-TUI model) — serves BOTH managed and resident
@@ -878,8 +879,7 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
   # an MCP child exit must never POST resident-lost for the still-open TUI.
   export AIFY_RESIDENT_LIFECYCLE_OWNER=managed-host
   export AIFY_CHANNELS_ENABLED=1
-  # Installed with --mcp-transport http, no comms process runs inside hermes, so the delivery loop registers it.
-  if [ "@@MCP_TRANSPORT@@" = "http" ]; then export AIFY_COMMS_MCP=http; fi
+  if [ "@@MCP_TRANSPORT@@" = "http" ]; then export AIFY_COMMS_MCP=http; fi  # no comms process in hermes: the loop registers it
   # Per-agent TUI active-session file: the visible hermes session writes its REAL
   # native session id here, and the in-session MCP bridge (adapters/hermes.js
   # discoverSessionId) reads it to register a real handle on FIRST launch — instead

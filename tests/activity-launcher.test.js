@@ -33,8 +33,11 @@ function fixture({ enabled = '1', managed = false, claimed = false, rewrite = fa
   if (rewrite) { delete env.MSYS_NO_PATHCONV; delete env.MSYS2_ARG_CONV_EXCL; }
   if (managed) env.AIFY_HERDR_PANE_FILE = path.join(dir, 'pane');
   const trace = path.join(dir, 'trace'), preload = path.join(dir, 'private-native-sink.mjs');
-  fs.writeFileSync(preload, `import fs from 'node:fs'; import path from 'node:path'; fs.appendFileSync(process.env.ACTIVITY_TRACE,JSON.stringify({exe:process.execPath,version:process.version,args:process.argv.slice(1)})+'\\n'); if(path.basename(process.argv[1]||'')==='pane') { if(process.argv[2]==='list') process.stdout.write(JSON.stringify({result:{panes:[{pane_id:'wA:pB',terminal_id:'owned-terminal'}]}})); process.exit(0); }`);
-  Object.assign(env, { HERDR_BIN_PATH: process.execPath, NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`, ACTIVITY_TRACE: trace });
+  fs.writeFileSync(preload, `import fs from 'node:fs'; fs.appendFileSync(process.env.ACTIVITY_TRACE,JSON.stringify({exe:process.execPath,version:process.version,args:process.argv.slice(1)})+'\\n');`);
+  // Herdr is bash running `pane` from PATH, not node: the working report gives herdr 1500 ms, and a node start with this
+  // preload took up to 3.4 s on a loaded host, which read as a missing report. The script uses only builtins.
+  fs.writeFileSync(path.join(stubs, 'pane'), `printf '{"exe":"herdr","args":["pane","%s"]}\\n' "$1" >> "$ACTIVITY_TRACE"\nif [ "$1" = list ]; then printf '%s' '{"result":{"panes":[{"pane_id":"wA:pB","terminal_id":"owned-terminal"}]}}'; fi\n`);
+  Object.assign(env, { HERDR_BIN_PATH: bash, NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`, ACTIVITY_TRACE: trace });
   if (claimed) Object.assign(env, { HERDR_ENV: '1', HERDR_PANE_ID: 'wA:pB', HERDR_WORKSPACE_ID: 'wA' });
   const rendered = spawnSync(bash, [native(path.join(ROOT, 'install.sh')), '--client', 'claude', '--endpoint', 'http://127.0.0.2:1', '--registry', native(registry), '--render-only', native(out), '--bridge-dir', shellPath(bridge), '--wrapper-dir', shellPath(wrapper)], { env, encoding: 'utf8', timeout: 120000 });
   assert.equal(rendered.status, 0, rendered.stdout + rendered.stderr);
