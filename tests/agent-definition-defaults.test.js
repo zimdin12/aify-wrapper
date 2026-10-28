@@ -79,11 +79,30 @@ test("managedBinding: a binding that is not two counters, or only half of one, r
   const found = { outcome: "found", file: "f", instructions: "x", incarnation: 3, revision: 7 };
   for (const env of [{ AIFY_DEFINITION_INCARNATION: "3" }, { AIFY_DEFINITION_INCARNATION: "3", AIFY_DEFINITION_REVISION: "7.0" },
     { AIFY_DEFINITION_INCARNATION: "03", AIFY_DEFINITION_REVISION: "7" }]) {
-    assert.match(managedBinding(found, env).refuse ?? "", /not two counters/, JSON.stringify(env));
+    assert.match(managedBinding(found, env).refuse ?? "", /not two positive counters/, JSON.stringify(env));
   }
   assert.deepEqual(managedBinding(found, { AIFY_DEFINITION_INCARNATION: "3", AIFY_DEFINITION_REVISION: "7" }), { use: true });
   assert.match(managedBinding(found, { AIFY_DEFINITION_INCARNATION: "4", AIFY_DEFINITION_REVISION: "7" }).refuse, /is now incarnation 3 revision 7/);
   assert.deepEqual(managedBinding({ ...found, instructions: "" }, {}), {}, "unbound, no instructions: nothing to say");
+});
+
+test("managedBinding judges both sides as the store's counters before comparing: text that matches is not enough", () => {
+  // Each pair here matched as text before (review of 022a9bb): the file's "3" or [3] against the env's "3", 0 against "0".
+  const at = (incarnation, revision) => ({ outcome: "found", file: "f", instructions: "x", incarnation, revision });
+  const env = (incarnation, revision) => ({ AIFY_DEFINITION_INCARNATION: incarnation, AIFY_DEFINITION_REVISION: revision });
+  for (const [file, start] of [
+    [at("3", "7"), env("3", "7")],
+    [at([3], [7]), env("3", "7")],
+    [at(0, 0), env("0", "0")],
+    [at(-3, 7), env("-3", "7")],
+    [at(3.5, 7), env("3.5", "7")],
+    [at(2 ** 53, 7), env(String(2 ** 53), "7")],
+  ]) {
+    assert.ok(managedBinding(file, start).refuse, `${JSON.stringify(file)} against ${JSON.stringify(start)}`);
+  }
+  assert.match(managedBinding(at("3", 7), env("3", "7")).refuse, /incarnation "3" is not a positive counter/, "the file's side is named");
+  assert.match(managedBinding(at(3, 7), env("0", "7")).refuse, /not two positive counters \(incarnation "0"\)/, "the env's side is named");
+  assert.deepEqual(managedBinding(at(3, 7), env("3", "7")), { use: true }, "the numeric control");
 });
 
 test("the binding is the session's: a launch from inside a managed agent's shell that names no agent drops it", async () => {
