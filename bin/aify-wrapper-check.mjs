@@ -89,7 +89,7 @@ function judge() {
 const { refused, report } = judge();
 const pending = new PendingHermesConfig({ marker: PENDING }).read();
 report.hermesConfigPending = pending.state === "none" ? null
-  : pending.state === "pending" ? { recordedAt: pending.recordedAt, registry: pending.registry } : { problem: pending.problem };
+  : pending.state === "pending" ? { recordedAt: pending.recordedAt, registry: pending.registry, target: pending.target } : { problem: pending.problem };
 
 if (asJson) {
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
@@ -104,7 +104,7 @@ if (asJson) {
   process.stdout.write(`\n${report.summary}\n`);
 }
 if (!asJson && pending.state === "pending") {
-  process.stdout.write(`hermes config pending since ${pending.recordedAt}: the first hermes start that finds no hermes running applies it\n`);
+  process.stdout.write(`hermes config pending since ${pending.recordedAt} for ${pending.target}: the first hermes start of that config that finds no hermes running applies it\n`);
 } else if (!asJson && pending.state === "unreadable") {
   process.stdout.write(`hermes config pending, unreadable: ${pending.problem}\n`);
 }

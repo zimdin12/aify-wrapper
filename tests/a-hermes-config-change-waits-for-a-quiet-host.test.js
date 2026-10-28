@@ -14,14 +14,16 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { FileLock, FileLockBusyError } from "../lib/file-lock.mjs";
-import { hermesProcesses, OUTCOMES, PendingHermesConfig, pendingMarkerPath, runsHermes } from "../lib/hermes-pending-config.mjs";
-import { processTable } from "../lib/process-identity.mjs";
+import { hermesConfigTarget, hermesProcesses, OUTCOMES, PendingHermesConfig, pendingMarkerPath, runsHermes, sameTarget } from "../lib/hermes-pending-config.mjs";
+import { imageName, linuxCommand, windowsArgv } from "../lib/process-argv.mjs";
+import { parseCommandTable, processTable } from "../lib/process-identity.mjs";
 import { launch } from "./launch-to-a-stub-runtime.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.join(HERE, "..", "bin", "aify-hermes-pending-config.mjs");
 const CHECK = path.join(HERE, "..", "bin", "aify-wrapper-check.mjs");
 const RACER = path.join(HERE, "hermes-pending-racer.mjs");
+const RECORDER = path.join(HERE, "hermes-pending-recorder.mjs");
 const FAKE = path.join(HERE, "fake-hermes.mjs");
 const temp = () => fs.mkdtempSync(path.join(os.tmpdir(), "aify-hermes-pending-"));
 
@@ -30,45 +32,90 @@ const temp = () => fs.mkdtempSync(path.join(os.tmpdir(), "aify-hermes-pending-")
  * the one the code under test says it took. A host whose answer changes during the case cannot say which was right.
  */
 function onThisHost(work) {
-  const before = hermesProcesses(processTable({ commands: true })).length > 0;
+  const seen = () => {
+    const { running, unknown } = hermesProcesses(processTable({ commands: true }));
+    return running.length + unknown.length > 0;
+  };
+  const before = seen();
   const result = work();
-  const after = hermesProcesses(processTable({ commands: true })).length > 0;
-  assert.equal(after, before, "hermes started or stopped on this host during the case; run it again");
+  assert.equal(seen(), before, "hermes started or stopped on this host during the case; run it again");
   return { hermesRunning: before, result };
 }
-const table = (lines) => new Map(lines.map((commandLine, at) => [100 + at, { pid: 100 + at, commandLine }]));
+/** A row as the Windows table gives it: the image CIM names, the command line parsed as Windows parses it. */
+const win = (commandLine) => ({ image: imageName(windowsArgv(commandLine)[0]), argv: windowsArgv(commandLine), commandLine });
+/** A row as the Linux table gives it: stat's comm, cmdline's NUL-separated words. */
+const lin = (argv, image = imageName(argv[0])) => ({ image, argv, commandLine: argv.join(" ") });
+const table = (rows) => new Map(rows.map((row, at) => [100 + at, { pid: 100 + at, ...row }]));
+// The config every pending case below is recorded for and started with, unless it says otherwise.
+const TARGET = path.join(os.tmpdir(), "hermes-home-a", "config.yaml");
 
 // Every shape a running hermes showed on Windows (2026-10-28, user and ids replaced), and Linux's console script.
 const VENV = "C:\\Users\\u\\AppData\\Local\\hermes\\hermes-agent\\venv\\Scripts";
 const HERMES = [
-  `${VENV}\\hermes.exe --tui --resume 20261004_080545_5ccbe2 --yolo`,
-  `${VENV}\\hermes.exe dashboard --port 8792 --host 127.0.0.1 --no-open --skip-build`,
-  `"${VENV}\\python.exe" "${VENV}\\hermes.exe" --tui --yolo`,
-  `"C:\\Users\\u\\AppData\\Local\\hermes\\hermes-agent\\.hermes-runtime\\python\\generation-1\\cpython-3.11-windows-x86_64-none\\python.exe"  "${VENV}\\hermes.exe" dashboard --port 8754`,
-  "/home/u/.hermes/hermes-agent/venv/bin/python3 /home/u/.local/bin/hermes --tui",
-  "python3 -m hermes_cli.main chat",
+  win(`${VENV}\\hermes.exe --tui --resume 20261004_080545_5ccbe2 --yolo`),
+  win(`${VENV}\\hermes.exe dashboard --port 8792 --host 127.0.0.1 --no-open --skip-build`),
+  win(`"${VENV}\\python.exe" "${VENV}\\hermes.exe" --tui --yolo`),
+  win(`"C:\\Users\\u\\AppData\\Local\\hermes\\hermes-agent\\.hermes-runtime\\python\\generation-1\\cpython-3.11-windows-x86_64-none\\python.exe"  "${VENV}\\hermes.exe" dashboard --port 8754`),
+  win(`C:\\Users\\u\\AppData\\Local\\hermes\\tools\\python-3.14.9\\python.exe -I -c "import runpy; runpy.run_path('${VENV}\\hermes.exe')"`),
+  lin(["/home/u/.hermes/hermes-agent/venv/bin/python3", "/home/u/.local/bin/hermes", "--tui"]),
+  lin(["python3", "-m", "hermes_cli.main", "chat"]),
+  // The review of ba87799's shapes: a path with a space, and python options that take a value.
+  lin(["/home/u/Agent Runtime/venv/bin/python3", "/home/u/.local/bin/hermes", "--tui"], "python3"),
+  lin(["/home/u/runtime/venv/bin/python3", "-X", "utf8", "/home/u/.local/bin/hermes", "--tui"]),
+  lin(["/home/u/runtime/venv/bin/python3", "-W", "ignore", "/home/u/.local/bin/hermes", "--tui"]),
+  lin(["/home/u/runtime/venv/bin/python3", "-Xutf8", "-IB", "/home/u/.local/bin/hermes"]),
+  win(`"C:\\Program Files\\Hermes Agent\\hermes.exe" --tui`),
+  { image: "hermes", argv: null, commandLine: null },
 ];
-// What runs beside hermes, or only names it, and is not hermes.
+// What runs beside hermes, or only names it, and is not hermes; and another program whose command line is unreadable.
 const NOT_HERMES = [
-  '"C:\\Program Files\\Git\\usr\\bin\\bash.EXE" C:/Users/u/.local/bin/hermes-aify --aify-agent pc-manager --resume 20260907_192520_2d35dd',
-  "C:\\nvm4w\\nodejs\\node.exe C:/Users/u/.aify-comms/mcp/stdio/hermes-managed-host.js run pc-manager",
-  '"C:\\Program Files\\Git\\usr\\bin\\nohup.exe" node /c/Users/u/.aify-comms/mcp/stdio/hermes-managed-host.js run pc-manager',
-  `C:\\Users\\u\\AppData\\Local\\hermes\\tools\\python-3.14.9\\python.exe -I -c "import runpy; runpy.run_path('${VENV}\\hermes.exe')"`,
-  "C:\\Users\\u\\AppData\\Local\\hermes\\tools\\python-3.14.9\\python.exe C:\\Users\\u\\AppData\\Local\\Temp\\hermes_kernel_p94o02dg\\hermes_kernel_runner.py",
-  "C:\\Users\\u\\AppData\\Local\\hermes\\tools\\node-26.12.1-win32-x64\\node.EXE --expose-gc C:\\Users\\u\\AppData\\Local\\hermes\\hermes-agent\\ui-tui\\dist\\entry.js",
-  "node C:/w/bin/aify-hermes-pending-config.mjs apply --marker C:/h/.aify/hermes-config-pending.json",
-  "code C:\\notes\\hermes.txt",
-  "bash -c \"grep hermes /tmp/log\"",
+  win('"C:\\Program Files\\Git\\usr\\bin\\bash.EXE" C:/Users/u/.local/bin/hermes-aify --aify-agent pc-manager --resume 20260907_192520_2d35dd'),
+  win("C:\\nvm4w\\nodejs\\node.exe C:/Users/u/.aify-comms/mcp/stdio/hermes-managed-host.js run pc-manager"),
+  win('"C:\\Program Files\\Git\\usr\\bin\\nohup.exe" node /c/Users/u/.aify-comms/mcp/stdio/hermes-managed-host.js run pc-manager'),
+  win("C:\\Users\\u\\AppData\\Local\\hermes\\tools\\python-3.14.9\\python.exe C:\\Users\\u\\AppData\\Local\\Temp\\hermes_kernel_p94o02dg\\hermes_kernel_runner.py"),
+  win("C:\\Users\\u\\AppData\\Local\\hermes\\tools\\node-26.12.1-win32-x64\\node.EXE --expose-gc C:\\Users\\u\\AppData\\Local\\hermes\\hermes-agent\\ui-tui\\dist\\entry.js"),
+  win("node C:/w/bin/aify-hermes-pending-config.mjs apply --marker C:/h/.aify/hermes-config-pending.json"),
+  win("code C:\\notes\\hermes.txt"),
+  win('bash -c "grep hermes /tmp/log"'),
+  lin(["python3", "-W", "ignore", "/srv/hermes-notes/report.py"]),
+  { image: "svchost", argv: null, commandLine: null },
 ];
+// What cannot be told: a python, or a process with no image, whose command line could not be read.
+const UNKNOWN = [{ image: "python3", argv: null, commandLine: null }, { image: null, argv: null, commandLine: null }];
 
-test("a process runs hermes by what it runs: the program and its python layers, never a launcher, a loop, a tool or a mention", () => {
-  for (const line of HERMES) assert.equal(runsHermes(line), true, line);
-  for (const line of NOT_HERMES) assert.equal(runsHermes(line), false, line);
-  assert.deepEqual(hermesProcesses(table([...NOT_HERMES, HERMES[0]])), [100 + NOT_HERMES.length]);
+test("a process runs hermes by what it runs, with its argv as a list; one it cannot read is unknown unless its image rules it out", () => {
+  for (const row of HERMES) assert.equal(runsHermes(row), "yes", JSON.stringify(row));
+  for (const row of NOT_HERMES) assert.equal(runsHermes(row), "no", JSON.stringify(row));
+  for (const row of UNKNOWN) assert.equal(runsHermes(row), "unknown", JSON.stringify(row));
+  assert.deepEqual(hermesProcesses(table([...NOT_HERMES, HERMES[0], UNKNOWN[0]])), { running: [100 + NOT_HERMES.length], unknown: [101 + NOT_HERMES.length] });
 });
 
-/** A marker in a temp home, with a recording scan and step. */
-function world({ running = [], tableReadable = true, stepOk = true, during } = {}) {
+test("the Windows table keeps a command line's boundaries and says when it could not read one", () => {
+  assert.deepEqual(windowsArgv('"C:\\Program Files\\x\\python.exe" -X utf8 "C:\\a b\\hermes" "say \\"hi\\"" C:\\x\\\\'),
+    ["C:\\Program Files\\x\\python.exe", "-X", "utf8", "C:\\a b\\hermes", 'say "hi"', "C:\\x\\\\"]);
+  const rows = parseCommandTable(["4\t0\t2026-10-13T00:00:00.0000000Z\tHermes.EXE\t1\t\"C:\\Program Files\\h\\hermes.exe\" --tui",
+    "5\t0\t2026-10-13T00:00:00.0000000Z\tpython.exe\t0\t"].join("\n"), { platform: "win32" });
+  assert.deepEqual([rows.get(4).image, rows.get(4).argv], ["hermes", ["C:\\Program Files\\h\\hermes.exe", "--tui"]]);
+  assert.deepEqual([rows.get(5).image, rows.get(5).argv, rows.get(5).commandLine], ["python", null, null], "an unreadable command line read as an empty one");
+});
+
+test("the Linux table keeps a process whose cmdline it cannot read, with no argv, instead of dropping it", () => {
+  const stat = (pid, comm) => `${pid} (${comm}) S 1 ${pid} ${pid} 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1000`;
+  const files = { "/proc/stat": "btime 1700000000\n", "/proc/101/stat": stat(101, "python3"), "/proc/102/stat": stat(102, "node"), "/proc/102/cmdline": "node\0fixture.mjs\0" };
+  const readFile = (file) => {
+    if (file === "/proc/101/cmdline") throw Object.assign(new Error("denied"), { code: "EACCES" });
+    if (file in files) return files[file];
+    throw Object.assign(new Error("absent"), { code: "ENOENT" });
+  };
+  const rows = processTable({ platform: "linux", commands: true, bootEpoch: () => 1700000000, readDir: () => ["101", "102"], readFile });
+  assert.deepEqual([rows.get(101)?.image, rows.get(101)?.argv], ["python3", null], "the unreadable row is missing or read as empty");
+  assert.deepEqual(rows.get(102).argv, ["node", "fixture.mjs"]);
+  assert.equal(hermesProcesses(rows).unknown[0], 101);
+  assert.throws(() => linuxCommand(9, stat(9, "node"), readFile), { code: "ENOENT" }, "a process that ended before its cmdline was read is kept");
+});
+
+/** A marker in a temp home, with a recording scan and step; every start is for `target` unless `apply` is told another. */
+function world({ running = [], tableReadable = true, stepOk = true } = {}) {
   const dir = temp();
   const pending = new PendingHermesConfig({ marker: path.join(dir, ".aify", "hermes-config-pending.json") });
   const calls = { scans: 0, steps: [] };
@@ -78,10 +125,10 @@ function world({ running = [], tableReadable = true, stepOk = true, during } = {
   };
   const step = (registry) => {
     calls.steps.push(registry);
-    during?.(pending);
     return stepOk ? { ok: true, detail: "" } : { ok: false, detail: "the hermes config step exited 78, its reason above" };
   };
-  return { dir, pending, calls, apply: () => pending.apply({ scan, step }), cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+  return { dir, pending, calls, record: (registry, target = TARGET) => pending.record(registry, target),
+    apply: (target = TARGET) => pending.apply({ scan, step, target }), cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
 }
 
 test("nothing pending: nothing is scanned or run", () => {
@@ -97,7 +144,7 @@ test("nothing pending: nothing is scanned or run", () => {
 test("hermes running: the change waits, named, and the marker stays; a quiet host applies it once and removes the marker", () => {
   const busy = world({ running: [HERMES[1]] });
   try {
-    busy.pending.record(path.join(busy.dir, "services.json"));
+    busy.record(path.join(busy.dir, "services.json"));
     const waited = busy.apply();
     assert.equal(waited.outcome, "deferred");
     assert.match(waited.detail, /hermes is running here \(pid \d+\)/);
@@ -108,7 +155,7 @@ test("hermes running: the change waits, named, and the marker stays; a quiet hos
   }
   const quiet = world();
   try {
-    quiet.pending.record(path.join(quiet.dir, "services.json"));
+    quiet.record(path.join(quiet.dir, "services.json"));
     assert.equal(quiet.apply().outcome, "applied");
     assert.deepEqual(quiet.calls.steps, [path.join(quiet.dir, "services.json")]);
     assert.equal(quiet.pending.read().state, "none");
@@ -117,10 +164,23 @@ test("hermes running: the change waits, named, and the marker stays; a quiet hos
   }
 });
 
+test("a python whose command line cannot be read holds the change back: it may be hermes", () => {
+  const w = world({ running: [UNKNOWN[0]] });
+  try {
+    w.record(path.join(w.dir, "services.json"));
+    const result = w.apply();
+    assert.equal(result.outcome, "deferred");
+    assert.match(result.detail, /cannot be read, so it may be hermes/);
+    assert.deepEqual(w.calls.steps, []);
+  } finally {
+    w.cleanup();
+  }
+});
+
 test("a host whose processes cannot be listed is not taken for a quiet one", () => {
   const w = world({ tableReadable: false });
   try {
-    w.pending.record(path.join(w.dir, "services.json"));
+    w.record(path.join(w.dir, "services.json"));
     const result = w.apply();
     assert.equal(result.outcome, "deferred");
     assert.match(result.detail, /cannot be listed/);
@@ -130,33 +190,52 @@ test("a host whose processes cannot be listed is not taken for a quiet one", () 
   }
 });
 
-test("a step that fails leaves the change pending; a newer install's record made during the step is kept for the next start", () => {
+test("a step that fails leaves the change pending", () => {
   const failing = world({ stepOk: false });
   try {
-    failing.pending.record(path.join(failing.dir, "services.json"));
+    failing.record(path.join(failing.dir, "services.json"));
     assert.equal(failing.apply().outcome, "failed");
     assert.equal(failing.pending.read().state, "pending");
   } finally {
     failing.cleanup();
   }
-  const newer = world({ during: (pending) => pending.record(path.join(os.tmpdir(), "a-newer-registry.json")) });
+});
+
+test("a change recorded for one hermes config is applied by a start of that config only; another start leaves it, named", () => {
+  const w = world();
+  const other = path.join(os.tmpdir(), "hermes-home-b", "config.yaml");
   try {
-    newer.pending.record(path.join(newer.dir, "services.json"));
-    assert.equal(newer.apply().outcome, "applied");
-    const left = newer.pending.read();
-    assert.equal(left.state, "pending", "the newer record was removed with the one applied");
-    assert.equal(left.registry, path.join(os.tmpdir(), "a-newer-registry.json"));
+    w.record(path.join(w.dir, "services.json"));
+    const left = w.apply(other);
+    assert.equal(left.outcome, "deferred");
+    assert.ok(left.detail.includes(TARGET) && left.detail.includes(other), left.detail);
+    assert.deepEqual(w.calls, { scans: 0, steps: [] }, "a start of another config scanned or wrote");
+    assert.equal(w.pending.read().state, "pending");
+    assert.equal(w.apply(null).outcome, "deferred", "a start whose config cannot be resolved is not taken for the right one");
+    assert.equal(w.apply().outcome, "applied", "CONTROL: the start of the recorded config applies it");
+    assert.deepEqual(w.calls.steps, [path.join(w.dir, "services.json")]);
   } finally {
-    newer.cleanup();
+    w.cleanup();
   }
 });
 
-test("the record names the registry and nothing else: no entry, so no key, is written to disk", () => {
+test("a config is the one hermes writes: HERMES_HOME as written, else the platform's root; one hermes would expand is unresolvable", () => {
+  const home = path.join(os.tmpdir(), "u");
+  const at = (env, platform = "linux") => hermesConfigTarget({ env, platform, homedir: home });
+  assert.equal(at({ HERMES_HOME: path.join(os.tmpdir(), "hh") }), path.resolve(os.tmpdir(), "hh", "config.yaml"));
+  assert.equal(at({}), path.resolve(home, ".hermes", "config.yaml"));
+  assert.equal(at({ LOCALAPPDATA: path.join(home, "L") }, "win32"), path.resolve(home, "L", "hermes", "config.yaml"));
+  for (const HERMES_HOME of ["~/h", "$HOME/h", "%USERPROFILE%\\h"]) assert.equal(at({ HERMES_HOME }), null, HERMES_HOME);
+  assert.equal(sameTarget("C:\\H\\config.yaml", "c:\\h\\CONFIG.yaml", "win32"), true);
+  assert.equal(sameTarget("/h/config.yaml", "/H/config.yaml", "linux"), false);
+});
+
+test("the record names the registry and its config, nothing else: no entry, so no key, is written to disk", () => {
   const w = world();
   try {
-    w.pending.record("relative/services.json");
+    w.record("relative/services.json");
     const body = JSON.parse(fs.readFileSync(w.pending.marker, "utf8"));
-    assert.deepEqual(Object.keys(body).sort(), ["recordedAt", "registry", "version"]);
+    assert.deepEqual(Object.keys(body).sort(), ["recordedAt", "registry", "target", "version"]);
     assert.equal(body.registry, path.resolve("relative/services.json"), "a relative registry is recorded as the path it means");
     fs.writeFileSync(w.pending.marker, "{ not json");
     assert.equal(w.apply().outcome, "failed", "a record that cannot be read is applied by nobody");
@@ -170,20 +249,55 @@ test("a start whose wait behind a live holder runs out goes on without the chang
   const dir = temp();
   const marker = path.join(dir, ".aify", "hermes-config-pending.json");
   try {
+    // A short wait behind a holder that is not yet stale: in use the two are the same, so the holder's apply bounds both.
+    const pending = new PendingHermesConfig({ marker, lockMs: 300, lock: { staleMs: 60_000 } });
+    pending.record(path.join(dir, "services.json"), TARGET);
     // This process holds the lock, and is alive for as long as the case runs.
     const held = new FileLock({ path: `${marker}.lock`, waitMs: 0, staleMs: 60_000 });
     held.hold(() => {
       assert.throws(() => new FileLock({ path: `${marker}.lock`, waitMs: 300, staleMs: 60_000 }).hold(() => {}), FileLockBusyError);
-      // A short wait behind a holder that is not yet stale: in use the two are the same, so the holder's apply bounds both.
-      const pending = new PendingHermesConfig({ marker, lockMs: 300, lock: { staleMs: 60_000 } });
-      pending.record(path.join(dir, "services.json"));
+      assert.throws(() => pending.record(path.join(dir, "newer.json"), TARGET), FileLockBusyError, "a record landed while an apply held the lock");
       let stepped = false;
-      const result = pending.apply({ scan: () => new Map(), step: () => { stepped = true; return { ok: true, detail: "" }; } });
+      const result = pending.apply({ scan: () => new Map(), step: () => { stepped = true; return { ok: true, detail: "" }; }, target: TARGET });
       assert.equal(result.outcome, "deferred");
       assert.match(result.detail, /another start still holds/);
       assert.equal(stepped, false);
       assert.equal(pending.read().state, "pending");
     });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("an install that records while an apply retires the marker is not lost: it waits for the apply, then lands", async () => {
+  // The review's window: a record published after the apply's last comparison and before its removal was deleted
+  // with the one applied. Here a second process asks to record at that moment; the apply waits up to 1.5 s for it.
+  const dir = temp();
+  const marker = path.join(dir, ".aify", "hermes-config-pending.json");
+  const newer = path.join(dir, "newer.json");
+  let recorder = null;
+  let landedFirst = false;
+  const io = { ...fs, rmSync(file, ...rest) {
+    if (file === marker && !recorder) {
+      const before = fs.readFileSync(marker, "utf8");
+      recorder = spawn(process.execPath, [RECORDER, marker, newer, TARGET], { stdio: "ignore" });
+      for (let waited = 0; waited < 1_500 && fs.readFileSync(marker, "utf8") === before; waited += 50) {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+      }
+      landedFirst = fs.readFileSync(marker, "utf8") !== before;
+    }
+    return fs.rmSync(file, ...rest);
+  } };
+  try {
+    const pending = new PendingHermesConfig({ marker, io });
+    pending.record(path.join(dir, "services.json"), TARGET);
+    assert.equal(pending.apply({ scan: () => new Map(), step: () => ({ ok: true, detail: "" }), target: TARGET }).outcome, "applied");
+    assert.ok(recorder, "control: the recorder was never started, so this proves nothing");
+    assert.equal(await new Promise((resolve) => recorder.on("exit", resolve)), 0, "the recorder failed");
+    assert.equal(landedFirst, false, "a record landed inside the apply's hold");
+    const left = pending.read();
+    assert.equal(left.state, "pending", "the later record was lost");
+    assert.equal(left.registry, newer);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -195,8 +309,8 @@ test("RESTART ALL: starts arriving together apply the change once, and every one
   const log = path.join(dir, "race.log");
   fs.writeFileSync(log, "");
   try {
-    new PendingHermesConfig({ marker }).record(path.join(dir, "services.json"));
-    const starts = Array.from({ length: 4 }, () => spawn(process.execPath, [RACER, marker, log], { stdio: "ignore" }));
+    new PendingHermesConfig({ marker }).record(path.join(dir, "services.json"), TARGET);
+    const starts = Array.from({ length: 4 }, () => spawn(process.execPath, [RACER, marker, log, TARGET], { stdio: "ignore" }));
     await Promise.all(starts.map((child) => new Promise((resolve) => child.on("exit", resolve))));
     const lines = fs.readFileSync(log, "utf8").trim().split("\n").map((line) => line.split(" ")[0]);
     const end = lines.indexOf("end");
@@ -290,15 +404,18 @@ const definition = { version: 1, agent: { id: "lead", name: "Lead", role: "revie
 const STEP_STUB = [
   'import fs from "node:fs";',
   "process.stderr.write(`STEP ${JSON.stringify({ args: process.argv.slice(2), runtime: process.env.HERMES_RUNTIME_COMMAND ?? null,",
-  "  runtimeFirst: fs.existsSync(process.env.STUB_RUNTIME_ENV) })}\\n`);",
+  "  runtimeFirst: fs.existsSync(process.env.STUB_RUNTIME_ENV), markerSeen: fs.existsSync(process.argv[4]) })}\\n`);",
   "process.exit(Number(process.env.STUB_STEP_EXIT));",
   "",
 ].join("\n");
 
 test("hermes-aify runs the step before its hermes when a change is pending, with its own hermes command; it starts either way", () => {
   const files = { "wrapper/bin/aify-hermes-pending-config.mjs": STEP_STUB, "<home>/.aify/hermes-config-pending.json": "{}" };
-  for (const [code, said] of [["0", null], ["75", null], ["78", /the pending hermes config step exited 78; this start goes on without it/]]) {
-    const { run, started, home } = launch("hermes", ["--aify-agent", "lead", "chat"], { definitions: { lead: definition }, files, env: { STUB_STEP_EXIT: code } });
+  // With MSYS_NO_PATHCONV=1 too (`rewriting: false`): bash's /c/... path reached node unconverted and read as absent
+  // (review of ba87799), so the launcher converts it itself.
+  for (const [code, said, rewriting] of [["0", null, true], ["75", null, true], ["78", /the pending hermes config step exited 78; this start goes on without it/, true],
+    ["0", null, false]]) {
+    const { run, started, home } = launch("hermes", ["--aify-agent", "lead", "chat"], { definitions: { lead: definition }, files, rewriting, env: { STUB_STEP_EXIT: code } });
     assert.equal(run.status, 0, run.stderr);
     assert.ok(started.PATH, "the runtime did not start");
     const step = JSON.parse(/^STEP (.*)$/m.exec(run.stderr)?.[1] ?? "null");
@@ -306,6 +423,7 @@ test("hermes-aify runs the step before its hermes when a change is pending, with
     assert.deepEqual(step.args.slice(0, 2), ["apply", "--marker"]);
     const at = (file) => path.resolve(file).toLowerCase();
     assert.equal(at(step.args[2]), at(path.join(home, ".aify", "hermes-config-pending.json")));
+    assert.equal(step.markerSeen, true, `node could not find the marker it was handed (rewriting ${rewriting}): ${step.args[2]}`);
     assert.equal(step.runtime, "hermes", "the step was not handed the launcher's hermes command");
     assert.equal(step.runtimeFirst, false, "hermes started before the step");
     if (said) assert.match(run.stderr, said);

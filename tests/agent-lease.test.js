@@ -13,7 +13,7 @@ import { test } from "node:test";
 
 import { AgentLease, IDENTITY_FROM_FLAG, LEASE_VERSION, LeaseBusyError, REFUSED_EXIT_CODE, START_INTENTS, leaseDirectory, leaseFileName, planClaim, startIntent } from "../lib/agent-lease.mjs";
 import {
-  START_TIME_TOLERANCE_MS, anchorOffsetMs, ancestors, descendants, hostsOf, identify, isAlive, isProtected, killTree, linuxBootEpoch, parseLinuxStartedAt, parseLinuxState,
+  START_TIME_TOLERANCE_MS, anchorOffsetMs, ancestors, descendants, hostsOf, identify, isAlive, isProtected, killTree, linuxBootEpoch, liveness, parseLinuxStartedAt, parseLinuxState,
   orphanedChildren, parseLinuxGroup, parseProcessTable, parseStartedAtLines, processTable, sleepMs, startTimes,
 } from "../lib/process-identity.mjs";
 import { CLAIM_FAILED_EXIT_CODE, parseLeaseArgs, runLease, runWatch } from "../bin/aify-agent-lease.mjs";
@@ -30,6 +30,10 @@ function host(processes, { unkillable = [], parents = {} } = {}) {
     live,
     startTimes: (pids) => new Map(pids.filter((pid) => live.has(pid) && live.get(pid) !== null).map((pid) => [pid, live.get(pid)])),
     isAlive: (pid) => live.has(pid),
+    // This host's OS answers every probe: a pid is alive or gone, never unknown, and follows any isAlive a test sets.
+    liveness(pid) {
+      return this.isAlive(pid) ? "alive" : "gone";
+    },
     // The table every claim decides from: each live pid whose start can be read, parented to nothing.
     tableFails: false,
     processTable() {
@@ -508,6 +512,66 @@ test("AgentLease: a live lock holder is not taken over because the boot anchor a
   // CONTROL: a pid that really did start after the lock was taken -- beyond the offset -- is still reused.
   probe.live.set(123, Date.now() + offsetMs + 60_000);
   assert.equal(agent.claim({ pid: 100 }).decision, "claim", "a recycled pid still holds the lock");
+});
+
+test("AgentLease: a live instance whose start time cannot be read is never collected, and its tree is left running (review of ba87799)", () => {
+  // The table lists only processes whose start it read, so this instance is missing from it while it runs. Read as
+  // ended, the watch's collect stopped its gateway.
+  const probe = host({ 100: T0 - 5_000, 124: T0 });
+  const agent = lease(probe);
+  assert.equal(agent.claim({ pid: 100 }).decision, "claim");
+  agent.attach({ instance: 100, pid: 124, kind: "gateway" });
+  probe.live.set(100, null);
+  assert.equal(agent.holderState(100), "unknown");
+  const result = agent.collect({ instance: 100 });
+  assert.deepEqual([result.collected, result.reason], [false, "still-running"]);
+  assert.deepEqual(probe.killed, [], "a live instance's tree was stopped");
+  // CONTROL: the same instance, ended on the OS's word, is collected with its gateway.
+  probe.live.delete(100);
+  assert.equal(agent.holderState(100), "gone");
+  assert.equal(agent.collect({ instance: 100 }).collected, true);
+  assert.ok(probe.killed.includes(124), `collected without its gateway: ${probe.killed}`);
+});
+
+test("AgentLease: a new start beside a live instance missing from the table stops none of that instance's tree (review of ba87799)", () => {
+  // Read as gone, the instance's attached gateway was a dead instance's leftover, and the next start stopped it.
+  const probe = host({ 100: T0 - 5_000, 124: T0, 200: T0 + 1_000 });
+  const agent = lease(probe);
+  assert.equal(agent.claim({ pid: 100 }).decision, "claim");
+  agent.attach({ instance: 100, pid: 124, kind: "gateway" });
+  probe.live.set(100, null);
+  agent.claim({ pid: 200 });
+  assert.deepEqual(probe.killed, [], "the live instance's gateway was stopped");
+});
+
+test("AgentLease: a stopped entry whose start cannot be read afterwards is not counted as stopped (review of ba87799)", () => {
+  // #waitGone read a live pid missing from the start-time answer as gone, so a replace went on as if it had stopped it.
+  const probe = host({ 100: T0 - 5_000, 200: T0 }, { unkillable: [100] });
+  const agent = lease(probe);
+  assert.equal(agent.claim({ pid: 100 }).decision, "claim");
+  probe.startTimes = () => new Map();
+  const replaced = agent.claim({ pid: 200, intent: "replace" });
+  assert.deepEqual([replaced.decision, replaced.reason], ["refuse", "could-not-stop"]);
+  assert.equal(agent.read().instance.pid, 100, "the record was taken over from an instance still running");
+});
+
+test("AgentLease: a holder whose pid cannot be probed, or whose start cannot be read, keeps the lock (review of ba87799)", () => {
+  // Only positive evidence frees a lock. pid 2147483648 makes process.kill throw ERR_INVALID_ARG_TYPE, which isAlive
+  // read as gone; a live pid missing from the start-time answer read as gone too. Both took a fresh holder's lock.
+  const probe = host({ 100: T0, 123: null });
+  probe.liveness = (pid) => (pid === 123 ? "alive" : liveness(pid));
+  const agent = lease(probe);
+  fs.mkdirSync(agent.directory, { recursive: true });
+  const lock = `${agent.file}.lock`;
+  for (const holder of [{ pid: 2147483648, atMs: Date.now() }, { pid: 123, atMs: Date.now() }]) {
+    fs.writeFileSync(lock, JSON.stringify(holder));
+    assert.throws(() => agent.claim({ pid: 100 }), LeaseBusyError, `the lock of ${holder.pid} was taken over`);
+    assert.equal(fs.readFileSync(lock, "utf8"), JSON.stringify(holder), "the holder's lock was changed");
+  }
+  // CONTROL: the same holder past the stale age is freed, so the refusal above is the evidence rule, not a stuck lock.
+  const old = new Date(Date.now() - 121_000);
+  fs.utimesSync(lock, old, old);
+  assert.equal(agent.claim({ pid: 100 }).decision, "claim");
 });
 
 test("AgentLease: a holder that dies WHILE a start waits is noticed, not cached as alive", () => {

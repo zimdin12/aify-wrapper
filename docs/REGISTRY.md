@@ -132,10 +132,13 @@ measured on hermes 0.21.5 it deletes a same-named server from the user's config 
 `<name>: {}` behind for any other name (aify-dashboard `docs/evidence/hermes-session-mcp-2026-10-02`).
 
 - **Never into a running hermes.** A running hermes reloads its servers when their content changes, so `install.sh`
-  records the change in `~/.aify/hermes-config-pending.json` (the registry's path, never an entry) and applies it at
-  once only if no hermes runs. Otherwise the first hermes-aify start that finds none applies it, under a lock, before
-  it starts its own hermes; the starts behind it wait and launch with the change in place. Until then
-  `aify-wrapper-check` reports it pending (`lib/hermes-pending-config.mjs`).
+  records the change in `~/.aify/hermes-config-pending.json` (the registry's path and the hermes config it is for,
+  never an entry) and applies it at once only if no hermes runs. Otherwise the first hermes-aify start of that same
+  config that finds none applies it, under a lock, before it starts its own hermes; the starts behind it wait and
+  launch with the change in place, and a start of another hermes home leaves it and says so. Recording takes the same
+  lock, so a newer install is never lost to an apply retiring the older one. A process the scan cannot read counts
+  as possibly hermes (see Known issues in the README). Until then `aify-wrapper-check` reports it pending
+  (`lib/hermes-pending-config.mjs`).
 - **Hermes' own writer.** `lib/hermes-config-cli.mjs` runs `hermes config get`, then `hermes config set
   mcp_servers.<name> '<JSON>'`, and `hermes config unset` for removal. The operator's comments and other servers
   survive, and nothing here edits YAML.

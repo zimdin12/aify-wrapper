@@ -125,7 +125,7 @@ test("AN UNREADABLE TABLE ENDS NOTHING", () => {
 });
 
 test("THE COMMAND TABLE PARSES Windows CIM lines and ps lstart lines", () => {
-  const win = parseCommandTable("4\t0\t2026-10-13T00:00:00.0000000Z\tC:\\x\\node.exe a b\n", { platform: "win32" });
+  const win = parseCommandTable("4\t0\t2026-10-13T00:00:00.0000000Z\tnode.exe\t1\tC:\\x\\node.exe a b\n", { platform: "win32" });
   assert.equal(win.get(4).commandLine, "C:\\x\\node.exe a b");
   const ps = parseCommandTable("  7     1 Mon Oct 13 01:02:03 2026 node /x/hermes-managed-host.js run pc\n", { platform: "linux" });
   assert.equal(ps.get(7).commandLine, "node /x/hermes-managed-host.js run pc");

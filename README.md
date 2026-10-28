@@ -526,3 +526,9 @@ nothing about the launcher changes until the file does.
   sessions. Neither carries a key. Files that do (the per-session MCP config with each service's `X-API-Key`) are
   written to the agent's owner-only `~/.aify/sessions/<agent id>/` instead, one per agent, so a kill leaves one
   owner-only file that the next launch replaces.
+- **A hermes whose program is neither `hermes` nor a python, and whose command line cannot be read, is not seen.**
+  The pending hermes config change applies only when no hermes runs, judged by each process's image name and
+  argv (`lib/hermes-pending-config.mjs` `runsHermes`). A python or nameless process whose command line cannot be
+  read counts as possibly hermes, and holds the change back. A process whose image is plainly another program does
+  not, even unread: on Windows another user's processes all have unreadable command lines, and a gate that waited on
+  them would never open. So a hermes started through some other executable name, by another user, is missed.

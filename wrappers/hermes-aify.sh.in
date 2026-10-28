@@ -677,9 +677,9 @@ aify_hermes_kill_prior() {
 
 # A HERMES CONFIG CHANGE AN INSTALL LEFT PENDING is applied here, before any hermes this launch starts, if no hermes runs
 # (bin/aify-hermes-pending-config.mjs, which says why when it waits). A launch with nothing pending pays one file test.
-if [ -e "$HOME/.aify/hermes-config-pending.json" ]; then
-  HERMES_RUNTIME_COMMAND="$HERMES_RUNTIME_COMMAND" node "$AIFY_WRAPPER_DIR_FWD/bin/aify-hermes-pending-config.mjs" apply \
-    --marker "$HOME/.aify/hermes-config-pending.json" </dev/null || { _s=$?; [ "$_s" = 75 ] || echo "[hermes-aify] the pending hermes config step exited $_s; this start goes on without it" >&2; }
+if _aify_pending="$HOME/.aify/hermes-config-pending.json"; [ -e "$_aify_pending" ]; then  # node reads it converted, as below
+  HERMES_RUNTIME_COMMAND="$HERMES_RUNTIME_COMMAND" node "$AIFY_WRAPPER_DIR_FWD/bin/aify-hermes-pending-config.mjs" apply --marker \
+    "$(cygpath -m "$_aify_pending" 2>/dev/null || printf %s "$_aify_pending")" </dev/null || { _s=$?; [ "$_s" = 75 ] || echo "[hermes-aify] the pending hermes config step exited $_s; this start goes on without it" >&2; }
 fi
 
 # Pre-warm the bridge before ANY interactive TUI launch (no passthrough args) so

@@ -25,7 +25,7 @@ export const READER_FILES = Object.freeze([
   "bin/aify-herdr-launch.sh", "bin/aify-node-22.sh",
   // The per-launch session entries claude-aify writes (bin/aify-session-mcp.mjs), with the credential store's reader.
   "bin/aify-session-mcp.mjs", "lib/session-http.mjs", "lib/credential-custody.mjs", "lib/registry.mjs", "lib/session-hermes.mjs", "lib/session-codex.mjs",
-  "lib/credential-file.mjs", "lib/machine-id.mjs", "lib/session-folder.mjs", "lib/process-identity.mjs",
+  "lib/credential-file.mjs", "lib/machine-id.mjs", "lib/session-folder.mjs", "lib/process-identity.mjs", "lib/process-argv.mjs",
 ]);
 
 /** Copy the reader into `wrapper` (created if missing) and return it. */
