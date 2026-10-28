@@ -12,7 +12,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { parseCommandTable, processTable } from "../lib/process-identity.mjs";
+import { ancestors, descendants, parseCommandTable, processTable } from "../lib/process-identity.mjs";
 import { priorHermesRuns, reapPriorHermesRuns } from "../lib/hermes-prior-runs.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -116,6 +116,17 @@ test("A COMMAND LINE WITH A LINE BREAK IS ONE ROW in the live table, never a for
   } finally {
     child.kill();
   }
+});
+
+test("AN UNTIMED ROW is never a target, never walked into, and stops an ancestry walk while naming its parent", () => {
+  // A commands table lists processes it could not time (review of 3e27beb); nothing shows such a row is not a reused pid.
+  const untimed = (pid, ppid, cmd) => [pid, { pid, ppid, startedAtMs: null, commandLine: cmd }];
+  // 13's start is null, as the producers write it; 14 has none at all, which a null-safe comparison alone lets through.
+  const table = new Map([row(1, 0, 0, "init"), untimed(10, 1, `node ${LOOP} pc`), row(11, 10, 200, "child"), row(12, 1, 100, "shell"), untimed(13, 12, "x"),
+    [14, { pid: 14, ppid: 12, commandLine: "y" }]]);
+  assert.deepEqual(priorHermesRuns(table, { agentId: "pc", self: 1 }), [], "an untimed delivery loop was chosen to be ended");
+  assert.deepEqual(descendants(12, table), [], "an untimed child was walked into");
+  assert.deepEqual([...ancestors(11, table)], [11, 10], "the walk went past an untimed parent, or did not name it");
 });
 
 test("AN UNREADABLE TABLE ENDS NOTHING", () => {

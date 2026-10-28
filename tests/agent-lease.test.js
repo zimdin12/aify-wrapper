@@ -540,8 +540,21 @@ test("AgentLease: a new start beside a live instance missing from the table stop
   assert.equal(agent.claim({ pid: 100 }).decision, "claim");
   agent.attach({ instance: 100, pid: 124, kind: "gateway" });
   probe.live.set(100, null);
-  agent.claim({ pid: 200 });
+  // Review of 3e27beb: the start went on to claim, overwriting a live holder's lease. It is refused, and so is a
+  // replace, since nothing shows the unverifiable holder is ours to stop.
+  for (const intent of ["start", "replace"]) {
+    const result = agent.claim({ pid: 200, intent });
+    assert.deepEqual([result.decision, result.reason], ["refuse", "unverifiable"], intent);
+    assert.equal(agent.read().instance.pid, 100, `${intent}: the live holder's lease was taken`);
+  }
   assert.deepEqual(probe.killed, [], "the live instance's gateway was stopped");
+  // CONTROL: a LEGACY record, with no identity at all, keeps the path it had: unknown, claimed, nothing stopped.
+  const legacy = agent.read();
+  delete legacy.instance.startedAtMs;
+  delete legacy.instance.seenAliveAtMs;
+  fs.writeFileSync(agent.file, JSON.stringify(legacy));
+  assert.equal(agent.claim({ pid: 200 }).decision, "claim");
+  assert.deepEqual(probe.killed, []);
 });
 
 test("AgentLease: a stopped entry whose start cannot be read afterwards is not counted as stopped (review of ba87799)", () => {

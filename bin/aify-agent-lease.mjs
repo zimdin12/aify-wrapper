@@ -108,6 +108,10 @@ export function runLease(argv, { env = process.env, err = process.stderr, out = 
         say(`${args.agentId}: the live instance (${describe(result.live)}) hosts another agent -- something started from its session, such as a Herdr server or aify-env, runs an agent -- so replacing it would end that agent too. Stop what it hosts, or stop ${args.agentId} yourself, then start again.`);
         return REFUSED_EXIT_CODE;
       }
+      if (result.decision === "refuse" && result.reason === "unverifiable") {
+        say(`${args.agentId}: ${describe(result.live)} is still running, and this host cannot read its start time to tell it from a process that reused its pid, so this start neither replaces nor stops it. Stop it, or try again once its start time can be read.`);
+        return REFUSED_EXIT_CODE;
+      }
       if (result.decision === "refuse" && result.reason === "could-not-stop") {
         say(`${args.agentId}: could not stop ${describe(result.live)}, so this start would make a second instance. Stop it, then start again.`);
         return REFUSED_EXIT_CODE;

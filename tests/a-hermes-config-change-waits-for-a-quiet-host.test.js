@@ -28,19 +28,24 @@ const FAKE = path.join(HERE, "fake-hermes.mjs");
 const temp = () => fs.mkdtempSync(path.join(os.tmpdir(), "aify-hermes-pending-"));
 
 /**
- * Whether this host runs hermes, read by the test itself before and after `work`, so the branch a case expects is not
- * the one the code under test says it took. A host whose answer changes during the case cannot say which was right.
+ * The processes that ran, or may have run, hermes for the whole of `work`: the same pid and start in a scan the test
+ * makes before it and one after, so the code under test saw each of them. A case takes its branch from what the command
+ * says it did and must defer when any is here. Only these bind it: the suite's own python probes and stub hermes come
+ * and go between the scans, and one a scan catches may be gone by the command's (seen in the Linux run of 2026-10-28).
  */
 function onThisHost(work) {
   const seen = () => {
-    const { running, unknown } = hermesProcesses(processTable({ commands: true }));
-    return running.length + unknown.length > 0;
+    const table = processTable({ commands: true });
+    const { running, unknown } = hermesProcesses(table);
+    return [...running, ...unknown].filter((pid) => Number.isFinite(table.get(pid).startedAtMs)).map((pid) => `${pid}@${table.get(pid).startedAtMs}`);
   };
   const before = seen();
   const result = work();
-  assert.equal(seen(), before, "hermes started or stopped on this host during the case; run it again");
-  return { hermesRunning: before, result };
+  const after = new Set(seen());
+  return { throughout: before.filter((process) => after.has(process)), result };
 }
+// What a command says when it leaves the change pending because of this host's processes.
+const HOST_DEFERRAL = /hermes is running here|may be hermes|cannot be listed/;
 /** A row as the Windows table gives it: the image CIM names, the command line parsed as Windows parses it. */
 const win = (commandLine) => ({ image: imageName(windowsArgv(commandLine)[0]), argv: windowsArgv(commandLine), commandLine });
 /** A row as the Linux table gives it: stat's comm, cmdline's NUL-separated words. */
@@ -112,6 +117,42 @@ test("the Linux table keeps a process whose cmdline it cannot read, with no argv
   assert.deepEqual(rows.get(102).argv, ["node", "fixture.mjs"]);
   assert.equal(hermesProcesses(rows).unknown[0], 101);
   assert.throws(() => linuxCommand(9, stat(9, "node"), readFile), { code: "ENOENT" }, "a process that ended before its cmdline was read is kept");
+});
+
+test("the command table lists a process it cannot time, so the gate sees it: a Linux stat it cannot read, a Windows process with no start", () => {
+  // Review of 3e27beb: both rows were dropped, and with another row readable the table read quiet.
+  const stat = (pid, comm) => `${pid} (${comm}) S 1 ${pid} ${pid} 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1000`;
+  const linux = (statError) => processTable({ platform: "linux", commands: true, bootEpoch: () => 1700000000, readDir: () => ["101", "102"], readFile: (file) => {
+    if (file === "/proc/stat") return "btime 1700000000\n";
+    if (file === "/proc/101/stat") throw Object.assign(new Error("denied"), { code: statError });
+    if (file === "/proc/102/stat") return stat(102, "node");
+    if (file === "/proc/101/cmdline") return "python3\0/home/u/.local/bin/hermes\0--tui\0";
+    if (file === "/proc/102/cmdline") return "node\0fixture.mjs\0";
+    throw Object.assign(new Error("absent"), { code: "ENOENT" });
+  } });
+  const denied = linux("EACCES");
+  assert.equal(denied.get(101)?.startedAtMs, null, "a process whose stat could not be read was dropped");
+  assert.deepEqual(hermesProcesses(denied).running, [101]);
+  assert.equal(linux("ENOENT").has(101), false, "CONTROL: a process gone between listing and reading is dropped");
+  const win = parseCommandTable("101\t1\t\thermes.exe\t1\tC:\\fixture\\hermes.exe --tui\n102\t1\t2026-10-01T00:00:00.0000000Z\tnode.exe\t1\tnode x", { platform: "win32" });
+  assert.equal(win.get(101)?.startedAtMs, null, "a process with no CreationDate was dropped");
+  assert.deepEqual(hermesProcesses(win).running, [101]);
+});
+
+test("WINDOWS PRODUCER: the real PowerShell pipeline keeps a process CIM gives no CreationDate", { skip: process.platform !== "win32" && "needs PowerShell" }, () => {
+  // Synthetic CIM objects in place of the host's inventory; the rest of the script is processTable's own.
+  const ps = path.join(process.env.SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  const fixture = "$fixture=@([pscustomobject]@{ProcessId=101;ParentProcessId=1;CreationDate=$null;Name='hermes.exe';CommandLine='C:\\fixture\\hermes.exe --tui'},"
+    + "[pscustomobject]@{ProcessId=102;ParentProcessId=1;CreationDate=[datetime]'2026-10-01T00:00:00Z';Name='node.exe';CommandLine='C:\\fixture\\node.exe x'});\n";
+  const run = (command, args, options) => {
+    const script = args.at(-1);
+    assert.equal(script.split("Get-CimInstance Win32_Process").length, 2, "the producer's script changed shape");
+    return spawnSync(ps, [...args.slice(0, -1), fixture + script.replace("Get-CimInstance Win32_Process", "$fixture")], { ...options, timeout: 20_000 });
+  };
+  const rows = processTable({ platform: "win32", commands: true, run });
+  assert.deepEqual([rows.get(101)?.image, rows.get(101)?.startedAtMs], ["hermes", null]);
+  assert.equal(typeof rows.get(102)?.startedAtMs, "number", "CONTROL: a timed row keeps its start");
+  assert.equal(processTable({ platform: "win32", run }).has(101), false, "the lease's table gained an untimed row");
 });
 
 /** A marker in a temp home, with a recording scan and step; every start is for `target` unless `apply` is told another. */
@@ -310,9 +351,17 @@ test("RESTART ALL: starts arriving together apply the change once, and every one
   fs.writeFileSync(log, "");
   try {
     new PendingHermesConfig({ marker }).record(path.join(dir, "services.json"), TARGET);
-    const starts = Array.from({ length: 4 }, () => spawn(process.execPath, [RACER, marker, log, TARGET], { stdio: "ignore" }));
-    await Promise.all(starts.map((child) => new Promise((resolve) => child.on("exit", resolve))));
-    const lines = fs.readFileSync(log, "utf8").trim().split("\n").map((line) => line.split(" ")[0]);
+    const go = path.join(dir, "go");
+    const starts = Array.from({ length: 4 }, () => spawn(process.execPath, [RACER, marker, log, TARGET, go], { stdio: "ignore" }));
+    const exits = starts.map((child) => new Promise((resolve) => child.on("exit", resolve)));
+    // Every start is released at once, when all four are ready, however slowly the host spawned them.
+    for (const deadline = Date.now() + 60_000; Date.now() < deadline;) {
+      if (fs.readFileSync(log, "utf8").split("\n").filter((line) => line.startsWith("ready ")).length === 4) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    fs.writeFileSync(go, "");
+    await Promise.all(exits);
+    const lines = fs.readFileSync(log, "utf8").trim().split("\n").map((line) => line.split(" ")[0]).filter((word) => word !== "ready");
     const end = lines.indexOf("end");
     assert.equal(lines.filter((word) => word === "begin").length, 1, lines.join(" "));
     assert.ok(lines.slice(0, end).filter((word) => word === "arrive").length >= 2, `control: the starts did not overlap: ${lines.join(" ")}`);
@@ -340,17 +389,17 @@ test("THE COMMAND on this host: it records, then applies through the installer's
     HERMES_RUNTIME_COMMAND: FAKE, FAKE_HERMES_STATE: state, FAKE_HERMES_LOG: calls };
   try {
     assert.equal(spawnSync(process.execPath, [CLI, "record", "--marker", marker, "--registry", registry], { env }).status, 0);
-    const { hermesRunning, result: applied } = onThisHost(() => spawnSync(process.execPath, [CLI, "apply", "--marker", marker], { env, encoding: "utf8", timeout: 120_000 }));
+    const { throughout, result: applied } = onThisHost(() => spawnSync(process.execPath, [CLI, "apply", "--marker", marker], { env, encoding: "utf8", timeout: 120_000 }));
     const sets = fs.readFileSync(calls, "utf8").split("\n").filter((line) => line.startsWith('["config","set"'));
-    if (!hermesRunning) {
-      assert.equal(applied.status, OUTCOMES.applied, applied.stderr);
+    if (applied.status === OUTCOMES.applied) {
+      assert.deepEqual(throughout, [], `applied while hermes ran here the whole time: ${applied.stderr}`);
       assert.match(applied.stderr, /is applied/);
       assert.equal(sets.length, 1, "applied without the installer's step");
       assert.equal(fs.existsSync(marker), false);
     } else {
       // This host runs hermes, as the development host does while its agents are up.
       assert.equal(applied.status, OUTCOMES.deferred, applied.stderr);
-      assert.match(applied.stderr, /hermes is running here/);
+      assert.match(applied.stderr, HOST_DEFERRAL);
       assert.deepEqual(sets, [], "a config set reached hermes while hermes was running");
       assert.equal(fs.existsSync(marker), true);
     }
@@ -377,18 +426,19 @@ test("install.sh --client hermes records the change, and writes the hermes confi
   const env = { ...process.env, HOME: dir, USERPROFILE: dir, HERMES_HOME: path.join(dir, "hermes"), LOCALAPPDATA: path.join(dir, "local"),
     HERMES_RUNTIME_COMMAND: FAKE, FAKE_HERMES_STATE: state, FAKE_HERMES_LOG: calls, AIFY_NO_PROMPT: "1" };
   try {
-    const { hermesRunning, result: run } = onThisHost(() => spawnSync("bash", [path.join(HERE, "..", "install.sh"), "--client", "hermes",
+    const { throughout, result: run } = onThisHost(() => spawnSync("bash", [path.join(HERE, "..", "install.sh"), "--client", "hermes",
       "--endpoint", "http://127.0.0.2:1", "--dest", posix(path.join(dir, "bin")), "--bridge-dir", posix(path.join(dir, "bridge")),
       "--registry", posix(registry)], { encoding: "utf8", timeout: 180_000, env }));
     assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
     assert.ok(fs.existsSync(path.join(dir, "bin", "hermes-aify")), "the launcher was not installed");
     const sets = fs.readFileSync(calls, "utf8").split("\n").filter((line) => line.startsWith('["config","set"'));
     const marker = path.join(dir, ".aify", "hermes-config-pending.json");
-    if (hermesRunning) {
+    if (/hermes config change is pending/.test(run.stderr)) {
+      assert.match(run.stderr, HOST_DEFERRAL);
       assert.deepEqual(sets, [], "the install wrote the hermes config while hermes was running");
-      assert.match(run.stderr, /hermes config change is pending/);
       assert.equal(new PendingHermesConfig({ marker }).read().registry, path.resolve(registry));
     } else {
+      assert.deepEqual(throughout, [], `the install wrote the hermes config while hermes ran here the whole time: ${run.stderr}`);
       assert.equal(sets.length, 1, `a quiet host was not given the change: ${run.stderr}`);
       assert.equal(fs.existsSync(marker), false);
     }
