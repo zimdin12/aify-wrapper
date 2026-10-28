@@ -3,10 +3,12 @@
 //
 //   node hermes-pending-racer.mjs <marker> <log> <config target> <go file>
 //
-// It logs `ready`, waits for the go file so every start is released at once, and logs `arrive`. Its scan sees what a
-// host restarting its agents shows: launchers, and node waiting at the lock, and no hermes. Its step logs `begin`, holds
-// until another start has arrived (so the overlap is made, not hoped for: a loaded host once ran the four one after
-// another), and logs `end`. It logs `launch-<outcome>` only after apply returns, where a launcher starts its hermes.
+// It logs `ready`, waits for the go file so every start is released at once, and calls apply. Its scan sees what a host
+// restarting its agents shows: launchers, and node waiting at the lock, and no hermes. It logs `contend` the first time
+// its own attempt to take the lock finds the lock file there, which is a start inside apply, held off by the holder.
+// The holder's step logs `begin`, holds until another start has contended (so the overlap is made, not hoped for: a
+// loaded host once ran the four one after another), and logs `end`. It logs `launch-<outcome>` only after apply
+// returns, where a launcher starts its hermes.
 
 import fs from "node:fs";
 
@@ -20,7 +22,21 @@ const waitFor = (done, ms) => {
   for (const deadline = Date.now() + ms; Date.now() < deadline; pause(20)) if (done()) return true;
   return done();
 };
-const arrived = () => fs.readFileSync(log, "utf8").split("\n").filter((line) => line.startsWith("arrive ")).length;
+/** Whether another start has contended since this one began its step. */
+const contendedSince = (offset) => fs.readFileSync(log, "utf8").slice(offset).split("\n")
+  .some((line) => line.startsWith("contend ") && line !== `contend ${process.pid}`);
+let contended = false;
+const io = {
+  ...fs,
+  writeFileSync(file, data, options) {
+    try {
+      return fs.writeFileSync(file, data, options);
+    } catch (error) {
+      if (error?.code === "EEXIST" && file === `${marker}.lock` && !contended) { contended = true; say("contend"); }
+      throw error;
+    }
+  },
+};
 const WAITING = new Map([
   [11, { pid: 11, image: "bash", argv: ["C:\\Program Files\\Git\\usr\\bin\\bash.EXE", "C:/Users/u/.local/bin/hermes-aify", "--aify-agent", "a"] }],
   [12, { pid: 12, image: "node", argv: [process.execPath, process.argv[1], marker, log, target, go] }],
@@ -29,13 +45,12 @@ const WAITING = new Map([
 
 say("ready");
 waitFor(() => fs.existsSync(go), 60_000);
-say("arrive");
-const { outcome } = new PendingHermesConfig({ marker }).apply({
+const { outcome } = new PendingHermesConfig({ marker, lock: { io } }).apply({
   scan: () => WAITING,
   step: () => {
     say("begin");
-    waitFor(() => arrived() >= 2, 30_000);
-    pause(300);
+    const offset = fs.statSync(log).size;
+    waitFor(() => contendedSince(offset), 30_000);
     say("end");
     return { ok: true, detail: "" };
   },

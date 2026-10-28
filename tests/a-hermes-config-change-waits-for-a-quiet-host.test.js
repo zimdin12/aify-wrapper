@@ -361,10 +361,15 @@ test("RESTART ALL: starts arriving together apply the change once, and every one
     }
     fs.writeFileSync(go, "");
     await Promise.all(exits);
-    const lines = fs.readFileSync(log, "utf8").trim().split("\n").map((line) => line.split(" ")[0]).filter((word) => word !== "ready");
+    const entries = fs.readFileSync(log, "utf8").trim().split("\n").map((line) => line.split(" ")).filter(([word]) => word !== "ready");
+    const lines = entries.map(([word]) => word);
+    const begin = lines.indexOf("begin");
     const end = lines.indexOf("end");
     assert.equal(lines.filter((word) => word === "begin").length, 1, lines.join(" "));
-    assert.ok(lines.slice(0, end).filter((word) => word === "arrive").length >= 2, `control: the starts did not overlap: ${lines.join(" ")}`);
+    // The witness of overlap: another start, inside apply, found the lock taken while the applier held it.
+    const holder = entries[begin][1];
+    assert.ok(entries.slice(begin, end).some(([word, pid]) => word === "contend" && pid !== holder),
+      `control: no start contended for the lock while it was held: ${lines.join(" ")}`);
     assert.deepEqual(lines.filter((word) => word.startsWith("launch")).sort(), ["launch-applied", "launch-none", "launch-none", "launch-none"]);
     assert.ok(lines.findIndex((word) => word.startsWith("launch")) > end, `a start launched before the apply ended: ${lines.join(" ")}`);
     assert.equal(fs.existsSync(marker), false);
