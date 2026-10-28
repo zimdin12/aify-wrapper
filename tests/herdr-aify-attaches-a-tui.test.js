@@ -65,16 +65,53 @@ test("THE MISSING HALF: a client is started, and it is pointed at THIS instance"
   assert.equal(calls[0].env.XDG_CONFIG_HOME, instance.profile.configHome);
 });
 
-test("a terminal is required, and BOTH streams are, because a TUI draws and reads", () => {
-  assert.equal(shouldAttach({ io: { stdout: { isTTY: true }, stdin: { isTTY: true } } }), true);
+/** Streams as a launch sees them: a terminal of a size, or none; stderr kept for the test to read. */
+function streams({ tty = true, stdinTty = tty, columns = 120, rows = 40 } = {}) {
+  return {
+    stdin: { isTTY: stdinTty },
+    stdout: tty ? { isTTY: true, columns, rows } : { isTTY: false },
+    stderr: { text: "", write(chunk) { this.text += chunk; return true; } },
+  };
+}
+
+test("a terminal is required, BOTH streams are, because a TUI draws and reads, and it needs a size", () => {
+  assert.equal(shouldAttach({ io: streams() }), true);
   assert.equal(shouldAttach({ io: { stdout: { isTTY: false }, stdin: { isTTY: true } } }), false);
-  assert.equal(shouldAttach({ io: { stdout: { isTTY: true }, stdin: { isTTY: false } } }), false);
+  assert.equal(shouldAttach({ io: streams({ stdinTty: false }) }), false);
   assert.equal(shouldAttach({ io: {} }), false, "a piped run must stay headless rather than half-work");
+  // THE WORK-PC REHEARSAL (2026-10-28): a pseudo-terminal of 0x0 is a TTY Herdr cannot draw in.
+  assert.equal(shouldAttach({ io: streams({ columns: 0, rows: 0 }) }), false, "a 0x0 terminal was attached to");
+  assert.equal(shouldAttach({ io: streams({ rows: 0 }) }), false);
   // The escape hatch, so a scripted run is deterministic instead of depending on how it was invoked.
-  assert.equal(
-    shouldAttach({ argv: ["--no-attach"], io: { stdout: { isTTY: true }, stdin: { isTTY: true } } }),
-    false,
-  );
+  assert.equal(shouldAttach({ argv: ["--no-attach"], io: streams() }), false);
+});
+
+test("`herdr-aify env` with no terminal it can draw in refuses before anything starts, naming --no-attach", async () => {
+  // THE LEAK THIS CLOSES: started without one, it ran an instance and aify-env nobody saw and walked away from them.
+  // `runner` stands in for everything that starts something, so no case here can start a real Herdr.
+  const { main } = await import("../bin/herdr-aify.mjs");
+  for (const [label, io] of [["piped", streams({ tty: false, stdinTty: false })], ["0x0", streams({ columns: 0, rows: 0 })],
+    ["stdin piped", streams({ stdinTty: false })]]) {
+    const started = [];
+    const code = await main(["env"], { io, runner: options => (started.push(options), 0) });
+    assert.equal(code, 2, label);
+    assert.deepEqual(started, [], `${label}: something was started`);
+    assert.match(io.stderr.text, /nothing was started/, label);
+    assert.match(io.stderr.text, /herdr-aify env --no-attach/, `${label}: the headless way in is not named`);
+  }
+});
+
+test("CONTROL: a sized terminal, --no-attach, or the resident starts as before", async () => {
+  const { main } = await import("../bin/herdr-aify.mjs");
+  for (const [label, argv, io, withEnv, attaching] of [["a 120x40 terminal", ["env"], streams(), true, true],
+    ["--no-attach, piped", ["env", "--no-attach"], streams({ tty: false, stdinTty: false }), true, false],
+    ["the resident, piped", [], streams({ tty: false, stdinTty: false }), false, false]]) {
+    const started = [];
+    const code = await main(argv, { io, runner: options => (started.push(options), 0) });
+    assert.equal(code, 0, `${label}: ${io.stderr.text}`);
+    assert.deepEqual(started, [{ withEnv, attaching }], label);
+    assert.equal(io.stderr.text, "", label);
+  }
 });
 
 test("the real attach hands over this console, which is what makes Ctrl-C the TUI's", async () => {

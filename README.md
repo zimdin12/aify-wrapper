@@ -461,7 +461,8 @@ launch, and its diagnostics go to `~/.aify/herdr/claim.log` rather than to nowhe
 ```bash
 herdr-aify                       # this host's persistent Herdr: resident sessions, no aify-env
 herdr-aify env                   # an isolated instance with a dedicated aify-env in its first space
-herdr-aify --status              # what previous invocations left on this host
+herdr-aify env --no-attach       # the same, headless: without a terminal, plain `env` refuses
+herdr-aify --status              # what previous invocations left on this host (spent = used, not dead)
 herdr-aify --stop                # end this host's resident herdr, from any shell
 herdr-aify env --stop            # end the env instance: its herdr, aify-env and every managed worker
 ```

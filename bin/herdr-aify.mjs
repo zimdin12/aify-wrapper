@@ -13,7 +13,8 @@
 //   herdr-aify --stop     end this host's resident herdr; `herdr-aify env --stop` ends the env instance, even if
 //                         its launcher was killed without a signal
 //   herdr-aify --prune    delete what dead invocations left behind
-//   herdr-aify --no-attach  run headless instead of taking this terminal over with the Herdr TUI
+//   herdr-aify --no-attach  run headless instead of taking this terminal over with the Herdr TUI; `env` without a
+//                         terminal refuses rather than start an instance nobody sees
 //
 // WHAT IT IS FOR, in the operator's words: "a dedicated Herdr instance with the actual aify-env
 // process in its own space. Ending herdr-aify ends that Herdr instance, its env, and its workers. A
@@ -317,9 +318,23 @@ export function flagForSubcommand(argv = []) {
   return { stop: "--stop", status: "--status", prune: "--prune" }[said[0]] ?? null;
 }
 
+/**
+ * Why this launch cannot draw the TUI, or null when it can or `--no-attach` asked for none.
+ *
+ * A SIZE TOO, because a terminal with none is a terminal Herdr cannot draw in: a pseudo-terminal of 0x0 passed the
+ * TTY test, the attach failed on a "zero-sized grid", and the instance it had started was left running behind a
+ * launcher that had already gone (work-PC rehearsal, 2026-10-28).
+ */
+export function terminalProblem({ argv = [], io = process } = {}) {
+  if (argv.includes("--no-attach")) return null;
+  if (!io.stdout?.isTTY || !io.stdin?.isTTY) return "stdin and stdout are not both a terminal";
+  const { columns = 0, rows = 0 } = io.stdout;
+  if (!(columns > 0 && rows > 0)) return `the terminal has no size (${columns}x${rows})`;
+  return null;
+}
+
 export function shouldAttach({ argv = [], io = process } = {}) {
-  if (argv.includes("--no-attach")) return false;
-  return Boolean(io.stdout?.isTTY && io.stdin?.isTTY);
+  return !argv.includes("--no-attach") && terminalProblem({ argv, io }) === null;
 }
 
 /**
@@ -597,8 +612,9 @@ async function run({
     return await shutdown(0);
   }
 
-  // NO TERMINAL TO ATTACH TO: started, and left running, as the resident is.
-  process.stderr.write("herdr-aify: no terminal to attach to; `herdr-aify env` in a terminal attaches to it\n");
+  // HEADLESS, AS ASKED (--no-attach; main refuses an env launch that has no terminal and did not ask): started, and
+  // left running, as the resident is.
+  process.stderr.write("herdr-aify: started headless; `herdr-aify env` in a terminal attaches to it, `herdr-aify env --stop` ends it\n");
   return await detach(0);
 }
 
@@ -629,11 +645,13 @@ const USAGE = [
   "                    here and come back after a restart. Leaving it DETACHES; agents keep running.",
   "  herdr-aify env    a dedicated Herdr with its own aify-env, for MANAGED work. Leaving it DETACHES;",
   "                    a second `herdr-aify env` attaches to it. A new one never adopts an ended one's workers.",
+  "                    It needs a terminal with a size, and refuses without one; `--no-attach` starts it headless.",
+  "  --status          every invocation on disk. spent = used (its id is never reused), not dead.",
   "  --stop            end this host's herdr; `herdr-aify env --stop` ends the env instance. `herdr server stop` cannot:",
   "                    this profile keeps its own socket, which is what isolates it from your herdr.",
 ].join(String.fromCharCode(10)) + String.fromCharCode(10);
 
-async function main(argv) {
+async function main(argv, { io = process, runner = run } = {}) {
   // `stop`, `server stop`, `status`, `prune`: the spelling herdr itself uses, answered rather than refused.
   const asFlag = flagForSubcommand(argv);
   if (asFlag) argv = [...argv, asFlag];
@@ -654,10 +672,22 @@ async function main(argv) {
     process.stderr.write(`herdr-aify: ${mode.error}\n${USAGE}`);
     return 2;
   }
-  return run({ withEnv: mode.withEnv });
+  // AN ENV INSTANCE NOBODY CAN SEE IS NOT STARTED. Without a terminal it used to start headless and outlive the
+  // launcher, leaving aify-env serving where nothing showed it; a headless one is now asked for by name. Refused before
+  // `run`, so no lock, owner, server or aify-env exists yet. The resident is unchanged: keeping it up is its job.
+  const problem = mode.withEnv ? terminalProblem({ argv, io }) : null;
+  if (problem) {
+    io.stderr.write(
+      `herdr-aify: cannot attach: ${problem}; nothing was started.\n`
+        + "  Run `herdr-aify env` in a terminal, or `herdr-aify env --no-attach` to start it headless "
+        + "(`herdr-aify env` in a terminal attaches later, `herdr-aify env --stop` ends it).\n",
+    );
+    return 2;
+  }
+  return runner({ withEnv: mode.withEnv, attaching: shouldAttach({ argv, io }) });
 }
 
-export { run, processes };
+export { run, processes, main };
 
 if (isMainModule(import.meta.url)) {
   // A THROW FROM `run()` USED TO SURFACE AS A RAW UNHANDLED REJECTION. The reachable window is real:

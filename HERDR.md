@@ -42,7 +42,8 @@ hand -- the resident links it into its own profile:
 ```bash
 herdr-aify                       # this host's persistent Herdr: residents only, no aify-env
 herdr-aify env                   # an isolated Herdr with a dedicated aify-env in its first space
-herdr-aify --status              # what previous invocations left on this host
+herdr-aify env --no-attach       # the same, headless: without a terminal, plain `env` refuses
+herdr-aify --status              # what previous invocations left on this host (spent = used, not dead)
 herdr-aify --stop                # end this host's resident Herdr, from any shell
 herdr-aify env --stop            # end the env instance: its Herdr, its aify-env and their workers
 herdr-aify --prune               # delete what dead invocations left behind
@@ -87,7 +88,9 @@ release directory and the visible bin; on Linux and macOS `~/.local/bin` -- with
 replacing the default bin directory on both, then PATH. A refusal names every place it looked.
 
 Leaving `herdr-aify env` detaches (0.8.6); `herdr-aify env --stop` ends that Herdr, its dedicated env
-and its workers, and a bare `herdr-aify --stop` never touches it. A new invocation gets a
+and its workers, and a bare `herdr-aify --stop` never touches it. Without a terminal it can draw in (stdin
+and stdout not both a TTY, or a size of 0x0) `herdr-aify env` refuses with 2 and starts nothing; through 0.9.3 it
+started headless and left an instance nobody saw. `--no-attach` is the headless start. A new invocation gets a
 fresh UUID and the daemon refuses a context whose receipts already exist, so it cannot resurrect the
 previous invocation's agents. Your ordinary Herdr is untouched by it: different socket, different
 config and state roots.
