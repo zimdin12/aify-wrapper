@@ -532,3 +532,8 @@ nothing about the launcher changes until the file does.
   read counts as possibly hermes, and holds the change back. A process whose image is plainly another program does
   not, even unread: on Windows another user's processes all have unreadable command lines, and a gate that waited on
   them would never open. So a hermes started through some other executable name, by another user, is missed.
+- **After a restart of every agent, the hermes config change can still be pending.** The first new hermes-aify start
+  can scan while the old hermes processes are still exiting. It then sees hermes running and starts without the
+  change. Nothing is lost: the change stays recorded, and the next hermes start of the same config that finds no hermes
+  running applies it. Until then `aify-wrapper-check` prints `hermes config pending since ...`, and under `--json`
+  `hermesConfigPending` is not null.
