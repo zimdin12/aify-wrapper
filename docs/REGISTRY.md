@@ -51,7 +51,7 @@ the launcher stale rather than leaving you to notice.
 | `<service>.endpointEnv` | no | The environment variable names **this service's own code reads** to find its endpoint. |
 | `<service>.mcp` | no | MCP servers this service contributes to a runtime. Each needs `name` and `command`; `args` optional. |
 | `<service>.mcpTransport` | no | `"stdio"` or `"http"`: how this service's launchers reach its MCP tools. Declared, it decides them over `install.sh --mcp-transport`, at install and at re-render, so the guided chain (which passes no flag) renders what the service serves. Absent keeps the flag, default stdio. Anything else is refused. |
-| `<service>.sessionInject` | no | `{ "mcp": true }` adds this service's `mcp` servers to every default-mode Claude session and every codex session, beside the operator's own. See below. |
+| `<service>.sessionInject` | no | `{ "mcp": true }` adds this service's `mcp` servers to every default-mode Claude session and every codex session, beside the operator's own; with `mcpTransport: "http"`, Claude and Hermes reach it at its `/mcp/http` instead. See below. |
 | `<service>.turnStart` | no | `{ "path": "/events/turn-start", "budgetMs": 800 }`: the route the turn-start runner (`bin/aify-turn-start.mjs`) calls as each Claude turn begins. `path` follows `agentState.path`'s rule; `budgetMs` is a whole number from 1 to `TURN_START_DEADLINE_MS` (1500), the runner's shared deadline, and defaults to it. Any other key is refused. See below. |
 | `<service>.advertise` | no | Read by aify-env, not by this package. `false` means aify-env sends this service no environment heartbeat; absent, or any other value, means it does. This parser accepts the field and leaves it out of what it returns. A service plugin aify-env runs for the entry still heartbeats on its own, carrying the host's machine id (aify-env 0.8). |
 
@@ -151,6 +151,45 @@ measured on hermes 0.21.5 it deletes a same-named server from the user's config 
 The claude template's placeholder is `SESSION_MCP_B64`. `render.sh` refuses a template with any placeholder
 left, so an installer that renders the claude template must supply it, empty or not.
 
+### Over HTTP: `sessionInject` with `mcpTransport: "http"`
+
+A service that opts in **and** declares `"mcpTransport": "http"` is reached at `<endpoint>/mcp/http` as the launch's
+agent, instead of through the local process its `mcp` entries start (`lib/session-http.mjs`, agreed with aify-comms
+and aify-dashboard on 2026-10-28). Its stdio entries are then left out for Claude and Hermes, under the same name.
+Codex keeps them: whether it sends headers, or expands variables in them, is not observed. A Claude launcher's **own**
+service is reached the same way whenever the launcher is installed for http (`--mcp-transport http`, or the service's
+declared `mcpTransport`), with or without `sessionInject`: that is aify-comms' per-launch entry, which this replaced.
+
+- **One header set for every service:** `X-Aify-Agent-Id` (the launch's agent), `X-Aify-Machine-Id` (`machineIdFor`),
+  `X-Aify-Launch-Folder` (the cwd Claude starts in, which a local process would have reported) and `X-API-Key`. A
+  service ignores what it does not use.
+- **The key, per service** (`sessionKey`): a key exported under a name the service itself declares in `keyEnv` wins;
+  a service that declares none never takes an exported key, so one service's key cannot reach another's header.
+  Otherwise the key its `credentialRef` names, only when the launch sends to the endpoint the registry names it for
+  (an exported endpoint that moves the own service gets no credential), and only from a file aify-env's custody rules
+  accept: not reached through a link, readable by its owner alone. This is aify-comms' `destinationKeyResolver` applied
+  per service; `tests/the-session-key-is-resolved-as-comms-resolves-it.test.js` holds them equal.
+- **No key, no header.** The entry is still written, without `X-API-Key`, and the service is named on stderr: the
+  service decides, and a 401 reads as a credential problem where absent tools read as a broken install.
+- **Claude, per launch.** `install.sh` bakes the list into the placeholder `SESSION_HTTP_B64`
+  (`registry-cli.mjs session-http-b64 <path> [own service]`): names, endpoints, `credentialRef` and `keyEnv`, never a
+  key, so the registry fingerprint still says what the launcher was built from. claude-aify runs
+  `bin/aify-session-mcp.mjs` once per launch in the launch folder; it writes this list's entries and the stdio
+  `sessionInject` servers into one `--mcp-config=<file>`. Because that file can hold keys, it is the agent's one
+  `~/.aify/sessions/<agent id>/mcp.json` (`lib/session-folder.mjs`), in a folder made owner-only and checked before
+  every write, never the session's temp: a launcher stopped with TerminateProcess skips its EXIT trap, so per-launch
+  temp files piled up there. A launch nobody named uses `_pid-<launcher pid>/`, swept once its launcher has ended.
+  Strict mode takes only the own service. Exit 78, and no launch, when that file cannot be written: a widened
+  folder, unreadable rendered input, or two servers under one name.
+- **Hermes, machine-wide.** `hermes-config-cli.mjs` writes `{url, headers}` for the other services with
+  `X-Aify-Agent-Id: "${AIFY_AGENT_ID}"`, `X-Aify-Launch-Folder: "${workspaceFolder}"` (which Hermes resolves itself to
+  the session's workspace root, else its cwd), and the machine id and key written as they are. **An unset `${VAR}` in a
+  remote url or header makes Hermes refuse the whole server**, so a Hermes not started by hermes-aify (which sets
+  `AIFY_AGENT_ID`) has none of these services' tools; aify-comms' own Hermes entry makes the same trade. **A running
+  Hermes reloads `mcp_servers` when their expanded content changes**: a release that changes this entry installs with
+  Hermes agents stopped, and the step says so whenever it writes.
+- The key is in the entry because an HTTP server cannot read a credential file the way a local process does.
+
 ## `turnStart`: what a service says as a turn begins
 
 The launcher registers one synchronous `UserPromptSubmit` command, `bin/aify-turn-start.mjs`, which a channel wake runs
@@ -195,6 +234,7 @@ TURN_START_DEADLINE_MS           // the turn-start runner's shared deadline, and
 mcpEntriesFor(registry)          // -> [{name, command, args, env}]
 MCP_TRANSPORTS                   // the transports a service may declare: stdio, http
 mcpTransportFor(registry, service) // -> the transport `service` declares, or ""
+reachedOverHttp(service)         // -> whether an opted-in service is reached at its /mcp/http instead
 fingerprint(registry)            // -> stable short digest
 strictMcpEntriesFor(registry)    // -> the same entries, strict-MCP shaped
 strictMcpSecretProblem(registry, env = process.env)  // -> a reason, or "" when there is none

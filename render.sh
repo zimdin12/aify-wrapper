@@ -156,7 +156,7 @@ record_render() {
       printf '%s\0' "$sha" "$(basename "$template")" "TARGET=$native"
       for pair in "$@"; do
         case "$pair" in
-          REGISTRY_FINGERPRINT=*|STRICT_EXTRA_MCP_B64=*|SESSION_MCP_B64=*|SESSION_MCP_CODEX_B64=*) ;;
+          REGISTRY_FINGERPRINT=*|STRICT_EXTRA_MCP_B64=*|SESSION_MCP_B64=*|SESSION_HTTP_B64=*|SESSION_MCP_CODEX_B64=*) ;;
           *) printf '%s\0' "$pair" ;;
         esac
       done

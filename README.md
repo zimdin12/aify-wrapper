@@ -500,3 +500,12 @@ one an absent-means-fine reading would report as healthy. A host with no launche
 
 The remedy is **reinstall**, never restart. Relaunching an agent runs the same launcher text again, so
 nothing about the launcher changes until the file does.
+
+## Known issues
+
+- **Per-launch files pile up in the session's temp when a launcher is killed.** aify-env stops a launcher with
+  TerminateProcess, so its EXIT trap never runs, and claude-aify's `aify-mcp.*` (strict mode's config) and
+  `aify-hooks.*` (its hook settings) stay behind: 59 and 49 of them on one host on 2026-10-28, against 7 live
+  sessions. Neither carries a key. Files that do (the per-session MCP config with each service's `X-API-Key`) are
+  written to the agent's owner-only `~/.aify/sessions/<agent id>/` instead, one per agent, so a kill leaves one
+  owner-only file that the next launch replaces.

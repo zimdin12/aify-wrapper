@@ -15,6 +15,8 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { writePrivateCredential } from "./private-credential.mjs";
+
 import { credentialFromBytes, readCredential } from "../lib/credential-file.mjs";
 import { hostIsWsl, machineIdFor } from "../lib/machine-id.mjs";
 
@@ -80,8 +82,8 @@ test("THE CREDENTIAL is aify-env's decoding for every byte shape it refuses or a
 test("readCredential reads ~/.aify/credentials/<ref> under the home it is given, and gives nothing for a missing file", async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "aify-credential-file-"));
   try {
-    fs.mkdirSync(path.join(home, ".aify", "credentials"), { recursive: true });
-    fs.writeFileSync(path.join(home, ".aify", "credentials", "svc.key"), "the-key\n");
+    // Private, as aify-env writes it: custody refuses anything else (tests/the-session-key-is-resolved-as-comms-resolves-it.test.js).
+    writePrivateCredential(home, "svc.key", "the-key");
     assert.equal(await readCredential("svc.key", { home }), "the-key");
     assert.equal(await readCredential("absent.key", { home }), "");
     assert.equal(await readCredential("", { home }), "");

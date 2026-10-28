@@ -69,8 +69,10 @@ async function main() {
     // Left out when the input names no moment, so a service keeps its own re-send for it.
     ...(momentOf(input) ? { moment: momentOf(input) } : {}),
   };
+  // No custody here: it is checked at launch (bin/aify-session-mcp.mjs), and on every prompt its icacls spawn (up to
+  // 384 ms measured) would eat this 1500 ms deadline and drop the turn's text silently. The link check still runs.
   const { text: added } = await runTurnStart({
-    targets, request, keyFor: (ref) => readCredential(ref), fetchImpl: fetch, startedAt, dueAt,
+    targets, request, keyFor: (ref) => readCredential(ref, { custody: async () => "" }), fetchImpl: fetch, startedAt, dueAt,
   });
   return hookOutput(added, input.hook_event_name === "SessionStart" ? "SessionStart" : "UserPromptSubmit");
 }

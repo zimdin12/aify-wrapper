@@ -7,6 +7,8 @@ import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 
+import { makePrivate } from "./private-credential.mjs";
+
 export const KEY = "sekret-key-0123456789";
 
 /** A local service: `behave(request, response, body)` decides the answer; every request is recorded. */
@@ -35,7 +37,8 @@ export function host(t, { endpoint, credential = `${KEY}\n`, env = {}, more = {}
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "aify-turn-start-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   fs.mkdirSync(path.join(home, ".aify", "credentials"), { recursive: true });
-  fs.writeFileSync(path.join(home, ".aify", "credentials", "dash.key"), credential);
+  // Private, as aify-env writes it: the reader refuses a credential others can read (lib/credential-custody.mjs).
+  makePrivate((fs.writeFileSync(path.join(home, ".aify", "credentials", "dash.key"), credential), path.join(home, ".aify", "credentials", "dash.key")));
   const registry = path.join(home, ".aify", "services.json");
   fs.writeFileSync(registry, JSON.stringify({ version: 1, services: { dash: {
     endpoint, credentialRef: "dash.key", turnStart: { path: "/events/turn-start", budgetMs: 800 } }, ...more } }));

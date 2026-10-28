@@ -62,6 +62,7 @@ else
   aify_lease_release() { :; }
   aify_lifetime_start() { :; }
   aify_lifetime_release() { :; }
+  aify_lease_pid() { if [ -r "/proc/$1/winpid" ]; then cat "/proc/$1/winpid"; else printf '%s' "$1"; fi; }
 fi
 # `--aify-start-intent=start|replace` is the lease's, never the runtime's: a Herdr restore passes it.
 aify_lease_take_intent "$@"
@@ -823,36 +824,25 @@ else
     echo "[claude-aify] HARNESS_MCP_COMMAND is set but NOT applied: it is read only in strict MCP mode." >&2
     echo "              Set AIFY_CLAUDE_STRICT_MCP=1 to use it, or unset it. Continuing with the built-in bridge." >&2
   fi
-  # Services that asked to reach every session, added BESIDE the operator's own servers: --mcp-config
-  # without --strict-mcp-config. A file per session, so nothing edits ~/.claude.json, which running
-  # sessions rewrite. Base64 for the reason the strict branch gives; removed by the EXIT trap below.
-  if [ -n "@@SESSION_MCP_B64@@" ]; then
-    if ! command -v base64 >/dev/null 2>&1; then
-      echo "[claude-aify] a service asked to be added to every session but 'base64' is not on PATH." >&2
-      echo "              Install coreutils, or clear \"sessionInject\" from the service registry." >&2
-      exit "$HARNESS_EXIT_CONFIG"
-    fi
-    AIFY_MCP_CONFIG="$(mktemp -t aify-mcp.XXXXXX.json 2>/dev/null || mktemp -t aify-mcp)"
-    printf '%s' "@@SESSION_MCP_B64@@" | base64 -d > "$AIFY_MCP_CONFIG"
-    # One word, with `=`. `--mcp-config` takes several values, so the spaced form reads any bare word after it
-    # as a second config path (measured on Claude Code 2.1.286, 2026-10-01). Today `--settings` is always
-    # appended after this, so nothing is swallowed; the equals form keeps that true whatever is added later.
-    CLAUDE_MCP_FLAGS+=("--mcp-config=$AIFY_MCP_CONFIG")
-  fi
 fi
-# THE SERVICE'S TOOLS, PER LAUNCH (0.9.11). Installed with --mcp-transport http, the comms tools are the service's
-# /mcp/http called as this agent, a header nothing machine-wide can hold. The service's installed copy prints the
-# entry (URL and header are its contract); this places it, and the EXIT trap removes it.
-AIFY_COMMS_MCP_CONFIG=""; unset AIFY_COMMS_MCP  # the switch is this install's, never a shell's an http launch exported
-if [ "@@MCP_TRANSPORT@@" = "http" ]; then
-  AIFY_COMMS_MCP_CONFIG="$(mktemp -t @@SERVICE_NAME@@-mcp.XXXXXX.json 2>/dev/null || mktemp -t @@SERVICE_NAME@@-mcp)"
-  if ! node "$AIFY_BRIDGE_DIR_FWD/comms-http-entry.mjs" "$HARNESS_ENDPOINT" "@@SERVICE_NAME@@" "$CLAUDE_AIFY_AGENT_ID" > "$AIFY_COMMS_MCP_CONFIG"; then
-    echo "[claude-aify] this launch's comms tools entry could not be written; re-run the service's installer." >&2
-    rm -f "$AIFY_COMMS_MCP_CONFIG"; exit "$HARNESS_EXIT_CONFIG"
+# THIS SESSION'S SERVICES, PER LAUNCH (bin/aify-session-mcp.mjs): the stdio servers a service opted into every session
+# with, and the services reached over HTTP (this one's own when installed for http, as this agent from this folder),
+# added BESIDE the operator's own servers in one file that can hold keys: nothing edits ~/.claude.json, which running
+# sessions rewrite. The file is the agent's one owner-only ~/.aify/sessions/<id>/mcp.json, never the session's temp:
+# a launcher killed the way aify-env stops one skips every trap. Strict mode takes only this service's own. Base64 for
+# the reason the strict branch gives. One word, with `=`: the spaced form reads a later bare word as a second config
+# path (measured on Claude Code 2.1.286, 2026-10-01). The switch below is this install's, never a shell's.
+AIFY_SESSION_CONFIG=""; unset AIFY_COMMS_MCP
+if [ -n "@@SESSION_MCP_B64@@@@SESSION_HTTP_B64@@" ]; then
+  if ! AIFY_SESSION_CONFIG="$(AIFY_SESSION_STDIO_B64="@@SESSION_MCP_B64@@" AIFY_SESSION_HTTP_B64="@@SESSION_HTTP_B64@@" AIFY_SESSION_STRICT="${AIFY_CLAUDE_STRICT_MCP:-0}" \
+      AIFY_SESSION_ENDPOINT="$HARNESS_ENDPOINT" AIFY_SESSION_LAUNCHER_PID="$(aify_lease_pid "$$")" AIFY_AGENT_ID="$CLAUDE_AIFY_AGENT_ID" \
+      node "$AIFY_WRAPPER_DIR_FWD/bin/aify-session-mcp.mjs")"; then
+    echo "[claude-aify] this session's MCP entries could not be written; re-run the installer." >&2
+    exit "$HARNESS_EXIT_CONFIG"
   fi
-  CLAUDE_MCP_FLAGS+=("--mcp-config=$AIFY_COMMS_MCP_CONFIG")
-  export AIFY_COMMS_MCP=http  # the channel then holds the resident duties (comms resident-duties.mjs)
+  if [ -n "$AIFY_SESSION_CONFIG" ]; then CLAUDE_MCP_FLAGS+=("--mcp-config=$AIFY_SESSION_CONFIG"); fi
 fi
+if [ "@@MCP_TRANSPORT@@" = "http" ]; then export AIFY_COMMS_MCP=http; fi  # the channel holds the resident duties (comms resident-duties.mjs)
 
 # Session-id truth capture (2026-05-30, #138): install SessionStart +
 # UserPromptSubmit hooks that record THIS claude session's own id. Claude
@@ -925,7 +915,7 @@ _aify_runtime_exited() {
   if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then _aify_exit_herdr=herdr; fi
   sh "@@WRAPPER_DIR@@/bin/aify-runtime-exited.sh" "@@BRIDGE_DIR@@" "$_aify_exit_herdr" </dev/null >/dev/null 2>&1 || true
 }
-trap 'rm -f "$AIFY_MCP_CONFIG" "$AIFY_COMMS_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null; _aify_runtime_exited; aify_lifetime_release; aify_lease_release' EXIT
+trap 'rm -f "$AIFY_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null; _aify_runtime_exited; aify_lifetime_release; aify_lease_release' EXIT
 
 # The lease is claimed by the run that starts claude: not by a `--shared` launch, which hands the start
 # to the host, whose own run of this launcher claims. 75 is a refused start. BEFORE THE REAP BELOW: that
@@ -984,7 +974,7 @@ if [ "$CLAUDE_AIFY_SHARED" = true ]; then
   #
   # The trapped command is reused rather than a second copy written beside it: one of the two
   # would drift. Cleared afterwards so an INT between here and the exec cannot run it twice.
-  rm -f "$AIFY_MCP_CONFIG" "$AIFY_COMMS_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null
+  rm -f "$AIFY_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null
   trap - EXIT
   # AN INFERRED SESSION MODE DOES NOT CROSS THIS BOUNDARY (R9-M10). It was resolved from THIS
   # process's stdin, and the host will run the launcher in a PTY where the answer differs. Dropping

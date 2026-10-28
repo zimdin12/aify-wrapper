@@ -196,6 +196,10 @@ SESSION_MCP_B64="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" session-frag
 # guided chain renders with no flag, and a launcher must not take a transport its service has retired.
 DECLARED_TRANSPORT="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" mcp-transport "$(node_path "$REGISTRY")" "$SERVICE_NAME")" || exit "$EXIT_CONFIG"
 [ -z "$DECLARED_TRANSPORT" ] || MCP_TRANSPORT="$DECLARED_TRANSPORT"
+# The services a launch reaches over HTTP, with their entry written per launch (lib/session-http.mjs): the others that
+# declare it, and this service itself when the transport just decided is http.
+SESSION_HTTP_OWN=""; [ "$MCP_TRANSPORT" != http ] || SESSION_HTTP_OWN="$SERVICE_NAME"
+SESSION_HTTP_B64="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" session-http-b64 "$(node_path "$REGISTRY")" "$SESSION_HTTP_OWN")" || exit "$EXIT_CONFIG"
 
 # The launcher name follows the client name. pi is the one exception: it ships an alias, which is real
 # information and not derivable from a filename, so it is the only thing written down here.
@@ -236,6 +240,7 @@ install_one() {
         "REGISTRY_FINGERPRINT=$REGISTRY_FINGERPRINT" \
         "STRICT_EXTRA_MCP_B64=$STRICT_EXTRA_MCP_B64" \
         "SESSION_MCP_B64=$SESSION_MCP_B64" \
+        "SESSION_HTTP_B64=$SESSION_HTTP_B64" \
         "SESSION_MCP_CODEX_B64=$SESSION_MCP_CODEX_B64" \
         "MCP_TRANSPORT=$MCP_TRANSPORT" \
         "SERVICE_NAME=$SERVICE_NAME" \

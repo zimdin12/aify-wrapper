@@ -116,7 +116,7 @@ test("a --wrapper-dir that does not exist is refused before any launcher is writ
 
 test("render.sh refuses a relative or empty WRAPPER_DIR, and takes an absolute one", () => {
   const pairs = ["ENDPOINT=x", "REGISTRY_FINGERPRINT=fp", "SERVICE_NAME=aify-comms", "WRAPPER_VERSION=0", "NATIVE_BASE=/b",
-    "SCRIPT_DIR=/b", "MCP_TRANSPORT=stdio", "BRIDGE_DIR=/b/mcp/stdio", "STRICT_EXTRA_MCP_B64=", "SESSION_MCP_B64="];
+    "SCRIPT_DIR=/b", "MCP_TRANSPORT=stdio", "BRIDGE_DIR=/b/mcp/stdio", "STRICT_EXTRA_MCP_B64=", "SESSION_MCP_B64=", "SESSION_HTTP_B64="];
   const render = (wrapperDir) => {
     const out = path.join(tmp("wrapdir-render"), "claude-aify");
     const r = spawnSync("bash", [RENDER, "claude-aify.sh.in", posix(out), ...pairs, `WRAPPER_DIR=${wrapperDir}`], { encoding: "utf8", timeout: 120_000 });

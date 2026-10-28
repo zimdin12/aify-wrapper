@@ -27,6 +27,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { definitionsEnv, readerWrapper } from "./definition-reader-wrapper.mjs";
+import { ownerEnv } from "./private-credential.mjs";
 
 import { parseRegistry, sessionMcpConfig, sessionMcpConfigBase64, sessionMcpEntriesFor } from "../lib/registry.mjs";
 
@@ -96,7 +97,8 @@ function launch(registry, env = {}) {
 
   const run = spawnSync("bash", [path.join(out, "claude-aify")], {
     encoding: "utf8",
-    env: { PATH: [winPath(stubs), path.dirname(process.execPath), bashDir()].join(SEP), HOME: posix(home),
+    // USERPROFILE too: node's home on Windows, where the session file is written. Without it, it is the real profile's.
+    env: { PATH: [winPath(stubs), path.dirname(process.execPath), bashDir()].join(SEP), HOME: posix(home), USERPROFILE: home, ...ownerEnv(),
       ...definitionsEnv(path.join(dir, "defs")), HARNESS_IDENTITY: "probe-agent", ...env },
     timeout: 60_000,
   });
@@ -131,11 +133,12 @@ test("an opted-in service reaches the default-mode session beside the user's own
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test("the per-session file is removed when the session ends", () => {
+test("the per-session file is the agent's one session file, not a file per launch in the session's temp", () => {
+  // A killed launcher skips its EXIT trap, so per-launch temp files piled up (lib/session-folder.mjs); the agent's one
+  // owner-only file is replaced by its next launch instead (tests/session-http.test.js holds the kill and the folder).
   const { passedPath, dir } = launch(registryWith({ "aify-dashboard": DASHBOARD }));
   assert.ok(passedPath !== null, "no file was passed");
-  const onDisk = WIN ? winPath(passedPath) : passedPath;
-  assert.equal(fs.existsSync(onDisk), false, `the session file outlived the session: ${passedPath}`);
+  assert.match(passedPath.split(String.fromCharCode(92)).join("/"), /\/\.aify\/sessions\/[^/]+\/mcp\.json$/);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

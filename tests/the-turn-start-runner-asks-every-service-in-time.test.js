@@ -6,7 +6,7 @@
 // The end-to-end tests run the real hook command with a sealed home, registry and credential file.
 
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 
 import { parseRegistry, TURN_START_DEADLINE_MS } from "../lib/registry.mjs";
 import { hookOutput, momentOf, runTurnStart, turnStartTargets } from "../lib/turn-start.mjs";
+import { writePrivateCredential } from "./private-credential.mjs";
 import { answer, host, KEY, service } from "./turn-start-host.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -282,6 +283,19 @@ test("END TO END, A CODEX SUBAGENT'S TURN ASKS NOTHING AND ADDS NOTHING: its par
   assert.equal(svc.seen.length, 1);
 });
 
+test("END TO END, THE PER-TURN READ CHECKS NO CUSTODY: a credential others can read still sends its key", async (t) => {
+  // Bug this catches: custody (an icacls spawn, up to 384 ms measured) put back on every prompt, inside this 1500 ms
+  // deadline, where a miss drops the turn's text silently. It is checked at launch instead (comms-tech-lead, 2026-10-28).
+  const svc = await service(t, answer("OPERATOR RULE"));
+  const env = host(t, { endpoint: svc.endpoint });
+  const file = path.join(env.HOME, ".aify", "credentials", "dash.key");
+  if (process.platform === "win32") execFileSync("icacls", [file, "/grant", "*S-1-1-0:R"], { stdio: "ignore", windowsHide: true });
+  else fs.chmodSync(file, 0o644);
+  const result = await runHook(env, HOOK_INPUT);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(svc.seen[0]?.headers["x-api-key"], KEY, "the widened credential was refused on the per-turn path");
+});
+
 test("END TO END: the hook sends the runner-built request and prints the context", async (t) => {
   const svc = await service(t, answer("OPERATOR RULE"));
   const result = await runHook(host(t, { endpoint: svc.endpoint }), HOOK_INPUT);
@@ -310,7 +324,7 @@ test("END TO END, A SERVICE ECHOING ITS KEY ADDS NOTHING AND PRINTS NO KEY, and 
   const reflecting = await service(t, (request, response) => answer(`your key is ${request.headers["x-api-key"]}`)(request, response));
   const env = host(t, { endpoint: healthy.endpoint, more: { echo: { endpoint: reflecting.endpoint, credentialRef: "echo.key",
     turnStart: { path: "/events/turn-start" } } } });
-  fs.writeFileSync(path.join(env.HOME, ".aify", "credentials", "echo.key"), `${KEY}-echo\n`);
+  writePrivateCredential(env.HOME, "echo.key", `${KEY}-echo`);
   const result = await runHook(env, HOOK_INPUT);
   assert.equal(result.code, 0, result.stderr);
   assert.equal(reflecting.seen.length, 1, "control: the echoing service was asked and answered");
