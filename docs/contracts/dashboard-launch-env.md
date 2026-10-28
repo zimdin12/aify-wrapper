@@ -6,7 +6,7 @@ registry's `sessionInject` entry, so it sees the environment the launcher export
 
 | Name | Exported by | The bridge |
 | --- | --- | --- |
-| `AIFY_AGENT_ID` | every launcher (claude, codex, hermes, pi) | required. Empty, or a literal `${AIFY_AGENT_ID}`, is no agent, and the bridge registers nothing |
+| `AIFY_AGENT_ID` | every launcher (claude, codex, hermes, pi) | required. Empty, or any value that is wholly `${...}` (an unexpanded placeholder such as `${AIFY_AGENT_ID}`), is no agent: the bridge registers nothing, and every tool says what is missing |
 | `AIFY_RUNTIME` | every launcher | stored with the registration as given |
 | `AIFY_AGENT_ROLE` | every launcher | stored as given. **Not `AIFY_ROLE`**: no launcher ever exported that name, and the bridge read it until 69accd19, so no agent had registered a role |
 | `AIFY_SESSION_MODE` | every launcher | stored as given |

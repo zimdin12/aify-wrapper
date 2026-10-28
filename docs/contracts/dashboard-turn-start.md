@@ -34,7 +34,7 @@ and an icacls spawn on every prompt would eat the deadline (decided 2026-10-28).
 | `cwd` | string | the hook input's `cwd`, else the runner's own folder |
 | `machineId` | string | `machineIdFor` (aify-env's rule, `lib/machine-id.mjs`) |
 | `sessionKey` | string | the harness's own session id (`session_id`), never empty |
-| `moment` | string, optional | `start`, `compact` or `turn`; **left out** (never `null`) when the input names none |
+| `moment` | string, optional | `start`, `compact` or `turn`; **left out** (never `null`) when the input names none. The dashboard reads a word it does not know as `start`, so a newer runner's moment costs a brief, never the agent's orientation |
 
 aify-wrapper does **not** send `isFirstTurn`.
 
