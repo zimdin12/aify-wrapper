@@ -4,8 +4,8 @@
 //   node hermes-pending-racer.mjs <marker> <log> <config target> <go file>
 //
 // It logs `ready`, waits for the go file so every start is released at once, and calls apply. Its scan sees what a host
-// restarting its agents shows: launchers, and node waiting at the lock, and no hermes. It logs `contend` the first time
-// its own attempt to take the lock finds the lock file there, which is a start inside apply, held off by the holder.
+// restarting its agents shows: launchers, and node waiting at the lock, and no hermes. It logs `contend` each time its
+// own attempt to take the lock finds the lock file there, which is a start inside apply, held off by the holder.
 // The holder's step logs `begin`, holds until another start has contended (so the overlap is made, not hoped for: a
 // loaded host once ran the four one after another), and logs `end`. It logs `launch-<outcome>` only after apply
 // returns, where a launcher starts its hermes.
@@ -25,14 +25,15 @@ const waitFor = (done, ms) => {
 /** Whether another start has contended since this one began its step. */
 const contendedSince = (offset) => fs.readFileSync(log, "utf8").slice(offset).split("\n")
   .some((line) => line.startsWith("contend ") && line !== `contend ${process.pid}`);
-let contended = false;
+// Every attempt is logged, not only the first: a start whose first attempt fell before the holder's `begin` still
+// witnesses the overlap on a later one. FileLock retries every 100 ms and the holder ends as soon as it sees one.
 const io = {
   ...fs,
   writeFileSync(file, data, options) {
     try {
       return fs.writeFileSync(file, data, options);
     } catch (error) {
-      if (error?.code === "EEXIST" && file === `${marker}.lock` && !contended) { contended = true; say("contend"); }
+      if (error?.code === "EEXIST" && file === `${marker}.lock`) say("contend");
       throw error;
     }
   },
