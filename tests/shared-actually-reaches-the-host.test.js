@@ -63,7 +63,7 @@ function world() {
     INSTALL, "--registry", emptyRegistry(), "--all", "--endpoint", "http://127.0.0.2:1", "--render-only", posix(dir),
     "--bridge-dir", posix(path.join(dir, "bridge")), "--wrapper-dir", posix(readerWrapper(path.join(dir, "wrapper"))),
   ], { encoding: "utf8", timeout: 180_000, env: withPath(process.env, sealed.PATH) });
-  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.status, 0, `status ${result.status} signal ${result.signal} error ${result.error?.code ?? result.error}\n${result.stderr}`);
 
   const rendered = LAUNCHERS.filter((name) => fs.existsSync(path.join(dir, name)));
   assert.ok(rendered.length >= 3, `only ${rendered.length} launcher(s) rendered; nothing to test`);

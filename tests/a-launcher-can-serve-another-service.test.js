@@ -48,7 +48,7 @@ const codeLines = (text) => text.split("\n").filter((line) => !/^\s*#/.test(line
 test("the default render still names aify-comms, everywhere it used to", () => {
   // The point of the default is that this change is invisible to every existing install.
   const { dir, result } = render();
-  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.status, 0, `status ${result.status} signal ${result.signal} error ${result.error?.code ?? result.error}\n${result.stderr}`);
   const claude = read(dir, "claude-aify");
   assert.ok(claude.includes('\\"aify-comms\\": { \\"command'), "the stdio entry lost the default name");
   assert.ok(claude.includes("aify-comms-channel"), "the channel server lost its name");
@@ -60,7 +60,7 @@ test("the default render still names aify-comms, everywhere it used to", () => {
 
 test("--service renames the MCP server, its channel, and the flag that loads it", () => {
   const { dir, result } = render(["--service", "my-service"]);
-  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.status, 0, `status ${result.status} signal ${result.signal} error ${result.error?.code ?? result.error}\n${result.stderr}`);
   const claude = read(dir, "claude-aify");
   assert.ok(claude.includes('\\"my-service\\": { \\"command\\"'), "the stdio entry kept the old name");
   assert.ok(claude.includes('"my-service-channel"'), "the channel is not derived from the service");

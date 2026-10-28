@@ -51,7 +51,7 @@ function renderAll() {
   const result = spawnSync("bash", [
     INSTALL, "--registry", emptyRegistry(), "--all", "--endpoint", "http://127.0.0.2:1", "--render-only", posix(dir),
   ], { encoding: "utf8", timeout: 180_000, env: withPath(process.env, sealed.PATH) });
-  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.status, 0, `status ${result.status} signal ${result.signal} error ${result.error?.code ?? result.error}\n${result.stderr}`);
   // ONLY WHAT WAS ACTUALLY WRITTEN. `--all` does not render every template: no `pi` runtime is on the
   // sealed PATH, so `pi-aify.sh.in` exists and produces no launcher. Reading the template
   // list and assuming a file made every assertion below fail with ENOENT on a repo behaving

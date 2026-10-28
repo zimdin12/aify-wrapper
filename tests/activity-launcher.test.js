@@ -51,7 +51,7 @@ function fixture({ enabled = '1', managed = false, claimed = false, rewrite = fa
   const fire = (event, input = body, overrides = {}) => {
     const hooks = config.hooks[event]?.flatMap(g => g.hooks) || [];
     const results = hooks.map(h => spawnSync(bash, ['-c', h.command], { env: { ...env, ...overrides }, input: typeof input === 'string' ? input : JSON.stringify(input), encoding: 'utf8', timeout: 10000 }));
-    for (const result of results) { assert.equal(result.status, 0, result.stderr); assert.equal(result.stdout + result.stderr, '', 'hook is not silent'); }
+    for (const result of results) { assert.equal(result.status, 0, `status ${result.status} signal ${result.signal} error ${result.error?.code ?? result.error}\n${result.stderr}`); assert.equal(result.stdout + result.stderr, '', 'hook is not silent'); }
     return hooks;
   };
   const calls = () => fs.existsSync(trace) ? fs.readFileSync(trace, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse) : [];
