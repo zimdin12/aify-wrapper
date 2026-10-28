@@ -28,7 +28,7 @@ test("THE DEFINITION'S model and effort reach the app-server as -c pairs, and ne
   assert.equal(started.AIFY_AGENT_ROLE, "reviewer");
 });
 
-test("A MANAGED LAUNCH's model and effort reach the app-server; it reads no file", () => {
+test("A MANAGED LAUNCH's model and effort reach the app-server; a file it cannot read does not stop it", () => {
   const { run, appServerArgs } = launch("codex", ["--aify-agent", "lead"], {
     definitions: { lead: "{ not json" }, env: { AIFY_AGENT_ID: "lead", AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_MANAGED_MODEL: "gpt-m", AIFY_MANAGED_EFFORT: "low" } });
   assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);

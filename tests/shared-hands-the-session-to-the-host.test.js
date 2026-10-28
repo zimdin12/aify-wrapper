@@ -79,10 +79,12 @@ test("THE DEFAULT PATH STILL ENDS EXACTLY AS IT DID", () => {
   // The channel's flags became an array when the launcher gained the plugin route (2026-10-22). On the
   // development route they are the two words this line used to spell, and that is what Claude receives:
   // claude-user-arguments-are-never-a-channel-name.test.js runs the launcher and reads the argv.
+  // The instruction flags joined it with an agent's instructions (2026-10-28); with none they are empty, and
+  // a-launcher-takes-defaults-from-its-definition.test.js runs the launcher and reads that no flag arrives.
   const claude = renderClaude();
   assert.match(
     claude,
-    /\nclaude "\$\{AIFY_CHANNEL_FLAGS\[@\]\}" "\$\{CLAUDE_MCP_FLAGS\[@\]\}" "\$\{CLAUDE_PERMISSION_FLAGS\[@\]\}" "\$\{CLAUDE_ARGS\[@\]\}"\nSTATUS=\$\?\nexit "\$STATUS"/,
+    /\nclaude "\$\{AIFY_CHANNEL_FLAGS\[@\]\}" "\$\{CLAUDE_MCP_FLAGS\[@\]\}" "\$\{CLAUDE_PERMISSION_FLAGS\[@\]\}" "\$\{CLAUDE_INSTRUCTION_FLAGS\[@\]\}" "\$\{CLAUDE_ARGS\[@\]\}"\nSTATUS=\$\?\nexit "\$STATUS"/,
     "the ordinary launch line changed shape",
   );
   assert.match(claude, /\n {4}AIFY_CHANNEL_FLAGS=\(--dangerously-load-development-channels server:aify-comms-channel\)\n/,

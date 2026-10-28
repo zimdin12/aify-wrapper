@@ -31,7 +31,7 @@ function wrapperWithReader() {
   const wrapper = tmp();
   const bin = path.join(wrapper, "bin");
   fs.mkdirSync(bin, { recursive: true });
-  fs.writeFileSync(path.join(bin, "aify-definition.mjs"), "");
+  for (const file of ["aify-definition.mjs", "aify-definition.sh"]) fs.writeFileSync(path.join(bin, file), "");
   return wrapper;
 }
 

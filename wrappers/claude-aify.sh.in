@@ -209,16 +209,7 @@ HARNESS_EXIT_CONFIG=78
 HARNESS_EXIT_NO_RUNTIME=127
 
 # ── The agent's definition (P0 C9) ──────────────────────────────────────────
-#
-# ~/.aify/agent-definitions/<id>.json, written by aify-env, gives this launcher DEFAULTS for role,
-# model and effort: below a flag and the environment, above the built-in default. aify-wrapper's
-# `aify-definition` helper reads it, never writes it, and validates it as aify-env does. Missing is
-# today's behaviour, and only a missing file is: an invalid file, one defining another harness, or a
-# launcher that cannot run the reader refuses the launch with 78 unless --aify-ignore-definition,
-# because starting without the definition the operator wrote would look like honouring it. A managed
-# launch reads no file: its launch payload carries what the host already checked. The file is read for
-# the RESOLVED id, after a resume handle has named the agent, so a resumed agent gets the same
-# defaults and the same refusal as one named by a flag.
+# Defaults for role, model and effort, and claude's instructions. What refuses, and why: bin/aify-definition.sh.
 AIFY_DEF_FILE=""
 AIFY_DEF_ROLE=""
 AIFY_DEF_MODEL=""
@@ -226,27 +217,26 @@ AIFY_DEF_EFFORT=""
 # The defaults among model and effort that hold a control character: the reader names them, because the
 # value itself cannot cross this shell intact (bash drops a NUL, and Git Bash a CR).
 AIFY_DEF_CONTROL=""
+AIFY_DEF_HAS_INSTRUCTIONS=""
+CLAUDE_INSTRUCTION_FLAGS=()  # the agent's instructions, appended to claude's system prompt (bin/aify-definition.sh)
 AIFY_IGNORE_DEFINITION=false
 for _aify_def_arg in "$@"; do
   if [ "$_aify_def_arg" = "--aify-ignore-definition" ]; then AIFY_IGNORE_DEFINITION=true; fi
 done
-aify_read_definition() {
-  local _id="$1" _out _reader="$AIFY_WRAPPER_DIR_FWD/bin/aify-definition.mjs"
-  if [ -z "$_id" ] || [ "$AIFY_IGNORE_DEFINITION" = true ] || [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ]; then
-    return 0
-  fi
-  # AN INSTALL WITHOUT THE READER cannot tell a missing file from an invalid one, so it refuses as an
-  # invalid file does: not being able to look is not the same as finding nothing (review of P6, R2).
-  if [ ! -f "$_reader" ]; then
-    echo "[claude-aify] no definition reader at $_reader, so the definition of '$_id' cannot be checked." >&2
-  fi
-  if [ ! -f "$_reader" ] || ! _out="$(node "$_reader" "$_id" claude)"; then
-    echo "[claude-aify] the definition of '$_id' cannot be used (above), so nothing was started." >&2
-    echo "              Fix the file or the install, or start with --aify-ignore-definition to launch without it." >&2
+# THE READER'S SHELL SIDE (bin/aify-definition.sh). Without it nothing can be checked: a named launch refuses as one
+# without the reader does, and a managed one says what it lacks and starts.
+AIFY_DEFINITION_SH="@@WRAPPER_DIR@@/bin/aify-definition.sh"
+if [ -r "$AIFY_DEFINITION_SH" ]; then
+  . "$AIFY_DEFINITION_SH"
+else
+  aify_read_definition() {
+    if [ -z "$1" ] || [ "$AIFY_IGNORE_DEFINITION" = true ]; then return 0; fi
+    echo "[claude-aify] no definition reader at $AIFY_DEFINITION_SH, so the definition of '$1' cannot be checked; --aify-ignore-definition starts without it." >&2
+    if [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ]; then echo "[claude-aify] this managed launch starts WITHOUT any instructions it holds." >&2; return 0; fi
     exit "$HARNESS_EXIT_CONFIG"
-  fi
-  eval "$_out"
-}
+  }
+  aify_place_instructions() { :; }
+fi
 
 # Host-supplied environment, exported verbatim before launch. Malformed lines are skipped rather than
 # fatal: a config file with a trailing newline must not stop an agent starting.
@@ -432,7 +422,7 @@ CLAUDE_AIFY_ROLE_GIVEN="$CLAUDE_AIFY_ROLE"
 CLAUDE_AIFY_DEFAULTS_FOR=""
 claude_aify_defaults() {
   CLAUDE_AIFY_DEFAULTS_FOR="$CLAUDE_AIFY_AGENT_ID"
-  aify_read_definition "$CLAUDE_AIFY_AGENT_ID"
+  aify_read_definition "$CLAUDE_AIFY_AGENT_ID" claude
   CLAUDE_AIFY_ROLE="${CLAUDE_AIFY_ROLE_GIVEN:-${AIFY_DEF_ROLE:-coder}}"
   CLAUDE_AIFY_MODEL=""
   CLAUDE_AIFY_EFFORT=""
@@ -482,6 +472,9 @@ if [ "$HARNESS_CHECK" = true ]; then
   echo "  identity  : ${CLAUDE_AIFY_AGENT_ID:-<none — this session would be anonymous>}"
   echo "  role      : $CLAUDE_AIFY_ROLE"
   echo "  definition: ${AIFY_DEF_FILE:-<none>}"
+  if [ "$AIFY_DEF_HAS_INSTRUCTIONS" = true ]; then echo "  instructions: <the definition's, written once the lease admits the launch>"
+  elif [ -n "$CLAUDE_AIFY_AGENT_ID" ] && [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ]; then echo "  instructions: <read once the lease admits the launch>"
+  else echo "  instructions: <none>"; fi
   _aify_managed_kept="${!AIFY_MANAGED_@}"
   echo "  managed   : ${_aify_managed_kept:-<not a managed launch>}"
   echo "  model     : $([ "$CLAUDE_HAS_MODEL" = true ] && echo "<given as an argument>" || echo "${CLAUDE_AIFY_MODEL:-<the runtime default>}")"
@@ -990,8 +983,12 @@ if [ "$CLAUDE_AIFY_SHARED" = true ]; then
   exec aify-env run     --service "@@SERVICE_NAME@@"     --launcher "$0"     --label "${CLAUDE_AIFY_AGENT_ID:-}"     -- "${CLAUDE_AIFY_PASSTHRU[@]}"
 fi
 
+# THE AGENT'S INSTRUCTIONS (bin/aify-definition.sh), below the claim and the --shared handoff so only the start that
+# runs claude writes them, and never in CLAUDE_ARGS, which the channel and resume scans read.
+aify_place_instructions "${CLAUDE_AIFY_AGENT_ID:-}"
+
 aify_lifetime_start "${CLAUDE_AIFY_AGENT_ID:-}" claude "$AIFY_SESSION_MODE" SessionStart || exit $?
 AIFY_RUNTIME_RUNNING=1
-claude "${AIFY_CHANNEL_FLAGS[@]}" "${CLAUDE_MCP_FLAGS[@]}" "${CLAUDE_PERMISSION_FLAGS[@]}" "${CLAUDE_ARGS[@]}"
+claude "${AIFY_CHANNEL_FLAGS[@]}" "${CLAUDE_MCP_FLAGS[@]}" "${CLAUDE_PERMISSION_FLAGS[@]}" "${CLAUDE_INSTRUCTION_FLAGS[@]}" "${CLAUDE_ARGS[@]}"
 STATUS=$?
 exit "$STATUS"

@@ -254,8 +254,16 @@ written by aify-env, the launcher reads its role, model and effort as defaults: 
 environment, above the built-in default. It reads the file and never writes it, for the id it resolved
 (a resume handle that names the agent counts). A missing file is the old behaviour. An invalid file, or
 one defining another harness, refuses the launch with 78 unless `--aify-ignore-definition`, because
-starting without the definition the operator wrote would look like honouring it. A managed start reads
-no file: aify-env hands it what it already checked.
+starting without the definition the operator wrote would look like honouring it. A managed start takes
+only the instructions from the file: aify-env hands it the rest, already checked. When it cannot read them,
+it says so and starts without them.
+
+**Its agent's instructions.** A claude definition's `agent.instructions` is written to
+`~/.aify/sessions/<id>/instructions.txt` (a folder only its owner can open), and Claude gets it with
+`--append-system-prompt-file` and `--system-prompt-snapshot off`, so a resumed conversation picks up today's
+text rather than the text it started with. Empty instructions remove the file. Codex and hermes cannot
+take instructions yet, so their definitions with instructions refuse with 78. **Instructions are no place for
+secrets:** the text sits in a file on disk and in the model's context, where the agent can repeat it.
 
 `HARNESS_ENDPOINT` uses `${HARNESS_ENDPOINT-...}`, not `${HARNESS_ENDPOINT:-...}`, and the difference
 is deliberate: an explicitly **emptied** endpoint is a configuration error, not an unset one. A host

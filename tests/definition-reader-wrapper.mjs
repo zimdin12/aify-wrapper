@@ -18,7 +18,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 /** The readers and pure hook formatter, without any lease or runtime-start helpers. */
 export const READER_FILES = Object.freeze([
-  "bin/aify-definition.mjs", "lib/agent-definition-defaults.mjs", "lib/agent-definition-schema.mjs", "lib/main-module.mjs",
+  "bin/aify-definition.mjs", "bin/aify-definition.sh", "lib/agent-definition-defaults.mjs", "lib/agent-definition-schema.mjs", "lib/main-module.mjs",
   "bin/aify-claude-default-model.mjs", "lib/claude-default-model.mjs",
   "bin/aify-tool-hook-json.sh",
   // The per-launch session entries claude-aify writes (bin/aify-session-mcp.mjs), with the credential store's reader.

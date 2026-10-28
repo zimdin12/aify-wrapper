@@ -9,7 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { definitionsDir, EXIT_REFUSED, readDefinition, shellAssignments } from "../lib/agent-definition-defaults.mjs";
+import { definitionsDir, EXIT_REFUSED, instructionsAssignment, readDefinition, shellAssignments } from "../lib/agent-definition-defaults.mjs";
 
 const COMMAND = fileURLToPath(new URL("../bin/aify-definition.mjs", import.meta.url));
 const body = (over = {}) => ({ version: 1, agent: { id: "lead", name: "Lead", role: "reviewer", harness: "claude",
@@ -28,7 +28,7 @@ test("definitionsDir: the test override, else aify-env's default under the home"
 test("readDefinition: found, missing, and every refusal", () => {
   const dir = dirWith({ "lead.json": JSON.stringify(body()), "bad.json": "{ not json", "other.json": JSON.stringify(body({ id: "other", harness: "codex" })) });
   assert.deepEqual(readDefinition({ id: "lead", harness: "claude", dir }),
-    { outcome: "found", file: path.join(dir, "lead.json"), role: "reviewer", model: "opus", effort: "high" });
+    { outcome: "found", file: path.join(dir, "lead.json"), role: "reviewer", model: "opus", effort: "high", instructions: "" });
   assert.deepEqual(readDefinition({ id: "nobody", harness: "claude", dir }), { outcome: "missing", file: path.join(dir, "nobody.json") });
   assert.deepEqual(readDefinition({ id: "bad", harness: "claude", dir }).problems, ["file: not-json"]);
   assert.deepEqual(readDefinition({ id: "other", harness: "claude", dir }).problems, ["it defines a codex agent, and this is the claude launcher"]);
@@ -43,7 +43,7 @@ test("readDefinition: found, missing, and every refusal", () => {
 test("shellAssignments: quoted for bash, a quote inside a value included", () => {
   assert.deepEqual(shellAssignments({ outcome: "missing", file: "/d/x.json" }), ["AIFY_DEF_FILE=''"]);
   assert.deepEqual(shellAssignments({ outcome: "found", file: "/d/x.json", role: "r", model: "it's", effort: "" }),
-    ["AIFY_DEF_FILE='/d/x.json'", "AIFY_DEF_ROLE='r'", "AIFY_DEF_MODEL='it'\\''s'", "AIFY_DEF_EFFORT=''", "AIFY_DEF_CONTROL=''"]);
+    ["AIFY_DEF_FILE='/d/x.json'", "AIFY_DEF_ROLE='r'", "AIFY_DEF_MODEL='it'\\''s'", "AIFY_DEF_EFFORT=''", "AIFY_DEF_HAS_INSTRUCTIONS=false", "AIFY_DEF_CONTROL=''"]);
   // A control character cannot cross the shell (bash drops a NUL, Git Bash a CR), so its field is named.
   assert.equal(shellAssignments({ outcome: "found", file: "f", role: "r", model: "a\u0000b", effort: "x\ry" }).at(-1),
     "AIFY_DEF_CONTROL='model effort'");
@@ -51,6 +51,13 @@ test("shellAssignments: quoted for bash, a quote inside a value included", () =>
     "AIFY_DEF_CONTROL='effort'", "C1 controls count, as the schema counts them for a name");
   const evaluated = spawnSync("bash", ["-c", `${shellAssignments({ outcome: "found", file: "f", role: "r", model: "it's $(x)", effort: "" }).join("; ")}; printf %s "$AIFY_DEF_MODEL"`], { encoding: "utf8" });
   assert.equal(evaluated.stdout, "it's $(x)", "bash reads the value back exactly, nothing expanded");
+});
+
+test("instructionsAssignment: the file a launcher evals, a home with a quote in it read back exactly", () => {
+  assert.equal(instructionsAssignment(""), "AIFY_DEF_INSTRUCTIONS_FILE=''", "no instructions, no file");
+  const file = "/home/o'brien $(x)/.aify/sessions/a/instructions.txt";
+  const evaluated = spawnSync("bash", ["-c", `${instructionsAssignment(file)}; printf %s "$AIFY_DEF_INSTRUCTIONS_FILE"`], { encoding: "utf8" });
+  assert.equal(evaluated.stdout, file, "bash reads the path back exactly, nothing expanded");
 });
 
 test("THE COMMAND: assignments and 0, or the problems and EXIT_REFUSED", () => {

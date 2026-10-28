@@ -58,7 +58,7 @@ test("THE CHAT IS FOUND PAST HERMES' OWN TOP-LEVEL FLAGS, as its command_argv fi
   }
 });
 
-test("A MANAGED LAUNCH's values are used; it reads no file", () => {
+test("A MANAGED LAUNCH's values are used; a file it cannot read does not stop it", () => {
   const { run: r, started } = run([], { definitions: { lead: "{ not json" },
     env: { AIFY_AGENT_ID: "lead", AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_MANAGED_MODEL: "m-managed", AIFY_MANAGED_EFFORT: "low" } });
   assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);

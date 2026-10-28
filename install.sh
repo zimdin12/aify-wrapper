@@ -288,19 +288,19 @@ else
 fi
 
 # A LAUNCHER THAT READS DEFINITIONS IS NOT WRITTEN AHEAD OF ITS READER. It reads an agent's definition with
-# bin/aify-definition.mjs in the wrapper directory it was rendered with, and refuses (78) when that file is
-# missing. The reader is this package's own, so it is there unless --wrapper-dir names a directory without it,
-# which is refused here before anything is written. (It once lived in the service's bridge, and launchers
+# bin/aify-definition.mjs, through bin/aify-definition.sh, in the wrapper directory it was rendered with, and refuses
+# (78) when either is missing. The reader is this package's own, so it is there unless --wrapper-dir names a directory
+# without it, which is refused here before anything is written. (It once lived in the service's bridge, and launchers
 # written before the service's install started nothing until it ran: external review of 0.8.1.)
 # WHICH LAUNCHERS READ is taken from their templates, not listed: pi's does not (review of 0.8.2). The check is
-# that the reader's file exists, not that it runs. --render-only is left to its caller.
+# that the reader's files exist, not that they run. --render-only is left to its caller.
 READING_CLIENTS=()
 for _client in "${CLIENTS[@]}"; do
-  if grep -q "aify-definition.mjs" "$HERE/wrappers/$_client-aify.sh.in" 2>/dev/null; then READING_CLIENTS+=("$_client"); fi
+  if grep -q "bin/aify-definition.sh" "$HERE/wrappers/$_client-aify.sh.in" 2>/dev/null; then READING_CLIENTS+=("$_client"); fi
 done
 if [ -z "$RENDER_ONLY" ] && [ "${#READING_CLIENTS[@]}" -gt 0 ] \
-  && [ ! -f "$WRAPPER_DIR/bin/aify-definition.mjs" ]; then
-  echo "install.sh: $WRAPPER_DIR has no definition reader (bin/aify-definition.mjs)," >&2
+  && { [ ! -f "$WRAPPER_DIR/bin/aify-definition.mjs" ] || [ ! -f "$WRAPPER_DIR/bin/aify-definition.sh" ]; }; then
+  echo "install.sh: $WRAPPER_DIR has no definition reader (bin/aify-definition.mjs and bin/aify-definition.sh)," >&2
   echo "            so the ${READING_CLIENTS[*]} launcher written now would refuse to start a named agent." >&2
   echo "            Point --wrapper-dir at an installed aify-wrapper, or leave it out to use this one." >&2
   exit "$EXIT_CONFIG"

@@ -92,9 +92,9 @@ function world(client, { reader, registry, bridgeFiles = {} }) {
 
 /**
  * Run `<client>-aify <args>` to its stub runtime.
- * @returns {{run, started: object, args: string[], appServerArgs: string[], asked: object[]}} `started` is
- *   the runtime's environment ({} when it never started); `args` its argv; `appServerArgs` codex's
- *   app-server argv.
+ * @returns {{run, started: object, args: string[], appServerArgs: string[], asked: object[], sessionFiles: object}} `started`
+ *   is the runtime's environment ({} when it never started); `args` its argv; `appServerArgs` codex's
+ *   app-server argv; `sessionFiles` the text of each file left under ~/.aify/sessions, by its path below it.
  */
 export function launch(client, args, { rewriting = true, reader = true, definitions = {}, env: extraEnv = {}, registry, edit, bridgeFiles, lifetimes = false, cwd, files = {} } = {}) {
   const w = world(client, { reader, registry, bridgeFiles });
@@ -151,7 +151,11 @@ export function launch(client, args, { rewriting = true, reader = true, definiti
     .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
   const asked = lines(lookups).map((l) => JSON.parse(l));
   const residents = path.join(w.home, ".aify/residents");
-  const result = { run, started, asked, args: lines(`${runtimeEnv}.args`), appServerArgs: read(`${runtimeEnv}.app-server`).split("\0").filter(Boolean),
+  // What the launch left in ~/.aify/sessions, by path below it, read before the run's directory is removed.
+  const sessions = path.join(w.home, ".aify", "sessions");
+  const sessionFiles = fs.existsSync(sessions) ? Object.fromEntries(fs.readdirSync(sessions, { recursive: true })
+    .filter((rel) => fs.statSync(path.join(sessions, rel)).isFile()).map((rel) => [rel.split(path.sep).join("/"), read(path.join(sessions, rel))])) : {};
+  const result = { sessionFiles, home: w.home, run, started, asked, args: lines(`${runtimeEnv}.args`), appServerArgs: read(`${runtimeEnv}.app-server`).split("\0").filter(Boolean),
     appServerEnv: Object.fromEntries(lines(`${runtimeEnv}.app-server-env`).map(l => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)])),
     lifetimeProbe: read(`${runtimeEnv}.residents`) ? JSON.parse(read(`${runtimeEnv}.residents`)) : null,
     remainingResidents: fs.existsSync(residents) ? fs.readdirSync(residents) : [], launcher: w.launcher,

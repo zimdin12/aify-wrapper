@@ -35,18 +35,27 @@ test("a bridge that holds nothing of aify-wrapper: the launcher is written, find
   assert.match(text, /@@WRAPPER_DIR@@/, "the template no longer names the wrapper directory, so this proves nothing");
 });
 
-test("a --wrapper-dir with no reader: refused, naming the option, and nothing written", () => {
-  const { run, written } = install({ wrapper: tmp("wrapper-without-reader") });
-  assert.equal(run.status, 78, `${run.stdout}\n${run.stderr}`);
-  assert.match(run.stderr, /has no definition reader \(bin\/aify-definition\.mjs\)/);
-  assert.match(run.stderr, /--wrapper-dir/);
-  assert.deepEqual(written, [], "no launcher that would refuse every named start");
+/** A --wrapper-dir holding the reader's files named. */
+function wrapperWith(name, files) {
+  const wrapper = tmp(name);
+  fs.mkdirSync(path.join(wrapper, "bin"), { recursive: true });
+  for (const file of files) fs.writeFileSync(path.join(wrapper, "bin", file), "");
+  return wrapper;
+}
+
+test("a --wrapper-dir with no reader, or half of one: refused, naming the option, and nothing written", () => {
+  for (const wrapper of [tmp("wrapper-without-reader"), wrapperWith("wrapper-without-shell-side", ["aify-definition.mjs"]),
+    wrapperWith("wrapper-without-node-side", ["aify-definition.sh"])]) {
+    const { run, written } = install({ wrapper });
+    assert.equal(run.status, 78, `${wrapper}: ${run.stdout}\n${run.stderr}`);
+    assert.match(run.stderr, /has no definition reader \(bin\/aify-definition\.mjs and bin\/aify-definition\.sh\)/);
+    assert.match(run.stderr, /--wrapper-dir/);
+    assert.deepEqual(written, [], "no launcher that would refuse every named start");
+  }
 });
 
 test("CONTROL: the same install against a --wrapper-dir with the reader writes the launcher", () => {
-  const wrapper = tmp("wrapper-with-reader");
-  fs.mkdirSync(path.join(wrapper, "bin"), { recursive: true });
-  fs.writeFileSync(path.join(wrapper, "bin", "aify-definition.mjs"), "");
+  const wrapper = wrapperWith("wrapper-with-reader", ["aify-definition.mjs", "aify-definition.sh"]);
   const { run, written } = install({ wrapper });
   assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
   assert.ok(written.includes("claude-aify"), `written: ${written}`);
