@@ -138,13 +138,15 @@ test("a shell tool, a patch with no path, a subagent's call, a remote task or a 
 });
 
 test("the tool call does not wait for the event writer", { skip: NO_PYTHON }, () => {
-  // A writer that takes 3 s: a callback that waited could not return in under 1.5 s, however loaded the host is.
+  // A writer that takes 30 s against a 10 s bound: a callback that waited could not return in time, and one that only
+  // spawns has room on a loaded host. It was 3 s against 1.5 s, and the full suite's load alone took the spawn to 1.51 s
+  // and 3.28 s (2026-10-28).
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-hermes-slow-"));
   try {
     const slow = path.join(dir, "slow-writer.mjs");
-    fs.writeFileSync(slow, "setTimeout(() => {}, 3000);\n");
+    fs.writeFileSync(slow, "setTimeout(() => {}, 30000);\n");
     const answer = drive({ calls: [call()], realHandOff: true, attrs: { _EVENT: slow } });
-    assert.ok(answer.took < 1.5, `post_tool_call returned in ${answer.took}s against a 3 s writer`);
+    assert.ok(answer.took < 10, `post_tool_call returned in ${answer.took}s against a 30 s writer`);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
