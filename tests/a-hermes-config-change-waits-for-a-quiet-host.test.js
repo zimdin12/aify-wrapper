@@ -156,10 +156,15 @@ test("WINDOWS PRODUCER: the real PowerShell pipeline keeps a process CIM gives n
 });
 
 /** A marker in a temp home, with a recording scan and step; every start is for `target` unless `apply` is told another. */
-function world({ running = [], tableReadable = true, stepOk = true } = {}) {
+function world({ running = [], tableReadable = true, stepOk = true, current = false } = {}) {
   const dir = temp();
   const pending = new PendingHermesConfig({ marker: path.join(dir, ".aify", "hermes-config-pending.json") });
-  const calls = { scans: 0, steps: [] };
+  const calls = { scans: 0, steps: [], plans: [] };
+  // The step's plan: whether the config already holds the registry's servers (`current`), so a write would change nothing.
+  const plan = (registry) => {
+    calls.plans.push(registry);
+    return { ok: true, current, detail: "" };
+  };
   const scan = () => {
     calls.scans += 1;
     return tableReadable ? table([...NOT_HERMES, ...running]) : null;
@@ -169,14 +174,16 @@ function world({ running = [], tableReadable = true, stepOk = true } = {}) {
     return stepOk ? { ok: true, detail: "" } : { ok: false, detail: "the hermes config step exited 78, its reason above" };
   };
   return { dir, pending, calls, record: (registry, target = TARGET) => pending.record(registry, target),
-    apply: (target = TARGET) => pending.apply({ scan, step, target }), cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+    apply: (target = TARGET) => pending.apply({ scan, step, plan, target }),
+    install: (registry, target = TARGET) => pending.install({ registry, target, scan, step, plan }),
+    cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
 }
 
 test("nothing pending: nothing is scanned or run", () => {
   const w = world();
   try {
     assert.deepEqual(w.apply(), { outcome: "none", detail: "nothing pending" });
-    assert.deepEqual(w.calls, { scans: 0, steps: [] });
+    assert.deepEqual(w.calls, { scans: 0, steps: [], plans: [] });
   } finally {
     w.cleanup();
   }
@@ -202,6 +209,75 @@ test("hermes running: the change waits, named, and the marker stays; a quiet hos
     assert.equal(quiet.pending.read().state, "none");
   } finally {
     quiet.cleanup();
+  }
+});
+
+test("A CHANGE THAT WRITES NOTHING IS RETIRED, hermes running or not: only a write reloads a running hermes", () => {
+  // A reinstall (2026-10-29) left a change pending for a config that already held it, until a quiet start.
+  for (const running of [[HERMES[1]], []]) {
+    const w = world({ running, current: true });
+    try {
+      w.record(path.join(w.dir, "services.json"));
+      const result = w.apply();
+      assert.equal(result.outcome, "current", result.detail);
+      assert.match(result.detail, /writes nothing the config does not already hold, and is retired/);
+      assert.deepEqual(w.calls.steps, [], "the step ran for a change that writes nothing");
+      assert.equal(w.pending.read().state, "none");
+    } finally {
+      w.cleanup();
+    }
+  }
+});
+
+test("AN INSTALL THAT CHANGES NOTHING records nothing, and retires a change recorded for its registry and config only", () => {
+  const registry = (w, name = "services.json") => path.join(w.dir, name);
+  const fresh = world({ running: [HERMES[1]], current: true });
+  try {
+    assert.equal(fresh.install(registry(fresh)).outcome, "current");
+    assert.equal(fresh.pending.read().state, "none", "an install with nothing to write recorded a change");
+    assert.deepEqual([fresh.calls.scans, fresh.calls.steps], [0, []]);
+  } finally {
+    fresh.cleanup();
+  }
+  const stale = world({ running: [HERMES[1]], current: true });
+  try {
+    stale.record(registry(stale));
+    const result = stale.install(registry(stale));
+    assert.match(result.detail, /already holds these servers; the change recorded at .* is retired/);
+    assert.equal(stale.pending.read().state, "none");
+  } finally {
+    stale.cleanup();
+  }
+  for (const [name, target] of [["other.json", TARGET], ["services.json", path.join(os.tmpdir(), "hermes-home-b", "config.yaml")]]) {
+    const other = world({ running: [HERMES[1]], current: true });
+    try {
+      other.record(registry(other, name), target);
+      other.install(registry(other));
+      assert.equal(other.pending.read().state, "pending", `a change recorded for ${name} at ${target} was retired by an install of another`);
+    } finally {
+      other.cleanup();
+    }
+  }
+  // CONTROL: with something to write the install records it, and a quiet host applies it.
+  const changing = world({ current: false });
+  try {
+    assert.equal(changing.install(registry(changing)).outcome, "applied");
+    assert.deepEqual(changing.calls.steps, [registry(changing)]);
+  } finally {
+    changing.cleanup();
+  }
+});
+
+test("AN INSTALL WITH SOMETHING TO WRITE, while hermes runs, records it and writes nothing: the one gate every installer passes", () => {
+  // aify-comms' installer wrote the dashboard's entry with 24 hermes running (2026-10-29): it ran the step directly.
+  const busy = world({ running: [HERMES[1]], current: false });
+  try {
+    const result = busy.install(path.join(busy.dir, "services.json"));
+    assert.equal(result.outcome, "deferred", result.detail);
+    assert.deepEqual(busy.calls.steps, [], "the install wrote while hermes was running");
+    assert.equal(busy.pending.read().registry, path.join(busy.dir, "services.json"));
+  } finally {
+    busy.cleanup();
   }
 });
 
@@ -250,7 +326,7 @@ test("a change recorded for one hermes config is applied by a start of that conf
     const left = w.apply(other);
     assert.equal(left.outcome, "deferred");
     assert.ok(left.detail.includes(TARGET) && left.detail.includes(other), left.detail);
-    assert.deepEqual(w.calls, { scans: 0, steps: [] }, "a start of another config scanned or wrote");
+    assert.deepEqual(w.calls, { scans: 0, steps: [], plans: [] }, "a start of another config scanned, planned or wrote");
     assert.equal(w.pending.read().state, "pending");
     assert.equal(w.apply(null).outcome, "deferred", "a start whose config cannot be resolved is not taken for the right one");
     assert.equal(w.apply().outcome, "applied", "CONTROL: the start of the recorded config applies it");
@@ -438,8 +514,8 @@ test("install.sh --client hermes records the change, and writes the hermes confi
     assert.ok(fs.existsSync(path.join(dir, "bin", "hermes-aify")), "the launcher was not installed");
     const sets = fs.readFileSync(calls, "utf8").split("\n").filter((line) => line.startsWith('["config","set"'));
     const marker = path.join(dir, ".aify", "hermes-config-pending.json");
-    if (/hermes config change is pending/.test(run.stderr)) {
-      assert.match(run.stderr, HOST_DEFERRAL);
+    if (/the change is pending/.test(run.stdout)) {
+      assert.match(run.stdout, HOST_DEFERRAL);
       assert.deepEqual(sets, [], "the install wrote the hermes config while hermes was running");
       assert.equal(new PendingHermesConfig({ marker }).read().registry, path.resolve(registry));
     } else {

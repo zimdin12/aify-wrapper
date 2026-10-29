@@ -158,7 +158,7 @@ test("the installer's hermes step writes the HTTP entry through hermes' own conf
     HERMES_RUNTIME_COMMAND: FAKE_HERMES, FAKE_HERMES_STATE: state, FAKE_HERMES_LOG: log, FAKE_HERMES_MODE: "", AIFY_MACHINE_ID: "host-a",
   };
   delete env.HERMES_DATA_DIR_SUFFIX;
-  const run = spawnSync(process.execPath, [HERMES_CLI, registry], { encoding: "utf8", env, timeout: 60_000 });
+  const run = spawnSync(process.execPath, [HERMES_CLI, "--write-now", registry], { encoding: "utf8", env, timeout: 60_000 });
   assert.equal(run.status, 0, run.stderr);
   const after = JSON.parse(fs.readFileSync(state, "utf8"));
   assert.equal(after["aify-dashboard"].url, "http://127.0.0.2:9700/mcp/http");

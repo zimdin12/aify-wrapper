@@ -361,24 +361,15 @@ fi
 for _client in "${CLIENTS[@]}"; do
   if [ "$_client" = "hermes" ]; then
     # Its own step, named when it fails: the hermes launcher is installed either way, and works without the servers.
-    # RECORDED, THEN APPLIED ONLY IF NO HERMES RUNS (lib/hermes-pending-config.mjs): a running hermes reloads its servers
-    # when their content changes, so with hermes agents up the change waits for the first hermes start that finds none.
-    _pending_cli="$(node_path "$HERE/bin/aify-hermes-pending-config.mjs")"
-    _pending="$(node_path "$HOME/.aify/hermes-config-pending.json")"
-    if ! node "$_pending_cli" record --marker "$_pending" --registry "$(node_path "$REGISTRY")"; then
-      echo "install.sh: the hermes launcher is installed, but its config change could not be recorded in $_pending." >&2
+    # WRITTEN ONLY WHAT CHANGED, AND ONLY IF NO HERMES RUNS (lib/hermes-config-cli.mjs, the step aify-comms' installer
+    # runs too): a running hermes reloads its servers when their content changes, so with hermes agents up the change
+    # is recorded and waits for the first hermes start that finds none. A config already current records nothing.
+    _status=0
+    node "$(node_path "$HERE/lib/hermes-config-cli.mjs")" "$(node_path "$REGISTRY")" || _status=$?
+    if [ "$_status" != 0 ]; then
+      echo "install.sh: the hermes launcher is installed, but the hermes config step above did not finish (exit $_status)." >&2
       exit "$EXIT_CONFIG"
     fi
-    _status=0
-    node "$_pending_cli" apply --marker "$_pending" || _status=$?
-    case "$_status" in
-      0) ;;
-      75) echo "install.sh: the hermes config change is pending (aify-wrapper-check shows it); the first hermes start that finds no hermes running applies it." >&2 ;;
-      *)
-        echo "install.sh: the hermes launcher is installed, but the hermes config step above did not finish (exit $_status); the change stays pending." >&2
-        exit "$EXIT_CONFIG"
-        ;;
-    esac
   fi
 done
 

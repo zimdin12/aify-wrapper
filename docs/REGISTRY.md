@@ -131,7 +131,12 @@ and never with `--render-only`. Its managed-scope overlay (`HERMES_MANAGED_DIR`)
 measured on hermes 0.21.5 it deletes a same-named server from the user's config on any save, and leaves a dead
 `<name>: {}` behind for any other name (aify-dashboard `docs/evidence/hermes-session-mcp-2026-10-02`).
 
-- **Never into a running hermes.** A running hermes reloads its servers when their content changes, so `install.sh`
+- **Only what changed.** Each entry is written with `x-aify-digest`, the digest of its value, and an entry whose get
+  answers the same digest is not set again: every `config set` makes hermes rewrite the whole file. An install that
+  would change nothing writes nothing, records nothing, and retires a change recorded for the same registry and
+  config. A recorded change that has come to change nothing is retired by the next start, hermes running or not.
+- **Never into a running hermes.** A running hermes reloads its servers when their content changes, so the install
+  step (`lib/hermes-config-cli.mjs <registry>`, which aify-wrapper's `install.sh` and aify-comms' installer both run)
   records the change in `~/.aify/hermes-config-pending.json` (the registry's path and the hermes config it is for,
   never an entry) and applies it at once only if no hermes runs. Otherwise the first hermes-aify start of that same
   config that finds none applies it, under a lock, before it starts its own hermes; the starts behind it wait and
@@ -139,7 +144,7 @@ measured on hermes 0.21.5 it deletes a same-named server from the user's config 
   lock, so a newer install is never lost to an apply retiring the older one. A process the scan cannot read counts
   as possibly hermes (see Known issues in the README). Until then `aify-wrapper-check` reports it pending
   (`lib/hermes-pending-config.mjs`).
-- **Hermes' own writer.** `lib/hermes-config-cli.mjs` runs `hermes config get`, then `hermes config set
+- **Hermes' own writer.** `lib/hermes-config-cli.mjs --write-now`, the pending change's step, runs `hermes config get`, then `hermes config set
   mcp_servers.<name> '<JSON>'`, and `hermes config unset` for removal. The operator's comments and other servers
   survive, and nothing here edits YAML.
 - **Only its own entries.** Each entry carries `"x-aify-owner": "aify-wrapper"`. A same-named entry without it is the

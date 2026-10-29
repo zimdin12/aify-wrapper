@@ -86,7 +86,7 @@ test("the installer's hermes step reads the private roots clean, and sees an ext
       const state = path.join(dir, "state.json");
       fs.writeFileSync(state, "{}");
       const env = { ...process.env, HERMES_RUNTIME_COMMAND: FAKE_HERMES, FAKE_HERMES_STATE: state, FAKE_HERMES_LOG: path.join(dir, "calls.log"), ...extra };
-      return spawnSync(process.execPath, [HERMES_CLI, registry], { encoding: "utf8", env, timeout: 60_000 });
+      return spawnSync(process.execPath, [HERMES_CLI, "--write-now", registry], { encoding: "utf8", env, timeout: 60_000 });
     };
     const clean = run({});
     assert.equal(clean.status, 0, clean.stderr);
