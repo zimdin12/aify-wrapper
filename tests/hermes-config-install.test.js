@@ -11,7 +11,8 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { DIGEST_KEY, entryDigest, hermesRoots, installHermesEntries, pendingUpdateMarkers, planHermesEntries, unexpandedHomeProblem } from "../lib/hermes-config-install.mjs";
+import { entryReceipt, hermesRoots, installHermesEntries, pendingUpdateMarkers, planHermesEntries, unexpandedHomeProblem } from "../lib/hermes-config-install.mjs";
+import { HermesConfigReceipts, receiptsPath } from "../lib/hermes-config-receipts.mjs";
 import { configPlan, configStep, PendingHermesConfig, pendingMarkerPath, PLAN_CHANGES } from "../lib/hermes-pending-config.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -25,12 +26,15 @@ const DASHBOARD = {
   mcp: [{ name: "aify-dashboard", command: "node", args: ["/d/bridge.mjs"] }],
 };
 const ENTRY = { command: "node", args: ["/d/bridge.mjs"], env: { AIFY_AGENT_ID: "${AIFY_AGENT_ID}" }, ...MARK };
-// What hermes holds once ENTRY is written: the entry and the digest of it.
-const WRITTEN = { ...ENTRY, [DIGEST_KEY]: entryDigest(ENTRY) };
 
-// The writer, as the pending change's step runs it (`--write-now`), unless a case asks for another mode.
-// `recorded` records a pending change first, for this registry (true) or the one named, and the marker is read after.
-function install({ services = { "aify-dashboard": DASHBOARD }, servers = {}, mode = "", marker = false, hermesHome, cliMode = "--write-now", recorded } = {}) {
+/**
+ * The writer, as the pending change's step runs it (`--write-now`), unless a case asks for another mode.
+ * `recorded` records a pending change first, for this registry (true) or the one named, and the marker is read after.
+ * `written` runs the step once first, in the same home, so the entries and their receipts are in place; `edit` then
+ * changes the config behind the receipt, and `writtenHome` is the HERMES_HOME that first step wrote for.
+ */
+function install({ services = { "aify-dashboard": DASHBOARD }, servers = {}, mode = "", marker = false, hermesHome, cliMode = "--write-now",
+  recorded, written = false, edit, writtenHome } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-hermes-step-"));
   const registry = path.join(dir, "services.json");
   fs.writeFileSync(registry, JSON.stringify({ version: 1, services }));
@@ -49,6 +53,12 @@ function install({ services = { "aify-dashboard": DASHBOARD }, servers = {}, mod
     HERMES_RUNTIME_COMMAND: FAKE, FAKE_HERMES_STATE: state, FAKE_HERMES_LOG: log, FAKE_HERMES_MODE: mode,
   };
   delete env.HERMES_DATA_DIR_SUFFIX;
+  if (written) {
+    const first = spawnSync(process.execPath, [CLI, "--write-now", registry], { encoding: "utf8", env: { ...env, HERMES_HOME: writtenHome ?? env.HERMES_HOME }, timeout: 60_000 });
+    assert.equal(first.status, 0, `control: the first step did not write: ${first.stderr}`);
+    if (edit) fs.writeFileSync(state, JSON.stringify(edit(JSON.parse(fs.readFileSync(state, "utf8")))));
+    fs.writeFileSync(log, "");
+  }
   const pending = new PendingHermesConfig({ marker: pendingMarkerPath(dir) });
   if (recorded) pending.record(recorded === true ? registry : path.join(dir, recorded), path.resolve(env.HERMES_HOME, "config.yaml"));
   const run = spawnSync(process.execPath, [CLI, ...(cliMode ? [cliMode] : []), registry], { encoding: "utf8", env, timeout: 60_000 });
@@ -60,58 +70,76 @@ function install({ services = { "aify-dashboard": DASHBOARD }, servers = {}, mod
 }
 const verbs = (calls) => calls.map((call) => `${call[1]} ${call[2]}`);
 
-test("an absent entry is written, through hermes' own config set, as the verb built it", () => {
+test("an absent entry is written, through hermes' own config set, as the verb built it, and read back for its receipt", () => {
   const { run, calls, after } = install();
   assert.equal(run.status, 0, run.stderr);
-  assert.deepEqual(verbs(calls), ["get mcp_servers", "get mcp_servers.aify-dashboard", "set mcp_servers.aify-dashboard"]);
-  assert.deepEqual(after["aify-dashboard"], WRITTEN);
+  assert.deepEqual(verbs(calls), ["get mcp_servers", "get mcp_servers.aify-dashboard", "set mcp_servers.aify-dashboard", "get mcp_servers.aify-dashboard"]);
+  assert.deepEqual(after["aify-dashboard"], ENTRY, "the config was given more than the entry");
   assert.match(run.stdout, /wrote aify-dashboard; removed nothing/);
 });
 
-test("an entry this installer wrote is rewritten when it differs, or carries no digest, as one written before digests did", () => {
-  for (const old of [{ command: "old", ...MARK, [DIGEST_KEY]: entryDigest({ command: "old", ...MARK }) }, ENTRY]) {
+test("an entry of ours with no receipt, or not the value it would be given now, is rewritten", () => {
+  for (const old of [{ command: "old", ...MARK }, ENTRY]) {
     const { run, calls, after } = install({ servers: { "aify-dashboard": old } });
     assert.equal(run.status, 0, run.stderr);
     assert.ok(verbs(calls).includes("set mcp_servers.aify-dashboard"), JSON.stringify(old));
-    assert.deepEqual(after["aify-dashboard"], WRITTEN);
+    assert.deepEqual(after["aify-dashboard"], ENTRY);
   }
 });
 
-test("AN INSTALL THAT CHANGES NOTHING WRITES NOTHING: the entry it wrote, read back through hermes' get, is not set again", () => {
+test("AN INSTALL THAT CHANGES NOTHING WRITES NOTHING: an entry hermes answers for as it did after the write is not set again", () => {
   // Every set makes hermes rewrite the whole file; a live reinstall turned CRLF into LF for identical content.
-  const first = install();
-  assert.deepEqual(verbs(first.calls).filter((verb) => verb.startsWith("set")), ["set mcp_servers.aify-dashboard"], "control: the first install wrote nothing");
-  const again = install({ servers: first.after });
+  const again = install({ written: true });
   assert.equal(again.run.status, 0, again.run.stderr);
   assert.deepEqual(verbs(again.calls), ["get mcp_servers", "get mcp_servers.aify-dashboard"]);
-  assert.deepEqual(again.after, first.after);
+  assert.deepEqual(again.after["aify-dashboard"], ENTRY);
   assert.match(again.run.stdout, /wrote nothing; removed nothing/);
   assert.doesNotMatch(again.run.stdout, /reloads these servers/);
+});
+
+test("AN ENTRY CHANGED UNDER OUR MARK is not current: the receipt says what hermes answered then, not what it holds now", () => {
+  // Review of 72405ab: a stamp kept in the entry read an edited command as current.
+  const edited = install({ written: true, edit: (servers) => ({ ...servers, "aify-dashboard": { ...servers["aify-dashboard"], command: "edited" } }) });
+  assert.equal(edited.run.status, 0, edited.run.stderr);
+  assert.ok(verbs(edited.calls).includes("set mcp_servers.aify-dashboard"), "an entry edited behind its receipt was taken for current");
+  assert.deepEqual(edited.after["aify-dashboard"], ENTRY);
+});
+
+test("A RECEIPT FOR ONE HERMES CONFIG says nothing about another: a step for a moved HERMES_HOME writes", () => {
+  const moved = install({ written: true, writtenHome: path.join(os.tmpdir(), "aify-hermes-other-home") });
+  assert.equal(moved.run.status, 0, moved.run.stderr);
+  assert.ok(verbs(moved.calls).includes("set mcp_servers.aify-dashboard"), "a receipt for another config was taken for this one's");
 });
 
 test("--plan says whether an install would write anything, and writes nothing", () => {
   const absent = install({ cliMode: "--plan" });
   assert.equal(absent.run.status, PLAN_CHANGES, absent.run.stderr);
   assert.deepEqual(verbs(absent.calls), ["get mcp_servers", "get mcp_servers.aify-dashboard"]);
-  assert.equal(install({ cliMode: "--plan", servers: { "aify-dashboard": WRITTEN } }).run.status, 0);
-  assert.equal(install({ cliMode: "--plan", servers: { "aify-dashboard": WRITTEN, old: { command: "x", ...MARK } } }).run.status, PLAN_CHANGES,
+  assert.equal(install({ cliMode: "--plan", written: true }).run.status, 0);
+  assert.equal(install({ cliMode: "--plan", servers: { "aify-dashboard": ENTRY } }).run.status, PLAN_CHANGES, "an entry with no receipt is a change");
+  assert.equal(install({ cliMode: "--plan", written: true, edit: (servers) => ({ ...servers, old: { command: "x", ...MARK } }) }).run.status, PLAN_CHANGES,
     "an entry of ours to remove is a change");
   assert.equal(install({ cliMode: "--plan", servers: { "aify-dashboard": { command: "theirs" } } }).run.status, 78);
 });
 
-test("planHermesEntries reads with get alone: what to set, what to remove, and no set or unset made", () => {
+test("planHermesEntries reads with get alone: what to set, what to remove, what is kept, and no set or unset made", () => {
   const asked = [];
   const servers = { "aify-dashboard": { command: "old", ...MARK }, gone: { command: "x", ...MARK } };
+  const answer = (found) => `${Object.entries(found).map(([key, value]) => `${key}: ${value}`).join("\n")}\n`;
   const run = (args) => {
     asked.push(args.slice(0, 3).join(" "));
     const name = args[2] === "mcp_servers" ? null : args[2].replace("mcp_servers.", "");
-    const found = name === null ? servers : servers[name];
+    if (name === null) return { status: 0, stdout: `${Object.keys(servers).map((key) => `${key}:\n  x-aify-owner: aify-wrapper`).join("\n")}\n`, stderr: "" };
+    const found = servers[name];
     if (!found) return { status: 1, stdout: "", stderr: `Config key not set: ${args[2]}` };
-    return { status: 0, stdout: `${Object.entries(found).map(([key, value]) => (name === null ? `${key}:\n  x-aify-owner: aify-wrapper` : `${key}: ${value}`)).join("\n")}\n`, stderr: "" };
+    return { status: 0, stdout: answer(found), stderr: "" };
   };
-  const plan = planHermesEntries({ entries: [{ name: "aify-dashboard", value: ENTRY }], run, markers: [] });
-  assert.deepEqual(plan, { ok: true, toWrite: [{ name: "aify-dashboard", value: WRITTEN }], toRemove: ["gone"] });
+  const entries = [{ name: "aify-dashboard", value: ENTRY }];
+  assert.deepEqual(planHermesEntries({ entries, run, markers: [] }), { ok: true, toWrite: entries, toRemove: ["gone"], kept: {} });
   assert.deepEqual(asked, ["config get mcp_servers", "config get mcp_servers.aify-dashboard"]);
+  // The same answer, with a receipt for this value and this answer: kept, not written.
+  const receipt = entryReceipt(ENTRY, answer(servers["aify-dashboard"]));
+  assert.deepEqual(planHermesEntries({ entries, run, markers: [], receipts: { "aify-dashboard": receipt } }).kept, { "aify-dashboard": receipt });
 });
 
 test("configPlan and configStep, as the pending change runs them: the plan answers without writing, the step writes", () => {
@@ -126,12 +154,15 @@ test("configPlan and configStep, as the pending change runs them: the plan answe
     HERMES_RUNTIME_COMMAND: FAKE, FAKE_HERMES_STATE: state, FAKE_HERMES_LOG: path.join(dir, "calls.log"), FAKE_HERMES_MODE: "" };
   const saved = Object.fromEntries(Object.keys(vars).map((name) => [name, process.env[name]]));
   Object.assign(process.env, vars);
+  const budget = () => ({ deadlineMs: Date.now() + 60_000 });
   try {
-    assert.deepEqual(configPlan(registry), { ok: true, current: false, detail: "" });
+    assert.deepEqual(configPlan(registry, budget()), { ok: true, current: false, detail: "" });
     assert.equal(fs.readFileSync(state, "utf8"), "{}", "the plan wrote");
-    assert.deepEqual(configStep(registry), { ok: true, detail: "" });
-    assert.deepEqual(JSON.parse(fs.readFileSync(state, "utf8"))["aify-dashboard"], WRITTEN);
-    assert.deepEqual(configPlan(registry), { ok: true, current: true, detail: "" });
+    assert.deepEqual(configStep(registry, budget()), { ok: true, detail: "" });
+    assert.deepEqual(JSON.parse(fs.readFileSync(state, "utf8"))["aify-dashboard"], ENTRY);
+    assert.deepEqual(configPlan(registry, budget()), { ok: true, current: true, detail: "" });
+    // A deadline already past starts no hermes call: the plan cannot answer, and says so.
+    assert.equal(configPlan(registry, { deadlineMs: Date.now() - 1 }).ok, false);
   } finally {
     for (const [name, value] of Object.entries(saved)) {
       if (value === undefined) delete process.env[name];
@@ -141,17 +172,39 @@ test("configPlan and configStep, as the pending change runs them: the plan answe
   }
 });
 
+test("a step given a deadline already past calls no hermes at all, and says why", () => {
+  // The applier's budget reaches every hermes call (lib/hermes-pending-config.mjs lockBudget), not only the step's process.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-hermes-deadline-"));
+  try {
+    const registry = path.join(dir, "services.json");
+    fs.writeFileSync(registry, JSON.stringify({ version: 1, services: { "aify-dashboard": DASHBOARD } }));
+    fs.writeFileSync(path.join(dir, "state.json"), "{}");
+    fs.mkdirSync(path.join(dir, "hermes", "installs", "another"), { recursive: true });
+    const env = { ...process.env, HERMES_HOME: path.join(dir, "hermes"), HOME: dir, USERPROFILE: dir, LOCALAPPDATA: path.join(dir, "local"),
+      HERMES_RUNTIME_COMMAND: FAKE, FAKE_HERMES_STATE: path.join(dir, "state.json"), FAKE_HERMES_LOG: path.join(dir, "calls.log"), FAKE_HERMES_MODE: "" };
+    for (const mode of ["--plan", "--write-now"]) {
+      fs.writeFileSync(path.join(dir, "calls.log"), "");
+      const run = spawnSync(process.execPath, [CLI, "--deadline", String(Date.now() - 1), mode, registry], { encoding: "utf8", env, timeout: 60_000 });
+      assert.equal(run.status, 78, `${mode}: ${run.stdout}${run.stderr}`);
+      assert.match(run.stderr, /deadline passed before hermes was called/, mode);
+      assert.equal(fs.readFileSync(path.join(dir, "calls.log"), "utf8"), "", `${mode} called hermes after its deadline`);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("THE INSTALL STEP INTO A CONFIG ALREADY HOLDING ITS SERVERS writes nothing and records nothing, whatever runs here", () => {
   // aify-comms' installer runs this form too. Nothing is scanned: a config that is current needs no quiet host.
-  const current = install({ cliMode: "", servers: { "aify-dashboard": WRITTEN } });
+  const current = install({ cliMode: "", written: true });
   assert.equal(current.run.status, 0, current.run.stderr);
   assert.deepEqual(verbs(current.calls), ["get mcp_servers", "get mcp_servers.aify-dashboard"]);
   assert.match(current.run.stdout, /hermes config: the config already holds these servers\n/);
   assert.equal(current.pending, "none");
-  const stale = install({ cliMode: "", servers: { "aify-dashboard": WRITTEN }, recorded: true });
+  const stale = install({ cliMode: "", written: true, recorded: true });
   assert.match(stale.run.stdout, /already holds these servers; the change recorded at .* is retired/);
   assert.equal(stale.pending, "none");
-  assert.equal(install({ cliMode: "", servers: { "aify-dashboard": WRITTEN }, recorded: "another.json" }).pending, "pending",
+  assert.equal(install({ cliMode: "", written: true, recorded: "another.json" }).pending, "pending",
     "a change recorded for another registry was retired");
 });
 
@@ -306,4 +359,26 @@ test("the installer refuses a HERMES_HOME it cannot read as written, before any 
   assert.equal(run.status, 78);
   assert.match(run.stderr, /failed at hermes update check:\s+HERMES_HOME \(~\/hermes\)/);
   assert.deepEqual(calls, [], "a hermes command was started");
+});
+
+test("the receipts are kept per hermes config: one config's write leaves another's, and an unreadable file reads as none", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-hermes-receipts-"));
+  try {
+    const file = receiptsPath(dir);
+    assert.equal(file, path.join(dir, ".aify", "hermes-config-receipts.json"));
+    const store = new HermesConfigReceipts({ file });
+    const [a, b] = [path.join(dir, "a", "config.yaml"), path.join(dir, "b", "config.yaml")];
+    assert.deepEqual(store.read(a), {}, "no file is no receipt");
+    store.write(a, { x: { value: "v", answer: "1" } });
+    store.write(b, { y: { value: "v", answer: "2" } });
+    assert.deepEqual(store.read(a), { x: { value: "v", answer: "1" } }, "another config's write replaced this one's");
+    assert.deepEqual(store.read(path.join(dir, "c", "config.yaml")), {}, "a config never written has a receipt");
+    const windows = new HermesConfigReceipts({ file, platform: "win32" });
+    windows.write(a, { z: { value: "v", answer: "3" } });
+    assert.deepEqual(windows.read(a.toUpperCase()), { z: { value: "v", answer: "3" } }, "on Windows a config is one file case-insensitively");
+    fs.writeFileSync(file, "not json");
+    assert.deepEqual(store.read(a), {}, "an unreadable file gave a receipt");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

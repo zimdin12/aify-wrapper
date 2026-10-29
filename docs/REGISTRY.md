@@ -131,10 +131,15 @@ and never with `--render-only`. Its managed-scope overlay (`HERMES_MANAGED_DIR`)
 measured on hermes 0.21.5 it deletes a same-named server from the user's config on any save, and leaves a dead
 `<name>: {}` behind for any other name (aify-dashboard `docs/evidence/hermes-session-mcp-2026-10-02`).
 
-- **Only what changed.** Each entry is written with `x-aify-digest`, the digest of its value, and an entry whose get
-  answers the same digest is not set again: every `config set` makes hermes rewrite the whole file. An install that
-  would change nothing writes nothing, records nothing, and retires a change recorded for the same registry and
-  config. A recorded change that has come to change nothing is retired by the next start, hermes running or not.
+- **Only what changed.** Every `config set` makes hermes rewrite the whole file, so an entry is set only when it is not
+  current. After writing one the step reads it back with `hermes config get` and keeps a receipt in
+  `~/.aify/hermes-config-receipts.json`, per hermes config: the digest of the value written and of hermes' answer. An
+  entry is current only when the value it would be given now and hermes' answer now are both the receipt's; one edited
+  under our mark, one with no receipt, or one in a config the receipt is not for is written. An install that would
+  change nothing writes nothing, records nothing, and retires a change recorded for the same registry and config, all
+  in one hold of the lock. A recorded change that has come to change nothing is retired by the next start, hermes
+  running or not. The plan and the write under that lock share one deadline, ending before the lock can be taken from
+  its holder, and no hermes call starts after it.
 - **Never into a running hermes.** A running hermes reloads its servers when their content changes, so the install
   step (`lib/hermes-config-cli.mjs <registry>`, which aify-wrapper's `install.sh` and aify-comms' installer both run)
   records the change in `~/.aify/hermes-config-pending.json` (the registry's path and the hermes config it is for,

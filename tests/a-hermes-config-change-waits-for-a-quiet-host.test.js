@@ -14,7 +14,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { FileLock, FileLockBusyError } from "../lib/file-lock.mjs";
-import { hermesConfigTarget, hermesProcesses, OUTCOMES, PendingHermesConfig, pendingMarkerPath, runsHermes, sameTarget } from "../lib/hermes-pending-config.mjs";
+import { hermesConfigTarget, hermesProcesses, lockBudget, OUTCOMES, PendingHermesConfig, pendingMarkerPath, runsHermes, sameTarget } from "../lib/hermes-pending-config.mjs";
 import { imageName, linuxCommand, windowsArgv } from "../lib/process-argv.mjs";
 import { parseCommandTable, processTable } from "../lib/process-identity.mjs";
 import { launch } from "./launch-to-a-stub-runtime.mjs";
@@ -24,6 +24,7 @@ const CLI = path.join(HERE, "..", "bin", "aify-hermes-pending-config.mjs");
 const CHECK = path.join(HERE, "..", "bin", "aify-wrapper-check.mjs");
 const RACER = path.join(HERE, "hermes-pending-racer.mjs");
 const RECORDER = path.join(HERE, "hermes-pending-recorder.mjs");
+const WAITER = path.join(HERE, "hermes-pending-waiter.mjs");
 const FAKE = path.join(HERE, "fake-hermes.mjs");
 const temp = () => fs.mkdtempSync(path.join(os.tmpdir(), "aify-hermes-pending-"));
 
@@ -265,6 +266,111 @@ test("AN INSTALL THAT CHANGES NOTHING records nothing, and retires a change reco
     assert.deepEqual(changing.calls.steps, [registry(changing)]);
   } finally {
     changing.cleanup();
+  }
+});
+
+test("lockBudget: the hold's one deadline is the lock's age limit less a margin, and nothing more starts with too little left", () => {
+  const rows = [
+    // [what, input, deadlineMs, leftMs]
+    ["a twelve-minute lock keeps a minute back", { acquiredMs: 0, staleMs: 720_000, nowMs: 0, minimumMs: 30_000 }, 660_000, 660_000],
+    ["a short lock keeps a quarter back", { acquiredMs: 1_000, staleMs: 4_000, nowMs: 1_000, minimumMs: 500 }, 4_000, 3_000],
+    ["time spent under the lock is gone from what is left", { acquiredMs: 0, staleMs: 720_000, nowMs: 540_000, minimumMs: 30_000 }, 660_000, 120_000],
+    ["exactly the minimum left still starts", { acquiredMs: 0, staleMs: 720_000, nowMs: 630_000, minimumMs: 30_000 }, 660_000, 30_000],
+    ["less than the minimum left starts nothing", { acquiredMs: 0, staleMs: 720_000, nowMs: 630_001, minimumMs: 30_000 }, 660_000, 0],
+    ["past the deadline starts nothing", { acquiredMs: 0, staleMs: 720_000, nowMs: 700_000, minimumMs: 30_000 }, 660_000, 0],
+  ];
+  for (const [what, input, deadlineMs, leftMs] of rows) assert.deepEqual(lockBudget(input), { deadlineMs, leftMs }, what);
+});
+
+/** Block this process for `ms`, as a slow plan or step holds the lock. */
+const busyFor = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.max(0, ms));
+/** A pending change under a short lock, recorded for TARGET, that a quiet host would apply. */
+function shortLock(staleMs = 4_000) {
+  const dir = temp();
+  const marker = path.join(dir, ".aify", "hermes-config-pending.json");
+  const pending = new PendingHermesConfig({ marker, lockMs: staleMs, minimumMs: 500 });
+  pending.record(path.join(dir, "services.json"), TARGET);
+  return { dir, marker, pending, quiet: () => table(NOT_HERMES) };
+}
+
+test("ONE BUDGET: the plan and the step share the hold's deadline, and a step with too little of it left is not started", () => {
+  // Review of 72405ab: a plan and a step had ten minutes each under a lock taken from a live holder after twelve.
+  const fast = shortLock();
+  try {
+    const given = [];
+    const result = fast.pending.apply({ scan: fast.quiet, target: TARGET,
+      plan: (registry, { deadlineMs }) => { given.push(["plan", deadlineMs]); busyFor(1_000); return { ok: true, current: false }; },
+      step: (registry, { deadlineMs }) => { given.push(["step", deadlineMs]); return { ok: true, detail: "" }; } });
+    assert.equal(result.outcome, "applied", result.detail);
+    assert.equal(given.length, 2);
+    assert.equal(given[0][1], given[1][1], "the step was given a deadline of its own, not the hold's");
+  } finally {
+    fs.rmSync(fast.dir, { recursive: true, force: true });
+  }
+  const slow = shortLock();
+  try {
+    const steps = [];
+    const result = slow.pending.apply({ scan: slow.quiet, target: TARGET,
+      plan: () => { busyFor(2_700); return { ok: true, current: false }; },
+      step: (registry) => { steps.push(registry); return { ok: true, detail: "" }; } });
+    assert.equal(result.outcome, "deferred", result.detail);
+    assert.match(result.detail, /too little of this start's hold on the lock is left/);
+    assert.deepEqual(steps, [], "a step was started with less than its minimum left");
+    assert.equal(slow.pending.read().state, "pending");
+  } finally {
+    fs.rmSync(slow.dir, { recursive: true, force: true });
+  }
+});
+
+test("AN ENGAGED WAITING START does not get the lock while the holder's plan and step use the whole budget", async () => {
+  // A plan longer than the margin (a quarter of the lock's age limit), so a step given a budget of its own would outlive
+  // the lock; and room enough that a slow spawn of the waiter on a loaded host does not leave the step too little.
+  const staleMs = 12_000;
+  const held = shortLock(staleMs);
+  const out = path.join(held.dir, "waiter.out");
+  let waiter;
+  let stepEnded = 0;
+  try {
+    const result = held.pending.apply({ scan: held.quiet, target: TARGET,
+      plan: () => {
+        const started = Date.now();
+        waiter = spawn(process.execPath, [WAITER, `${held.marker}.lock`, String(staleMs), out], { stdio: "ignore" });
+        busyFor(5_000 - (Date.now() - started));
+        return { ok: true, current: false };
+      },
+      // A step that writes until its deadline: the slowest the budget allows.
+      step: (registry, { deadlineMs }) => { busyFor(deadlineMs - Date.now()); stepEnded = Date.now(); return { ok: true, detail: "" }; } });
+    assert.equal(result.outcome, "applied", result.detail);
+    await new Promise((resolve) => waiter.on("exit", resolve));
+    const lines = fs.readFileSync(out, "utf8").trim().split("\n");
+    assert.equal(lines[0], "waiting", "control: the waiting start never asked for the lock");
+    const acquired = Number(lines[1]?.split(" ")[1]);
+    assert.ok(acquired >= stepEnded, `a waiting start took the lock ${stepEnded - acquired} ms before the holder's step ended`);
+  } finally {
+    waiter?.kill();
+    fs.rmSync(held.dir, { recursive: true, force: true });
+  }
+});
+
+test("A NEWER INSTALL'S CHANGE survives an install that found the config current: the plan and the retirement are one hold", async () => {
+  // Review of 72405ab: a plan made before the lock deleted the marker a newer install recorded meanwhile.
+  const w = world({ running: [HERMES[1]], current: true });
+  const registry = path.join(w.dir, "services.json");
+  let newer;
+  try {
+    const result = w.pending.install({ registry, target: TARGET, scan: () => table([HERMES[1]]), step: () => ({ ok: true, detail: "" }),
+      plan: () => {
+        // Another install records the same registry for the same config while this one is planning.
+        newer = spawn(process.execPath, [RECORDER, w.pending.marker, registry, TARGET], { stdio: "ignore" });
+        busyFor(1_500);
+        return { ok: true, current: true, detail: "" };
+      } });
+    assert.equal(result.outcome, "current", result.detail);
+    assert.equal(await new Promise((resolve) => newer.on("exit", resolve)), 0, "control: the newer install did not record");
+    assert.equal(w.pending.read().state, "pending", "the newer install's change was retired on an older verdict");
+  } finally {
+    newer?.kill();
+    w.cleanup();
   }
 });
 
