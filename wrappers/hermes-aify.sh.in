@@ -580,7 +580,7 @@ fi
 # lib/hermes-herdr-state.py, which reports working / blocked / idle from hermes' own lifecycle hooks.
 # Exported here, ahead of the gateway host and the TUI, because the agent runs in whichever of them
 # hermes starts and each inherits this environment.
-if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then
+if aify_herdr_hooks_report 2>/dev/null; then
   export AIFY_HERDR_AGENT="${0##*/}"
   export AIFY_HERDR_HERMES_PLUGIN="$AIFY_WRAPPER_DIR_FWD/lib/hermes-herdr-state.py"
 fi
@@ -825,7 +825,7 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
     if [ "$AIFY_RUNTIME_RUNNING" != 1 ]; then aify_lifetime_release; return 0; fi
     AIFY_RUNTIME_RUNNING=0
     _aify_exit_herdr=""
-    if [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]; then _aify_exit_herdr=herdr; fi
+    if aify_herdr_hooks_report 2>/dev/null; then _aify_exit_herdr=herdr; fi
     sh "@@WRAPPER_DIR@@/bin/aify-runtime-exited.sh" "@@BRIDGE_DIR@@" "$_aify_exit_herdr" </dev/null >/dev/null 2>&1 || true
     aify_lifetime_release
   }

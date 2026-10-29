@@ -59,6 +59,26 @@ test("a claim that fails costs the pane its label, never the launch; a pane file
   }
 });
 
+test("the agent's own hooks report to a pane it claimed or one aify-env names, except where aify-env's reporter speaks", () => {
+  const FILE = { AIFY_HERDR_PANE_FILE: "/state/pane" };
+  const REPORTER = { AIFY_HERDR_PANE_REPORTER: "herdr:aify" };
+  const CLAIMED = { AIFY_HERDR_CLAIM: "claimed" };
+  const rows = [
+    ["nothing", {}, "no"],
+    ["a claimed pane", CLAIMED, "yes"],
+    ["a pane file: every aify-env before the reporter", FILE, "yes"],
+    ["a pane file the reporter speaks for", { ...FILE, ...REPORTER }, "no"],
+    ["the same, with the pane also claimed: the state script reports to the file's pane", { ...FILE, ...REPORTER, ...CLAIMED }, "no"],
+    ["a reporter of another source", { ...FILE, AIFY_HERDR_PANE_REPORTER: "herdr:other" }, "yes"],
+    ["a reporter and no pane file", { ...REPORTER, ...CLAIMED }, "yes"],
+  ];
+  for (const [name, env, expected] of rows) {
+    const run = bash(`. "${HERDR}"; if aify_herdr_hooks_report; then echo yes; else echo no; fi`, env);
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.stdout.trim(), expected, name);
+  }
+});
+
 /** A directory holding a `node` that reports `version`. */
 function fakeNode(dir, version) {
   fs.mkdirSync(dir, { recursive: true });

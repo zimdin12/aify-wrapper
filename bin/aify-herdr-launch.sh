@@ -1,7 +1,22 @@
-# Herdr, at the start of every launcher: the host's profile given back to the agent, and this pane claimed so a restore
-# brings back this wrapper rather than a bare agent. Sourced by claude-, codex-, hermes- and pi-aify, which set
-# AIFY_WRAPPER_DIR_FWD and AIFY_HERDR_ARGV first (the invocation, verbatim: `"$0" "$@"` is only the launcher's in its
-# own scope); `${0##*/}` names the launcher. NEITHER FUNCTION CAN FAIL THE LAUNCH: each returns 0 whatever happens.
+# Herdr, at the start of every launcher: the host's profile given back to the agent, this pane claimed so a restore
+# brings back this wrapper rather than a bare agent, and whether the agent's own hooks report its state. Sourced by
+# claude-, codex-, hermes- and pi-aify, which set AIFY_WRAPPER_DIR_FWD and AIFY_HERDR_ARGV first (the invocation,
+# verbatim: `"$0" "$@"` is only the launcher's in its own scope); `${0##*/}` names the launcher. NO FUNCTION HERE CAN
+# FAIL THE LAUNCH: the first two return 0 whatever happens, and the third is only ever asked in an `if`.
+
+# ── Herdr: whether this agent's own hooks report its state to a pane ───
+#
+# They do for a pane this launcher claimed, and for the pane aify-env names for a managed worker in
+# AIFY_HERDR_PANE_FILE, which is where the state script reports when that file is set. They do NOT when aify-env's
+# pane reporter speaks for that pane: AIFY_HERDR_PANE_REPORTER=herdr:aify, which aify-env (0.9.10 on) sets beside the
+# pane file only where its reporter tells the pane its word for the agent (Herdr status sync phase 1). Two writers on
+# one pane disagree; the reporter's word is the one the dashboard shows, and its pane closes with the worker, so no
+# exit report is owed either. The pane file ALONE is every aify-env before the reporter, and keeps the hooks: gating
+# on it would leave those panes with no writer at all.
+aify_herdr_hooks_report() {
+  if [ -n "${AIFY_HERDR_PANE_FILE:-}" ] && [ "${AIFY_HERDR_PANE_REPORTER:-}" = "herdr:aify" ]; then return 1; fi
+  [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]
+}
 
 # ── Herdr: give this agent back the profile the HOST had ───
 #
