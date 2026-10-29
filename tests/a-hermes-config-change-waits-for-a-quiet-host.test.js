@@ -329,6 +329,7 @@ test("AN ENGAGED WAITING START does not get the lock while the holder's plan and
   const held = shortLock(staleMs);
   const out = path.join(held.dir, "waiter.out");
   let waiter;
+  let stepStarted = 0;
   let stepEnded = 0;
   try {
     const result = held.pending.apply({ scan: held.quiet, target: TARGET,
@@ -339,12 +340,20 @@ test("AN ENGAGED WAITING START does not get the lock while the holder's plan and
         return { ok: true, current: false };
       },
       // A step that writes until its deadline: the slowest the budget allows.
-      step: (registry, { deadlineMs }) => { busyFor(deadlineMs - Date.now()); stepEnded = Date.now(); return { ok: true, detail: "" }; } });
+      step: (registry, { deadlineMs }) => {
+        stepStarted = Date.now();
+        busyFor(deadlineMs - Date.now());
+        stepEnded = Date.now();
+        return { ok: true, detail: "" };
+      } });
     assert.equal(result.outcome, "applied", result.detail);
     await new Promise((resolve) => waiter.on("exit", resolve));
-    const lines = fs.readFileSync(out, "utf8").trim().split("\n");
-    assert.equal(lines[0], "waiting", "control: the waiting start never asked for the lock");
-    const acquired = Number(lines[1]?.split(" ")[1]);
+    const lines = fs.existsSync(out) ? fs.readFileSync(out, "utf8").trim().split("\n") : [];
+    const at = (word) => lines.filter((line) => line.startsWith(`${word} `)).map((line) => Number(line.split(" ")[1]));
+    // ENGAGED: the waiter found the lock held during the step itself. One that started only after the release never does.
+    assert.ok(at("contend").some((ms) => ms >= stepStarted && ms <= stepEnded),
+      `control: the waiting start never contended for the lock while the step ran (${stepStarted}-${stepEnded}): ${lines.join(" | ")}`);
+    const [acquired] = at("acquired");
     assert.ok(acquired >= stepEnded, `a waiting start took the lock ${stepEnded - acquired} ms before the holder's step ended`);
   } finally {
     waiter?.kill();
@@ -356,15 +365,21 @@ test("A NEWER INSTALL'S CHANGE survives an install that found the config current
   // Review of 72405ab: a plan made before the lock deleted the marker a newer install recorded meanwhile.
   const w = world({ running: [HERMES[1]], current: true });
   const registry = path.join(w.dir, "services.json");
+  const log = path.join(w.dir, "newer.log");
   let newer;
+  let reached = "";
   try {
     const result = w.pending.install({ registry, target: TARGET, scan: () => table([HERMES[1]]), step: () => ({ ok: true, detail: "" }),
       plan: () => {
-        // Another install records the same registry for the same config while this one is planning.
-        newer = spawn(process.execPath, [RECORDER, w.pending.marker, registry, TARGET], { stdio: "ignore" });
-        busyFor(1_500);
+        // Another install records the same registry for the same config, and this plan does not answer until that record
+        // has reached the lock: held off by it (`contend`), or through it (`recorded`), whichever the ordering allows.
+        newer = spawn(process.execPath, [RECORDER, w.pending.marker, registry, TARGET, log], { stdio: "ignore" });
+        for (const deadline = Date.now() + 30_000; !reached && Date.now() < deadline; busyFor(20)) {
+          reached = fs.existsSync(log) ? fs.readFileSync(log, "utf8").split("\n")[0] : "";
+        }
         return { ok: true, current: true, detail: "" };
       } });
+    assert.ok(["contend", "recorded"].includes(reached), "control: the competing install never reached the lock");
     assert.equal(result.outcome, "current", result.detail);
     assert.equal(await new Promise((resolve) => newer.on("exit", resolve)), 0, "control: the newer install did not record");
     assert.equal(w.pending.read().state, "pending", "the newer install's change was retired on an older verdict");
