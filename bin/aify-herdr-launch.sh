@@ -2,7 +2,7 @@
 # brings back this wrapper rather than a bare agent, and whether the agent's own hooks report its state. Sourced by
 # claude-, codex-, hermes- and pi-aify, which set AIFY_WRAPPER_DIR_FWD and AIFY_HERDR_ARGV first (the invocation,
 # verbatim: `"$0" "$@"` is only the launcher's in its own scope); `${0##*/}` names the launcher. NO FUNCTION HERE CAN
-# FAIL THE LAUNCH: the first two return 0 whatever happens, and the third is only ever asked in an `if`.
+# FAIL THE LAUNCH: the ones a launcher calls return 0 whatever happens, and the two it asks are only asked in an `if`.
 
 # ── Herdr: whether this agent's own hooks report its state to a pane ───
 #
@@ -13,9 +13,18 @@
 # one pane disagree; the reporter's word is the one the dashboard shows, and its pane closes with the worker, so no
 # exit report is owed either. The pane file ALONE is every aify-env before the reporter, and keeps the hooks: gating
 # on it would leave those panes with no writer at all.
+aify_herdr_reporter_speaks() {
+  [ -n "${AIFY_HERDR_PANE_FILE:-}" ] && [ "${AIFY_HERDR_PANE_REPORTER:-}" = "herdr:aify" ]
+}
 aify_herdr_hooks_report() {
-  if [ -n "${AIFY_HERDR_PANE_FILE:-}" ] && [ "${AIFY_HERDR_PANE_REPORTER:-}" = "herdr:aify" ]; then return 1; fi
+  if aify_herdr_reporter_speaks; then return 1; fi
   [ "${AIFY_HERDR_CLAIM:-}" = "claimed" ] || [ -n "${AIFY_HERDR_PANE_FILE:-}" ]
+}
+# And no agent name for the hooks to report under, not even one inherited: a launch nested in a managed agent's pane
+# carries its parent's environment (a nested claude took over its agent that way, 2026-09-26). Called once, at the top.
+aify_herdr_leave_to_reporter() {
+  if aify_herdr_reporter_speaks; then unset AIFY_HERDR_AGENT; fi
+  return 0
 }
 
 # ── Herdr: give this agent back the profile the HOST had ───

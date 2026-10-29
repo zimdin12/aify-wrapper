@@ -83,6 +83,7 @@ if [ -r "$AIFY_HERDR_LAUNCH_SH" ]; then
   . "$AIFY_HERDR_LAUNCH_SH"
   aify_herdr_restore_profile
   aify_herdr_claim_pane
+  aify_herdr_leave_to_reporter
 fi
 
 # The version this wrapper was GENERATED from, read by `aify-comms doctor`'s wrapper-current check.

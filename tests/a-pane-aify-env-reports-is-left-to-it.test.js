@@ -67,9 +67,11 @@ for (const client of ["claude", "codex", "hermes"]) {
 
       const held = aPane();
       try {
-        const left = launch(client, [], { env: { ...held.env, AIFY_HERDR_PANE_REPORTER: "herdr:aify" }, files: EXIT_REPORT });
+        // With an agent name inherited, as a launch nested in a managed agent's pane has its parent's.
+        const inherited = { AIFY_HERDR_PANE_REPORTER: "herdr:aify", AIFY_HERDR_AGENT: "parent-aify" };
+        const left = launch(client, [], { env: { ...held.env, ...inherited }, files: EXIT_REPORT });
         assert.equal(left.run.status, 0, `${left.run.stdout}\n${left.run.stderr}`);
-        assert.equal(left.started.AIFY_HERDR_AGENT, undefined, "the agent was told to report to a pane aify-env speaks for");
+        assert.equal(left.started.AIFY_HERDR_AGENT, undefined, "the agent was left a name to report under to a pane aify-env speaks for");
         assert.equal(hooksGiven(client, left), false, "the runtime was given Herdr hooks for a pane aify-env speaks for");
         // Three times as long as the control's exit report took, and at least a second.
         await pause(Math.max(1_000, 3 * latency));
@@ -83,37 +85,46 @@ for (const client of ["claude", "codex", "hermes"]) {
   });
 }
 
-test("hermes: the agent-id branch's exit report goes to a pane file alone, and not to one aify-env's reporter speaks for", () => {
-  // The function as the template has it, run in bash with the gate's helper sourced and what it calls stubbed. It sends
-  // the exit script's output to /dev/null, so the stub writes the Herdr argument it was handed, which is the launcher's
-  // whole say in the exit report, to a file.
-  const source = fs.readFileSync(path.join(ROOT, "wrappers", "hermes-aify.sh.in"), "utf8");
-  const start = source.indexOf("  _aify_hermes_on_exit() {");
-  const end = source.indexOf("  trap _aify_hermes_on_exit EXIT INT TERM");
-  assert.ok(start > 0 && end > start, "the exit function moved; this test reads it from the template");
-  const probe = [
-    `. "${posix(path.join(ROOT, "bin", "aify-herdr-launch.sh"))}"`,
-    "kill() { :; }; aify_lease_release() { :; }; aify_lifetime_release() { :; }; HERMES_LOOP_PID=999999",
-    'sh() { case "$1" in */aify-runtime-exited.sh) printf "herdr=[%s]" "${3-}" > "$PROBE_OUT";; *) return 99;; esac; }',
-    source.slice(start, end).replaceAll("@@WRAPPER_DIR@@", "/w").replaceAll("@@BRIDGE_DIR@@", "/b"),
-    "AIFY_RUNTIME_RUNNING=1; _aify_hermes_on_exit",
-  ].join("\n");
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-hermes-exit-"));
-  const handed = (env) => {
-    const out = path.join(dir, `handed-${Object.keys(env).length}`);
-    const run = spawnSync("bash", ["--noprofile", "--norc", "-c", `set -euo pipefail\n${probe}`],
-      { env: { PATH: process.env.PATH, SYSTEMROOT: process.env.SYSTEMROOT ?? "", PROBE_OUT: posix(out), ...env }, encoding: "utf8" });
-    assert.equal(run.status, 0, run.stderr);
-    return fs.existsSync(out) ? fs.readFileSync(out, "utf8") : "<not called>";
-  };
-  try {
-    assert.equal(handed({ AIFY_HERDR_PANE_FILE: "/state/pane" }), "herdr=[herdr]", "control: a pane file alone was not reported to on exit");
-    assert.equal(handed({ AIFY_HERDR_PANE_FILE: "/state/pane", AIFY_HERDR_PANE_REPORTER: "herdr:aify" }), "herdr=[]",
-      "the exit was reported to a pane aify-env speaks for");
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
+// EACH EXIT SITE ON ITS OWN. The launch above clears an inherited agent name, so the state script stays silent even if
+// an exit site still hands it `herdr`: the two guards would hide each other. Here each launcher's exit function, cut
+// from its template, runs in bash with the helper sourced, a parent's agent name inherited, and what it calls stubbed.
+// It sends the exit script's output to /dev/null, so the stub writes the Herdr argument it was handed, the launcher's
+// whole say in the exit report, to a file. This also reaches hermes' report, made only on its agent-id branch.
+const EXIT_FUNCTIONS = {
+  claude: ["_aify_runtime_exited() {", "\n}\n"],
+  codex: ["_aify_runtime_exited() {", "\n}\n"],
+  hermes: ["  _aify_hermes_on_exit() {", "\n  }\n"],
+};
+for (const [client, [opening, closing]] of Object.entries(EXIT_FUNCTIONS)) {
+  test(`${client}: its exit report goes to a pane file alone, and not to one aify-env's reporter speaks for`, () => {
+    const source = fs.readFileSync(path.join(ROOT, "wrappers", `${client}-aify.sh.in`), "utf8");
+    const start = source.indexOf(opening);
+    const end = source.indexOf(closing, start);
+    assert.ok(start > 0 && end > start, "the exit function moved; this test reads it from the template");
+    const probe = [
+      `. "${posix(path.join(ROOT, "bin", "aify-herdr-launch.sh"))}"`,
+      "kill() { :; }; aify_lease_release() { :; }; aify_lifetime_release() { :; }; HERMES_LOOP_PID=999999",
+      'sh() { case "$1" in */aify-runtime-exited.sh) printf "herdr=[%s]" "${3-}" > "$PROBE_OUT";; *) return 99;; esac; }',
+      source.slice(start, end + closing.length).replaceAll("@@WRAPPER_DIR@@", "/w").replaceAll("@@BRIDGE_DIR@@", "/b"),
+      `AIFY_RUNTIME_RUNNING=1; ${opening.trim().replace("() {", "")}`,
+    ].join("\n");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-exit-site-"));
+    const handed = (name, env) => {
+      const out = path.join(dir, name);
+      const run = spawnSync("bash", ["--noprofile", "--norc", "-c", `set -euo pipefail\n${probe}`], { encoding: "utf8",
+        env: { PATH: process.env.PATH, SYSTEMROOT: process.env.SYSTEMROOT ?? "", PROBE_OUT: posix(out), AIFY_HERDR_AGENT: "parent-aify", ...env } });
+      assert.equal(run.status, 0, run.stderr);
+      return fs.existsSync(out) ? fs.readFileSync(out, "utf8") : "<not called>";
+    };
+    try {
+      assert.equal(handed("alone", { AIFY_HERDR_PANE_FILE: "/state/pane" }), "herdr=[herdr]", "control: a pane file alone was not reported to on exit");
+      assert.equal(handed("held", { AIFY_HERDR_PANE_FILE: "/state/pane", AIFY_HERDR_PANE_REPORTER: "herdr:aify" }), "herdr=[]",
+        "the exit was reported to a pane aify-env speaks for");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
 
 // THE CONTRACT WITH aify-env, read from its checkout: AIFY_ENV_REPO, else beside this one, else ~/projects/aify-env.
 // A checkout from before the variable (0.9.9 and older) SKIPS BY NAME, so a proof that read nothing is not a pass.

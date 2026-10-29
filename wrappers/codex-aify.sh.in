@@ -79,6 +79,7 @@ if [ -r "$AIFY_HERDR_LAUNCH_SH" ]; then
   . "$AIFY_HERDR_LAUNCH_SH"
   aify_herdr_restore_profile
   aify_herdr_claim_pane --pane-file
+  aify_herdr_leave_to_reporter
 fi
 
 # ── The harness wrapper contract ────────────────────────────────────────────
