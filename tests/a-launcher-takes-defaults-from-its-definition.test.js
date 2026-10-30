@@ -20,7 +20,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { test } from "node:test";
+import { after, test } from "node:test";
 
 import { definitionsEnv, readerWrapper } from "./definition-reader-wrapper.mjs";
 import { KNOWN, launch } from "./launch-to-a-stub-runtime.mjs";
@@ -29,8 +29,7 @@ import { RUNTIME_COMMANDS, sealedPath, withPath } from "./sealed-path.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const NOWHERE = "http://127.0.0.2:1";
-function setUp(client) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-definition-launcher-"));
+function render(client, dir) {
   const wrapper = readerWrapper(path.join(dir, "wrapper"));
   const out = path.join(dir, `${client}-aify`);
   execFileSync("bash", [path.join(ROOT, "render.sh"), `${client}-aify.sh.in`, out,
@@ -38,6 +37,19 @@ function setUp(client) {
     "BRIDGE_DIR=/nowhere", `WRAPPER_DIR=${wrapper.replace(/\\/g, "/")}`, "WRAPPER_VERSION=0.6.0", "SCRIPT_DIR=/nowhere", "NATIVE_BASE=/nowhere",
     "MCP_TRANSPORT=stdio", "STRICT_EXTRA_MCP_B64=", "SESSION_MCP_B64=", "SESSION_HTTP_B64=", "SESSION_MCP_CODEX_B64=", "HERMES_PLUGIN_PATH=/nowhere", "HERMES_STDIO_DIR=/nowhere",
     "HERMES_TUI_DIR=/nowhere"], { encoding: "utf8" });
+  return { out, wrapper };
+}
+
+// ONE RENDER PER CLIENT FOR THE FILE. The render's inputs are the same in every test, and `--check` writes nothing into
+// the wrapper directory, so the tests share it; a test that changes that directory asks for its own (`own`). The
+// definitions folder and HOME stay each test's own: "missing" needs a folder no earlier test wrote into.
+const shared = fs.mkdtempSync(path.join(os.tmpdir(), "aify-definition-launchers-"));
+const rendered = new Map();
+after(() => fs.rmSync(shared, { recursive: true, force: true }));
+function setUp(client, { own = false } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-definition-launcher-"));
+  if (!own && !rendered.has(client)) rendered.set(client, render(client, fs.mkdtempSync(path.join(shared, `${client}-`))));
+  const { out, wrapper } = own ? render(client, dir) : rendered.get(client);
   const defs = definitionsEnv(path.join(dir, "defs")).AIFY_AGENT_DEFINITIONS_DIR;
   fs.mkdirSync(path.join(dir, "home"));
   return { dir, out, defs, wrapper, home: path.join(dir, "home") };
@@ -68,21 +80,13 @@ function check(setup, { args = [], env = {} } = {}) {
 
 const line = (stdout, label) => (new RegExp(`^  ${label}\\s*: (.*)$`, "m").exec(stdout) || [])[1];
 
-function withLauncher(client, body) {
-  const setup = setUp(client);
+function withLauncher(client, body, options) {
+  const setup = setUp(client, options);
   try { body(setup); } finally { fs.rmSync(setup.dir, { recursive: true, force: true }); }
 }
 
-test("CLAUDE: the definition supplies role, model and effort when nothing above it does", () => withLauncher("claude", (setup) => {
-  fs.writeFileSync(path.join(setup.defs, "lead.json"), JSON.stringify(definition()));
-  const found = check(setup, { args: ["--aify-agent", "lead"] });
-  assert.equal(found.status, 0, found.stderr);
-  assert.deepEqual([line(found.stdout, "role"), line(found.stdout, "model"), line(found.stdout, "effort")], ["reviewer", "opus", "high"], found.stdout);
-  assert.equal(line(found.stdout, "definition"), path.join(setup.defs, "lead.json"));
-}));
-
 for (const client of ["claude", "codex", "hermes"]) {
-  test(`${client.toUpperCase()} ROLE PRECEDENCE: a flag in either spelling, then HARNESS_*, then AIFY_*, each beats the definition`, () => withLauncher(client, (setup) => {
+  test(`${client.toUpperCase()} ROLE PRECEDENCE: a flag in either spelling, then HARNESS_*, then AIFY_*, each beats the definition, which supplies role, model and effort when nothing above it does`, () => withLauncher(client, (setup) => {
     fs.writeFileSync(path.join(setup.defs, "lead.json"), JSON.stringify(definition({ harness: client })));
     const role = (options) => { const r = check(setup, options); assert.equal(r.status, 0, r.stderr); return line(r.stdout, "role"); };
     for (const flag of [["--aify-role", "flagged"], ["--aify-role=flagged"]]) {
@@ -91,7 +95,10 @@ for (const client of ["claude", "codex", "hermes"]) {
     }
     assert.equal(role({ args: ["--aify-agent", "lead"], env: { HARNESS_ROLE: "harness", AIFY_AGENT_ROLE: "legacy" } }), "harness");
     assert.equal(role({ args: ["--aify-agent", "lead"], env: { AIFY_AGENT_ROLE: "legacy" } }), "legacy");
-    assert.equal(role({ args: ["--aify-agent", "lead"] }), "reviewer", "the definition, when nothing above it says");
+    const found = check(setup, { args: ["--aify-agent", "lead"] });
+    assert.equal(found.status, 0, found.stderr);
+    assert.deepEqual([line(found.stdout, "role"), line(found.stdout, "model"), line(found.stdout, "effort"), line(found.stdout, "definition")],
+      ["reviewer", "opus", "high", path.join(setup.defs, "lead.json")], `the definition, when nothing above it says: ${found.stdout}`);
   }));
 }
 
@@ -269,15 +276,9 @@ for (const client of ["claude", "codex", "hermes"]) {
 }
 
 for (const client of ["codex", "hermes"]) {
-  test(`${client.toUpperCase()}: --check takes the role from the definition`, () => withLauncher(client, (setup) => {
+  // The definition alone, and the managed launch's values over it, are in ROLE PRECEDENCE and the nested-session test.
+  test(`${client.toUpperCase()}: a model given as an argument beats the definition's, and the effort stays the definition's`, () => withLauncher(client, (setup) => {
     fs.writeFileSync(path.join(setup.defs, "lead.json"), JSON.stringify(definition({ harness: client })));
-    const found = check(setup, { args: ["--aify-agent", "lead"] });
-    assert.equal(found.status, 0, found.stderr);
-    assert.equal(line(found.stdout, "role"), "reviewer");
-    assert.equal(line(found.stdout, "definition"), path.join(setup.defs, "lead.json"));
-    assert.deepEqual([line(found.stdout, "model"), line(found.stdout, "effort")], ["opus", "high"], "the values the launch applies");
-    const managed = check(setup, { args: ["--aify-agent", "lead"], env: { AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_MANAGED_MODEL: "m", AIFY_MANAGED_EFFORT: "e", AIFY_AGENT_ID: "lead" } });
-    assert.deepEqual([line(managed.stdout, "model"), line(managed.stdout, "effort")], ["m", "e"]);
     const given = check(setup, { args: ["--aify-agent", "lead", client === "codex" ? "--model=x" : "-m", ...(client === "codex" ? [] : ["x"])] });
     assert.match(line(given.stdout, "model"), /^<given as an argument/);
     assert.equal(line(given.stdout, "effort"), "high");
@@ -300,7 +301,7 @@ for (const client of ["claude", "codex", "hermes"]) {
     assert.match(managed.stderr, /this managed launch starts WITHOUT any instructions/);
     const anonymous = check(setup);
     assert.equal(anonymous.status, 0, `no id, nothing to read: ${anonymous.stderr}`);
-  }));
+  }, { own: true }));
 }
 
 for (const client of ["claude", "codex", "hermes"]) {
