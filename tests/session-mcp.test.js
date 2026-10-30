@@ -116,8 +116,8 @@ test("a host that opted nothing in launches exactly as today, with no --mcp-conf
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test("an opted-in service reaches the default-mode session beside the user's own servers, with no env block", () => {
-  const { args, config, dir } = launch(registryWith({ "aify-dashboard": DASHBOARD }));
+test("an opted-in service reaches the default-mode session beside the user's own servers, with no env block, in the agent's one session file", () => {
+  const { args, config, passedPath, dir } = launch(registryWith({ "aify-dashboard": DASHBOARD }));
   assert.ok(args.some((a) => a.startsWith("--mcp-config=")), `no --mcp-config= was passed: ${args.join(" ")}`);
   // ⛔ The equals form, never `--mcp-config <file>`. The flag takes several values, and the spaced form reads
   // any bare word after it as a second config path (Claude Code 2.1.286, 2026-10-01; aify-dashboard
@@ -130,15 +130,9 @@ test("an opted-in service reaches the default-mode session beside the user's own
   assert.deepEqual(config.mcpServers["aify-dashboard"], { command: "node", args: ["--experimental-strip-types", "/d/bridge/main.ts", "serve"] });
   // A service that declared no endpointEnv gets no env block at all.
   assert.equal(config.mcpServers["aify-dashboard"].env, undefined, "an env block appeared that nothing declared");
-  fs.rmSync(dir, { recursive: true, force: true });
-});
-
-test("the per-session file is the agent's one session file, not a file per launch in the session's temp", () => {
-  // A killed launcher skips its EXIT trap, so per-launch temp files piled up (lib/session-folder.mjs); the agent's one
-  // owner-only file is replaced by its next launch instead (tests/session-http.test.js holds the kill and the folder).
-  const { passedPath, dir } = launch(registryWith({ "aify-dashboard": DASHBOARD }));
-  assert.ok(passedPath !== null, "no file was passed");
-  assert.match(passedPath.split(String.fromCharCode(92)).join("/"), /\/\.aify\/sessions\/[^/]+\/mcp\.json$/);
+  // The agent's one session file, not a file per launch in the session's temp: a killed launcher skips its EXIT trap,
+  // so per-launch temp files piled up (lib/session-folder.mjs). tests/session-http.test.js holds the kill and the folder.
+  assert.match(String(passedPath).split(String.fromCharCode(92)).join("/"), /\/\.aify\/sessions\/[^/]+\/mcp\.json$/);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
