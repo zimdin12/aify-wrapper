@@ -15,7 +15,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { definitionsEnv, readerWrapper } from "./definition-reader-wrapper.mjs";
@@ -47,6 +47,15 @@ function render(client, extra = []) {
   return dir;
 }
 
+// ONE RENDER PER CLIENT, made fresh by this file and read by every test of that client: their arguments are the same,
+// and no test writes into the render (a run's HOME and definitions folder are its own, below).
+const rendered = new Map();
+function renderOnce(client) {
+  if (!rendered.has(client)) rendered.set(client, render(client));
+  return rendered.get(client);
+}
+after(() => { for (const dir of rendered.values()) fs.rmSync(dir, { recursive: true, force: true }); });
+
 /**
  * Run a rendered launcher with HOME and PATH sealed, so it cannot read this machine's state. The PATH is a stub of
  * this client's runtime and nothing else (sealed-path.mjs): `--check` resolves the runtime and exits 127 without one,
@@ -54,8 +63,9 @@ function render(client, extra = []) {
  */
 function run(dir, name, args, env, runtime) {
   const sealed = sealedPath([runtime]);
-  const home = path.join(dir, "home");
-  fs.mkdirSync(home, { recursive: true });
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "aify-wrapper-run-"));
+  const home = path.join(scratch, "home");
+  fs.mkdirSync(home);
   const clean = { ...process.env };
   for (const k of Object.keys(clean)) {
     if (/^(AIFY_|HARNESS_|CLAUDE_|CODEX_|HERMES_|PI_|OMP_)/.test(k)) delete clean[k];
@@ -63,76 +73,63 @@ function run(dir, name, args, env, runtime) {
   try {
     return spawnSync("bash", [path.join(dir, name), ...args], {
       encoding: "utf8",
-      env: withPath({ ...clean, HOME: home.replace(/\\/g, "/"), ...definitionsEnv(path.join(dir, "defs")), ...env }, sealed.PATH),
+      env: withPath({ ...clean, HOME: home.replace(/\\/g, "/"), ...definitionsEnv(path.join(scratch, "defs")), ...env }, sealed.PATH),
       timeout: 30_000,
     });
   } finally {
     fs.rmSync(sealed.dir, { recursive: true, force: true });
+    fs.rmSync(scratch, { recursive: true, force: true });
   }
 }
 
 for (const { client, names, runtime } of CLIENTS) {
   test(`${client}: renders every launcher it promises`, () => {
-    const dir = render(client);
+    const dir = renderOnce(client);
     for (const n of names) assert.ok(fs.existsSync(path.join(dir, n)), `missing ${n}`);
-    fs.rmSync(dir, { recursive: true, force: true });
   });
 
   test(`${client}: the rendered launcher is valid bash`, () => {
-    const dir = render(client);
+    const dir = renderOnce(client);
     for (const n of names) {
       const res = spawnSync("bash", ["-n", path.join(dir, n)], { encoding: "utf8" });
       assert.equal(res.status, 0, `bash -n ${n}:\n${res.stderr}`);
     }
-    fs.rmSync(dir, { recursive: true, force: true });
   });
 
   test(`${client}: no placeholder survives into the launcher`, () => {
     // The failure this prevents is quiet: install.sh exits 0, bash -n passes, and the launcher carries
     // a literal @@TOKEN@@ that only breaks when somebody starts an agent.
-    const dir = render(client);
+    const dir = renderOnce(client);
     for (const n of names) {
       const text = fs.readFileSync(path.join(dir, n), "utf8");
       const left = [...text.matchAll(/@@[A-Z0-9_]+@@/g)].map((m) => m[0]);
       assert.deepEqual(left, [], `${n} kept ${left.join(", ")}`);
     }
-    fs.rmSync(dir, { recursive: true, force: true });
   });
 
   test(`${client}: template-only documentation never reaches the launcher`, () => {
-    const dir = render(client);
+    const dir = renderOnce(client);
     for (const n of names) {
       const leaked = fs.readFileSync(path.join(dir, n), "utf8").split("\n").filter((l) => l.startsWith("#|"));
       assert.deepEqual(leaked, [], `${n} leaked template docs`);
     }
-    fs.rmSync(dir, { recursive: true, force: true });
   });
 
   test(`${client}: --check reports the configuration and starts nothing`, () => {
-    const dir = render(client);
-    try {
-      const r = run(dir, names[0], ["--check"], { HARNESS_IDENTITY: "probe-agent" }, runtime);
-      assert.equal(r.status, 0, `--check failed: ${r.stderr}`);
-      const out = `${r.stdout}${r.stderr}`;
-      assert.match(out, new RegExp(`${names[0]} ${VERSION.replace(/\./g, "\\.")}`), "must report its version");
-      assert.match(out, /probe-agent/, "must report the identity it resolved");
-      assert.match(out, /127\.0\.0\.2:1/, "must report the endpoint");
-      assert.match(out, /nothing was started/i);
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    const r = run(renderOnce(client), names[0], ["--check"], { HARNESS_IDENTITY: "probe-agent" }, runtime);
+    assert.equal(r.status, 0, `--check failed: ${r.stderr}`);
+    const out = `${r.stdout}${r.stderr}`;
+    assert.match(out, new RegExp(`${names[0]} ${VERSION.replace(/\./g, "\\.")}`), "must report its version");
+    assert.match(out, /probe-agent/, "must report the identity it resolved");
+    assert.match(out, /127\.0\.0\.2:1/, "must report the endpoint");
+    assert.match(out, /nothing was started/i);
   });
 
   test(`${client}: an emptied endpoint is refused with exit 78`, () => {
-    const dir = render(client);
-    try {
-      // Explicitly empty, not unset: a host that cleared the endpoint must not have one substituted.
-      const r = run(dir, names[0], ["--check"], { HARNESS_ENDPOINT: "" }, runtime);
-      assert.equal(r.status, 78, `expected 78, got ${r.status}: ${r.stderr}`);
-      assert.match(r.stderr, /HARNESS_ENDPOINT/);
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    // Explicitly empty, not unset: a host that cleared the endpoint must not have one substituted.
+    const r = run(renderOnce(client), names[0], ["--check"], { HARNESS_ENDPOINT: "" }, runtime);
+    assert.equal(r.status, 78, `expected 78, got ${r.status}: ${r.stderr}`);
+    assert.match(r.stderr, /HARNESS_ENDPOINT/);
   });
 }
 
