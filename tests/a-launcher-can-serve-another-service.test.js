@@ -41,13 +41,24 @@ function render(extra = []) {
   return { dir, result };
 }
 
+// ONE RENDER PER SET OF ARGUMENTS, read by every test that asks for it: no test writes into the render, so the
+// default render and the other service's are made once each. Every test that only reads another service's launchers
+// reads the same one, `my-service`; the refused names and --native-base render their own.
+const kept = new Map();
+function keptRender(extra = []) {
+  const key = JSON.stringify(extra);
+  if (!kept.has(key)) kept.set(key, render(extra));
+  return kept.get(key);
+}
+const anotherService = () => keptRender(["--service", "my-service"]);
+
 const read = (dir, name) => fs.readFileSync(path.join(dir, name), "utf8");
 /** Executable lines only: a comment naming a service is documentation, not wiring. */
 const codeLines = (text) => text.split("\n").filter((line) => !/^\s*#/.test(line));
 
 test("the default render still names aify-comms, everywhere it used to", () => {
   // The point of the default is that this change is invisible to every existing install.
-  const { dir, result } = render();
+  const { dir, result } = keptRender();
   assert.equal(result.status, 0, `status ${result.status} signal ${result.signal} error ${result.error?.code ?? result.error}\n${result.stderr}`);
   const claude = read(dir, "claude-aify");
   assert.ok(claude.includes('\\"aify-comms\\": { \\"command'), "the stdio entry lost the default name");
@@ -59,7 +70,7 @@ test("the default render still names aify-comms, everywhere it used to", () => {
 });
 
 test("--service renames the MCP server, its channel, and the flag that loads it", () => {
-  const { dir, result } = render(["--service", "my-service"]);
+  const { dir, result } = anotherService();
   assert.equal(result.status, 0, `status ${result.status} signal ${result.signal} error ${result.error?.code ?? result.error}\n${result.stderr}`);
   const claude = read(dir, "claude-aify");
   assert.ok(claude.includes('\\"my-service\\": { \\"command\\"'), "the stdio entry kept the old name");
@@ -68,21 +79,21 @@ test("--service renames the MCP server, its channel, and the flag that loads it"
 });
 
 test("the channel is derived, so it can never disagree with the service", () => {
-  const { dir } = render(["--service", "svc-two"]);
+  const { dir } = anotherService();
   const claude = read(dir, "claude-aify");
   const channels = [...claude.matchAll(/"([a-z0-9_-]+)-channel"/g)].map((m) => m[1]);
   assert.ok(channels.length > 0, "no channel server was rendered at all");
-  assert.deepEqual([...new Set(channels)], ["svc-two"], `channels disagree: ${channels}`);
+  assert.deepEqual([...new Set(channels)], ["my-service"], `channels disagree: ${channels}`);
 });
 
 test("codex's log root follows the service", () => {
-  const { dir } = render(["--service", "svc-three"]);
-  assert.match(read(dir, "codex-aify"), /^LOG_ROOT=.*\/svc-three"$/m);
+  const { dir } = anotherService();
+  assert.match(read(dir, "codex-aify"), /^LOG_ROOT=.*\/my-service"$/m);
 });
 
 test("NO executable line names aify-comms once another service is asked for -- paths included", () => {
   // No exception. Until the NATIVE_BASE default was derived, this excused every `.aify-comms` path,
-  // which is exactly where the bug lived: a launcher for svc-four pointing at aify-comms' runtime
+  // which is exactly where the bug lived: a launcher for another service pointing at aify-comms' runtime
   // directory passed the old assertion BY DESIGN.
   //
   // THE LIST IS DERIVED, NOT TYPED. It named three launchers, which was correct and would have
@@ -91,7 +102,7 @@ test("NO executable line names aify-comms once another service is asked for -- p
   // nothing here would say so. Its sibling file already derives its set for exactly this reason,
   // and the standing rule is that a list you have to remember to update is a defect with a delay
   // on it. Reading the directory means a launcher is covered on the day it first renders.
-  const { dir } = render(["--service", "svc-four"]);
+  const { dir } = anotherService();
   const rendered = fs.readdirSync(dir).filter((name) => name.endsWith("-aify")).sort();
   assert.ok(rendered.length >= 3,
     `only ${rendered.length} launcher(s) rendered (${rendered.join(", ")}); this test would prove `
@@ -115,7 +126,7 @@ test("a name that is not safe in JSON and shell is refused, not rendered", () =>
 test("the contract variables are named for the harness, not for any one service", () => {
   // The half that was already right, asserted so it stays that way: a launcher for another service
   // must not have to learn aify-comms' vocabulary.
-  const { dir } = render(["--service", "svc-five"]);
+  const { dir } = anotherService();
   const claude = read(dir, "claude-aify");
   for (const name of ["HARNESS_ENDPOINT", "HARNESS_WRAPPER_VERSION", "HARNESS_REGISTRY_FINGERPRINT"]) {
     assert.ok(claude.includes(name), `${name} is missing from a rendered launcher`);
@@ -127,9 +138,9 @@ test("the runtime directory DEFAULTS to the service's own, not to a neighbour's"
   // The positive half. Asserting an ABSENCE above says nothing about whether the right path
   // arrived: a render that produced no bridge directory at all would satisfy it and break every
   // launcher it wrote.
-  const { dir } = render(["--service", "svc-six"]);
+  const { dir } = anotherService();
   const claude = codeLines(read(dir, "claude-aify")).join("\n");
-  assert.match(claude, /\.svc-six\/mcp\/stdio/, "the bridge directory does not follow the service");
+  assert.match(claude, /\.my-service\/mcp\/stdio/, "the bridge directory does not follow the service");
 });
 
 test("--native-base still wins, because location is its own axis", () => {
@@ -145,7 +156,7 @@ test("THE DEFAULT SERVICE STILL LANDS IN ~/.aify-comms, exactly as before", () =
   // The safety property of the whole change: SERVICE_NAME defaults to aify-comms, so the derived
   // path is the literal it replaced and no existing install moves. Proven by rendering rather than
   // by reasoning about what the substitution ought to produce.
-  const { dir } = render();
+  const { dir } = keptRender();
   assert.match(codeLines(read(dir, "claude-aify")).join("\n"), /\.aify-comms\/mcp\/stdio/,
     "the default render's runtime directory moved, which would relocate every existing install");
 });
