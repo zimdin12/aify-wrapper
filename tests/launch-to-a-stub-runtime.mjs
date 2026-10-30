@@ -20,6 +20,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { definitionsEnv, readerWrapper } from "./definition-reader-wrapper.mjs";
+import { sealedPath } from "./sealed-path.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -154,7 +155,7 @@ export function renderWorld(client, dir, out, { args = [], fresh = false } = {})
 }
 
 /** Render one launcher with a stub bridge and a stub runtime, in a fresh directory. */
-function world(client, { reader, registry, bridgeFiles = {}, fresh = false }) {
+function world(client, { reader, registry, bridgeFiles = {}, fresh = false, runtime = true }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `aify-launch-${client}-`));
   const [out, stubs, home, bridge, wrapper] = ["out", "stubs", "home", "bridge", "wrapper"].map((d) => path.join(dir, d));
   for (const d of [out, stubs, home, bridge, wrapper]) fs.mkdirSync(d, { recursive: true });
@@ -171,7 +172,7 @@ function world(client, { reader, registry, bridgeFiles = {}, fresh = false }) {
   const services = path.join(dir, "services.json");
   fs.writeFileSync(services, registry === undefined ? "" : JSON.stringify(registry));
   const made = renderWorld(client, dir, out, { fresh });
-  fs.writeFileSync(path.join(stubs, client), runtimeStub(shellPath(process.execPath)), { mode: 0o755 });
+  if (runtime) fs.writeFileSync(path.join(stubs, client), runtimeStub(shellPath(process.execPath)), { mode: 0o755 });
   return { dir, home, stubs, launcher: path.join(out, `${client}-aify`), made };
 }
 
@@ -180,9 +181,13 @@ function world(client, { reader, registry, bridgeFiles = {}, fresh = false }) {
  * @returns {{run, started: object, args: string[], appServerArgs: string[], asked: object[], sessionFiles: object}} `started`
  *   is the runtime's environment ({} when it never started); `args` its argv; `appServerArgs` codex's
  *   app-server argv; `sessionFiles` the text of each file left under ~/.aify/sessions, by its path below it.
+ *   An `env` value may be a function of the run's {dir, home}, for one that names its absolute paths; it may set
+ *   CODEX_HOME, which is otherwise ~/.codex. `runtime: false` writes no runtime and seals PATH (sealed-path.mjs), so
+ *   node's own directory, which holds a real `codex` where codex is installed through npm, is not on it.
  */
-export function launch(client, args, { rewriting = true, reader = true, definitions = {}, env: extraEnv = {}, registry, edit, bridgeFiles, lifetimes = false, cwd, files = {}, fresh = false } = {}) {
-  const w = world(client, { reader, registry, bridgeFiles, fresh });
+export function launch(client, args, { rewriting = true, reader = true, definitions = {}, env: extraEnv = {}, registry, edit, bridgeFiles, lifetimes = false, cwd, files = {}, fresh = false, runtime = true } = {}) {
+  const w = world(client, { reader, registry, bridgeFiles, fresh, runtime });
+  const sealed = runtime ? null : sealedPath([]);
   if (lifetimes) {
     for (const file of ["bin/aify-lease.sh", "bin/aify-inherited-session.sh", "bin/aify-lifetime.sh", "bin/aify-resident-record.mjs", "bin/aify-runtime-exited.sh"]) {
       const from = path.join(ROOT, file);
@@ -202,13 +207,13 @@ export function launch(client, args, { rewriting = true, reader = true, definiti
   }
   const env = {
     ...defs,
-    ...extraEnv,
-    PATH: [w.stubs, path.dirname(process.execPath), BASH_DIR].join(WIN ? ";" : ":"),
+    CODEX_HOME: path.join(w.home, ".codex"),
+    ...Object.fromEntries(Object.entries(extraEnv).map(([k, v]) => [k, typeof v === "function" ? v({ dir: w.dir, home: w.home }) : v])),
+    PATH: [w.stubs, ...(sealed ? [sealed.PATH] : [path.dirname(process.execPath), BASH_DIR])].join(WIN ? ";" : ":"),
     HOME: w.home,
     USERPROFILE: w.home,
     APPDATA: path.join(w.home, "AppData/Roaming"),
     LOCALAPPDATA: path.join(w.home, "AppData/Local"),
-    CODEX_HOME: path.join(w.home, ".codex"),
     TMPDIR: w.dir,
     TEMP: w.dir,
     TMP: w.dir,
@@ -246,5 +251,6 @@ export function launch(client, args, { rewriting = true, reader = true, definiti
     remainingResidents: fs.existsSync(residents) ? fs.readdirSync(residents) : [], launcher: w.launcher, render: w.made,
     exitReport: read(`${runtimeEnv}.exit`) ? JSON.parse(read(`${runtimeEnv}.exit`)) : null };
   fs.rmSync(w.dir, { recursive: true, force: true });
+  if (sealed) fs.rmSync(sealed.dir, { recursive: true, force: true });
   return result;
 }

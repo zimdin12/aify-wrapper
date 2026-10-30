@@ -19,14 +19,15 @@ const definition = (harness) => ({ version: 1, agent: { id: "lead", name: "Lead"
   mode: "resident", workspace: "C:/work", model: "m-defined", effort: "high", instructions: "", env: {}, herdrSpace: true } });
 const argsFor = (client) => (client === "hermes" ? ["--aify-agent", "lead", "chat"] : ["--aify-agent", "lead"]);
 const OWNED = ["AIFY_MANAGED_MODEL=m-forced", "AIFY_DEF_MODEL=m-forced", "aify_managed_model=m-forced", "HARNESS_ROLE=forced"];
-const EXTRA = ["PROVIDER_TOKEN=kept", ...OWNED].join("\n");
+// A blank line, a line with no `=` and a comment are skipped, not exported: under `set -e` an export of one ends the launch.
+const EXTRA = ["PROVIDER_TOKEN=kept with a space=and an equals", "", "not-a-pair", "# COMMENT=1", "", ...OWNED].join("\n");
 
 for (const client of ["claude", "codex", "hermes"]) {
   test(`${client}-aify: HARNESS_EXTRA_ENV sets an ordinary name and is refused every name aify owns`, () => {
     const { run, started, args, appServerArgs } = launch(client, argsFor(client), {
       definitions: { lead: definition(client) }, env: { HARNESS_EXTRA_ENV: EXTRA } });
     assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
-    assert.equal(started.PROVIDER_TOKEN, "kept", "control: an ordinary name is still exported");
+    assert.equal(started.PROVIDER_TOKEN, "kept with a space=and an equals", "control: an ordinary name is still exported, verbatim");
     const argv = JSON.stringify([...args, ...appServerArgs]);
     assert.ok(argv.includes("m-defined"), `the definition's model is the one that runs: ${argv}`);
     assert.equal(argv.includes("m-forced"), false, `a forced model reached the runtime: ${argv}`);

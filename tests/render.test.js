@@ -19,6 +19,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { definitionsEnv, readerWrapper } from "./definition-reader-wrapper.mjs";
+import { sealedPath, withPath } from "./sealed-path.mjs";
 import { emptyRegistry } from "./sealed-registry.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -46,19 +47,28 @@ function render(client, extra = []) {
   return dir;
 }
 
-/** Run a rendered launcher with HOME and PATH sealed, so it cannot read this machine's state. */
-function run(dir, name, args, env = {}) {
+/**
+ * Run a rendered launcher with HOME and PATH sealed, so it cannot read this machine's state. The PATH is a stub of
+ * this client's runtime and nothing else (sealed-path.mjs): `--check` resolves the runtime and exits 127 without one,
+ * and a host without the real CLI would otherwise skip these tests.
+ */
+function run(dir, name, args, env, runtime) {
+  const sealed = sealedPath([runtime]);
   const home = path.join(dir, "home");
   fs.mkdirSync(home, { recursive: true });
   const clean = { ...process.env };
   for (const k of Object.keys(clean)) {
     if (/^(AIFY_|HARNESS_|CLAUDE_|CODEX_|HERMES_|PI_|OMP_)/.test(k)) delete clean[k];
   }
-  return spawnSync("bash", [path.join(dir, name), ...args], {
-    encoding: "utf8",
-    env: { ...clean, HOME: home.replace(/\\/g, "/"), ...definitionsEnv(path.join(dir, "defs")), ...env },
-    timeout: 30_000,
-  });
+  try {
+    return spawnSync("bash", [path.join(dir, name), ...args], {
+      encoding: "utf8",
+      env: withPath({ ...clean, HOME: home.replace(/\\/g, "/"), ...definitionsEnv(path.join(dir, "defs")), ...env }, sealed.PATH),
+      timeout: 30_000,
+    });
+  } finally {
+    fs.rmSync(sealed.dir, { recursive: true, force: true });
+  }
 }
 
 for (const { client, names, runtime } of CLIENTS) {
@@ -98,15 +108,10 @@ for (const { client, names, runtime } of CLIENTS) {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  test(`${client}: --check reports the configuration and starts nothing`, (t) => {
+  test(`${client}: --check reports the configuration and starts nothing`, () => {
     const dir = render(client);
     try {
-      const runtimePresent = spawnSync("bash", ["-c", `command -v ${runtime}`]).status === 0;
-      if (!runtimePresent) {
-        t.skip(`${runtime} is not installed here; --check would exit 127 by design`);
-        return;
-      }
-      const r = run(dir, names[0], ["--check"], { HARNESS_IDENTITY: "probe-agent" });
+      const r = run(dir, names[0], ["--check"], { HARNESS_IDENTITY: "probe-agent" }, runtime);
       assert.equal(r.status, 0, `--check failed: ${r.stderr}`);
       const out = `${r.stdout}${r.stderr}`;
       assert.match(out, new RegExp(`${names[0]} ${VERSION.replace(/\./g, "\\.")}`), "must report its version");
@@ -118,16 +123,11 @@ for (const { client, names, runtime } of CLIENTS) {
     }
   });
 
-  test(`${client}: an emptied endpoint is refused with exit 78`, (t) => {
+  test(`${client}: an emptied endpoint is refused with exit 78`, () => {
     const dir = render(client);
     try {
-      const runtimePresent = spawnSync("bash", ["-c", `command -v ${runtime}`]).status === 0;
-      if (!runtimePresent) {
-        t.skip(`${runtime} is not installed here`);
-        return;
-      }
       // Explicitly empty, not unset: a host that cleared the endpoint must not have one substituted.
-      const r = run(dir, names[0], ["--check"], { HARNESS_ENDPOINT: "" });
+      const r = run(dir, names[0], ["--check"], { HARNESS_ENDPOINT: "" }, runtime);
       assert.equal(r.status, 78, `expected 78, got ${r.status}: ${r.stderr}`);
       assert.match(r.stderr, /HARNESS_ENDPOINT/);
     } finally {
