@@ -2,6 +2,9 @@ node_modules/
 .check-output/
 *.log
 
+# A running hermes loads lib/*.py through the aify-comms hermes plugin, and Python caches the bytecode beside them.
+__pycache__/
+
 # Render output, not source. Three launchers were committed under flattened absolute paths
 # (a probe handed bash an interpolated Windows path and quote removal ate the backslashes).
 # U+F03A is what Windows substitutes for the colon it cannot store in a filename.
