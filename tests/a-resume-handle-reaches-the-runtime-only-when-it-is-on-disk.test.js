@@ -33,7 +33,11 @@ test("claude-aify: a --resume id with a transcript is resumed, and one without i
   assert.equal(stale.started.CLAUDE_SESSION_ID, undefined);
 });
 
-test("claude-aify: an inherited CLAUDE_SESSION_ID with no transcript is cleared, not handed on", () => {
+test("claude-aify: an inherited CLAUDE_SESSION_ID with a transcript is handed on, and one without is cleared", () => {
+  const kept = launch("claude", ["--aify-agent", "a"], { env: { CLAUDE_SESSION_ID: KNOWN } });
+  assert.equal(kept.run.status, 0, kept.run.stderr);
+  assert.equal(kept.started.CLAUDE_SESSION_ID, KNOWN);
+  assert.doesNotMatch(kept.run.stderr, /has no transcript/);
   const { run, started, args } = launch("claude", ["--aify-agent", "a"], { env: { CLAUDE_SESSION_ID: STALE } });
   assert.equal(run.status, 0, run.stderr);
   assert.match(run.stderr, new RegExp(`'${STALE}' has no transcript`));

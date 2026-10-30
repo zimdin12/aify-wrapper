@@ -23,7 +23,8 @@ const RUNTIME = { claude: "claude-code", codex: "codex" };
 const BYPASS = { claude: "--dangerously-skip-permissions", codex: "--dangerously-bypass-approvals-and-sandbox" };
 const CALLER = "http://127.0.0.2:2";
 const HARNESS = "http://127.0.0.2:3";
-const WORDS = ["first", "two words"];
+/** An option the launcher does not consume, and a word with a space in it: both reach the runtime as given. */
+const WORDS = ["--caller-flag", "two words"];
 const BOTH = { HARNESS_ENDPOINT: HARNESS, HARNESS_IDENTITY: "harness-id", HARNESS_ROLE: "harness-role",
   AIFY_COMMS_URL: CALLER, AIFY_AGENT_ID: "env-id", AIFY_AGENT_ROLE: "env-role" };
 /** The model claude is handed by `--model`, or undefined. */
@@ -34,6 +35,8 @@ test("claude-aify: a caller's --model wins over the managed one", () => {
   const { run, args } = launch("claude", ["--model", "m-caller"], { env: { AIFY_AGENT_ID: "env-id", AIFY_MANAGED_MODEL: "m-managed" } });
   assert.equal(run.status, 0, run.stderr);
   assert.deepEqual(args.filter((a) => a.startsWith("m-")), ["m-caller"], `${args}`);
+  assert.equal(args.filter((a) => a === "--model").length, 1, `a second --model beside the caller's: ${args}`);
+  assert.equal(modelOf(args), "m-caller", `${args}`);
 });
 
 for (const client of ["claude", "codex"]) {
@@ -47,11 +50,13 @@ for (const client of ["claude", "codex"]) {
     assert.equal(started.AIFY_SESSION_MODE, "managed", "no TTY and no choice is managed");
     assert.ok(args.includes(BYPASS[client]), `no bypass flag by default: ${args}`);
     assert.deepEqual(args.slice(-WORDS.length), WORDS, `the user's words are not last and whole: ${args}`);
+    assert.equal(args.includes("--check"), false, `a launch acquired --check: ${args}`);
     if (client === "claude") {
       assert.equal(started.AIFY_CHANNELS_ENABLED, "1");
       assert.match(run.stderr, /NO AGENT ID: .*Pass --aify-agent <id>/);
     } else {
       const remote = args.indexOf("--remote");
+      assert.ok(remote >= 0, `no --remote: ${args}`);
       assert.match(started.AIFY_CODEX_APP_SERVER_URL ?? "", /^ws:\/\/127\.0\.0\.1:\d+$/);
       assert.equal(args[remote + 1], started.AIFY_CODEX_APP_SERVER_URL, `--remote is not the app-server's: ${args}`);
     }
@@ -68,6 +73,12 @@ for (const client of ["claude", "codex"]) {
     assert.equal(args.includes(BYPASS[client]), false, `--safe kept the bypass flag: ${args}`);
     assert.deepEqual(args.filter((a) => a === "--safe" || a === "--resident"), [], `a launcher flag reached the runtime: ${args}`);
     if (client === "claude") assert.equal(modelOf(args), "m-managed", `the managed model, when the launch names none: ${args}`);
+  });
+
+  test(`${client}-aify with AIFY_AGENT_ROLE alone: that role reaches the runtime`, () => {
+    const { run, started } = launch(client, [], { env: { AIFY_AGENT_ID: "env-id", AIFY_AGENT_ROLE: "env-role" } });
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(started.AIFY_AGENT_ROLE, "env-role");
   });
 
   test(`${client}-aify with HARNESS_* beside AIFY_*: HARNESS_* wins for identity, role and endpoint`, () => {
@@ -98,9 +109,9 @@ for (const client of ["claude", "codex"]) {
   });
 }
 
-test("codex-aify --check names the agent in either flag's spelling, says it adds no MCP command, and starts nothing", () => {
-  for (const flag of ["--aify-agent", "--agent-id"]) {
-    const { run, started, appServerArgs } = launch("codex", ["--check", flag, "spelled"], { env: { HARNESS_MCP_COMMAND: "node x.mjs" } });
+test("codex-aify --check names the agent in each flag's spelling, says it adds no MCP command, and starts nothing", () => {
+  for (const flag of [["--aify-agent", "spelled"], ["--agent-id", "spelled"], ["--aify-agent=spelled"]]) {
+    const { run, started, appServerArgs } = launch("codex", ["--check", ...flag], { env: { HARNESS_MCP_COMMAND: "node x.mjs" } });
     assert.equal(run.status, 0, run.stderr);
     assert.match(run.stdout, /identity\s*: spelled\n/, `${flag}: ${run.stdout}`);
     assert.match(run.stdout, /HARNESS_MCP_COMMAND not used by this wrapper/);
