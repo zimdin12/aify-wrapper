@@ -105,7 +105,13 @@ const files = selected.length
   ? selected
   : fs.readdirSync('tests').filter((f) => f.endsWith('.test.js')).map((f) => path.join('tests', f));
 
-const child = spawn(process.execPath, ['--test', ...files], { env, stdio: 'inherit' });
+// FOUR FILES AT ONCE, not node's default of one per core but one. On the shared 16-core host that default was 31 files
+// at once, over half of them spawning install.sh or a launcher. A full Windows run then took about 17 minutes, and its
+// renders crossed their 180 s caps: 6 failures on 2026-10-30, all green when the same files were run on their own.
+// Four is a quarter of the cores, which leaves the rest of the host to the other work on it.
+const CONCURRENCY = 4;
+
+const child = spawn(process.execPath, ['--test', `--test-concurrency=${CONCURRENCY}`, ...files], { env, stdio: 'inherit' });
 
 child.on('exit', (code, signal) => {
   try {
