@@ -72,32 +72,42 @@ function runtimeStub(node) {
 
 // RENDERED ONCE PER INPUTS, PER TEST RUN. A render runs install.sh, the costliest step of a launch (24-33 s alone on the
 // operator's host, three times that inside a full run), and most launches render the same inputs. So a render is kept
-// under the run's temp directory, keyed by everything it is made from: the client, the reader, the registry and bridge
-// files, and the bytes of the installer, the templates, bin/ and lib/. A later launch with the same key copies it into
-// its own directory, every file its own, and points it at that directory: a render names its world only by the
-// world's directory (bridge, wrapper, registry), and every world sits in the same parent, so the one directory name is
-// replaced. `fresh: true` always renders; a-render-kept-for-a-run-is-the-render-it-would-make.test.js compares the two.
+// under the run's temp directory, keyed by everything it is made from: the client, the installer's other arguments, the
+// world's registry text and every file under its bridge/ and wrapper/, and the bytes of the installer, the templates,
+// bin/ and lib/. A later launch with the same key copies it into its own directory, every file its own, and points it at
+// that directory: a render names its world only by the world's directory (bridge, wrapper, registry), and every world
+// sits in the same parent, so the one directory name is replaced. `fresh: true` always renders;
+// a-render-kept-for-a-run-is-the-render-it-would-make.test.js compares the two.
 const RENDERS = () => path.join(os.tmpdir(), "aify-render-cache");
+/** Each file under `dir` by its path below it, as the sha256 of its bytes; {} when there is no `dir`. */
+function filesUnder(dir) {
+  const files = {};
+  const walk = (at) => {
+    for (const entry of fs.readdirSync(at, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const full = path.join(at, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else files[path.relative(dir, full).split(path.sep).join("/")] = crypto.createHash("sha256").update(fs.readFileSync(full)).digest("hex");
+    }
+  };
+  if (fs.existsSync(dir)) walk(dir);
+  return files;
+}
 let sources = null;
 /** The digest of what a render reads from this checkout, taken once per process. */
 function sourceDigest() {
   if (sources) return sources;
-  const hash = crypto.createHash("sha256");
-  const walk = (dir) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else hash.update(`${path.relative(ROOT, full)}\0`).update(fs.readFileSync(full)).update("\0");
-    }
-  };
-  hash.update(fs.readFileSync(INSTALL));
-  for (const dir of ["wrappers", "bin", "lib"]) walk(path.join(ROOT, dir));
+  const hash = crypto.createHash("sha256").update(fs.readFileSync(INSTALL));
+  for (const dir of ["wrappers", "bin", "lib"]) hash.update(JSON.stringify(filesUnder(path.join(ROOT, dir))));
   sources = hash.digest("hex");
   return sources;
 }
-/** The key of a render: the same key, the same launcher text but for the world's directory. `sources` is this checkout's. */
-export function renderKey(client, { reader, registry, bridgeFiles = {} }, sources = sourceDigest()) {
-  const inputs = JSON.stringify({ client, reader: Boolean(reader), registry: registry === undefined ? null : registry, bridgeFiles, sources });
+/**
+ * The key of a render: the same key, the same launcher text but for the world's directory. `args` are the installer's
+ * beyond the world's own, `registry` the world's services.json text, `bridge` and `wrapper` filesUnder() its directories;
+ * `sources` is this checkout's.
+ */
+export function renderKey(client, { args = [], registry = "", bridge = {}, wrapper = {} }, sources = sourceDigest()) {
+  const inputs = JSON.stringify({ client, args, registry, bridge, wrapper, sources });
   return crypto.createHash("sha256").update(inputs).digest("hex");
 }
 /** Copy the render kept under `key` into `out`, renamed to world `dir`; whether there was one. */
@@ -126,6 +136,23 @@ function keepRender(key, dir, out) {
   }
 }
 
+/**
+ * Render `client`'s launcher into `out` from the world in `dir` (its services.json, bridge/ and wrapper/, which it
+ * must already hold), with the installer's `args` beyond those, or copy the render kept for the same inputs.
+ * @returns {"rendered" | "kept"}
+ */
+export function renderWorld(client, dir, out, { args = [], fresh = false } = {}) {
+  const services = path.join(dir, "services.json");
+  const [bridge, wrapper] = ["bridge", "wrapper"].map((d) => path.join(dir, d));
+  const key = renderKey(client, { args, registry: fs.readFileSync(services, "utf8"), bridge: filesUnder(bridge), wrapper: filesUnder(wrapper) });
+  if (!fresh && cachedRender(key, dir, out)) return "kept";
+  const rendered = spawnSync(BASH, [INSTALL, "--client", client, "--endpoint", NOWHERE, "--registry", services,
+    "--render-only", out, "--bridge-dir", shellPath(bridge), "--wrapper-dir", shellPath(wrapper), ...args], { encoding: "utf8", timeout: 120_000 });
+  if (rendered.status !== 0) throw new Error(`render failed: ${rendered.stdout}\n${rendered.stderr}`);
+  if (!fresh) keepRender(key, dir, out);
+  return "rendered";
+}
+
 /** Render one launcher with a stub bridge and a stub runtime, in a fresh directory. */
 function world(client, { reader, registry, bridgeFiles = {}, fresh = false }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `aify-launch-${client}-`));
@@ -143,14 +170,7 @@ function world(client, { reader, registry, bridgeFiles = {}, fresh = false }) {
   // machine's services.
   const services = path.join(dir, "services.json");
   fs.writeFileSync(services, registry === undefined ? "" : JSON.stringify(registry));
-  const key = renderKey(client, { reader, registry, bridgeFiles });
-  const made = fresh || !cachedRender(key, dir, out) ? "rendered" : "kept";
-  if (made === "rendered") {
-    const rendered = spawnSync(BASH, [INSTALL, "--client", client, "--endpoint", NOWHERE, "--registry", services,
-      "--render-only", out, "--bridge-dir", shellPath(bridge), "--wrapper-dir", shellPath(wrapper)], { encoding: "utf8", timeout: 120_000 });
-    if (rendered.status !== 0) throw new Error(`render failed: ${rendered.stdout}\n${rendered.stderr}`);
-    if (!fresh) keepRender(key, dir, out);
-  }
+  const made = renderWorld(client, dir, out, { fresh });
   fs.writeFileSync(path.join(stubs, client), runtimeStub(shellPath(process.execPath)), { mode: 0o755 });
   return { dir, home, stubs, launcher: path.join(out, `${client}-aify`), made };
 }

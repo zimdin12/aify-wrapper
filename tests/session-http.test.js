@@ -20,6 +20,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { definitionsEnv, readerWrapper } from "./definition-reader-wrapper.mjs";
+import { renderWorld } from "./launch-to-a-stub-runtime.mjs";
 import { ownerEnv, writePrivateCredential } from "./private-credential.mjs";
 
 import { folderCustodyProblemFor } from "../lib/credential-custody.mjs";
@@ -31,7 +32,6 @@ import {
 } from "../lib/session-http.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const INSTALL = path.join(ROOT, "install.sh");
 const REGISTRY_CLI = path.join(ROOT, "lib", "registry-cli.mjs");
 const HERMES_CLI = path.join(ROOT, "lib", "hermes-config-cli.mjs");
 const FAKE_HERMES = path.join(ROOT, "tests", "fake-hermes.mjs");
@@ -186,9 +186,8 @@ function launch(registry, { withKey = true, env = {}, again = null, first = "", 
   fs.writeFileSync(path.join(dir, "bridge", "claude-channel.js"), "");
   const registryFile = path.join(dir, "services.json");
   fs.writeFileSync(registryFile, JSON.stringify(registry));
-  const rendered = spawnSync("bash", [INSTALL, "--client", "claude", "--endpoint", NOWHERE, "--render-only", out, "--registry", registryFile,
-    "--bridge-dir", posix(path.join(dir, "bridge")), "--wrapper-dir", posix(readerWrapper(path.join(dir, "wrapper")))], { encoding: "utf8", timeout: 120_000 });
-  assert.equal(rendered.status, 0, `render failed: ${rendered.stdout}\n${rendered.stderr}`);
+  readerWrapper(path.join(dir, "wrapper"));
+  renderWorld("claude", dir, out);
 
   const captured = path.join(dir, "captured");
   fs.writeFileSync(path.join(stubs, "claude"), [

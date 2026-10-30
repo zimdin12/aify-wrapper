@@ -51,15 +51,18 @@ test("a launch with another registry is never handed a render kept for this one"
 });
 
 test("the key changes with every input a render is made from, and only with them", () => {
-  const base = { reader: true, registry: REGISTRY, bridgeFiles: {} };
+  const base = { args: ["--mcp-transport", "http"], registry: JSON.stringify(REGISTRY), bridge: { "a.mjs": "1" }, wrapper: { "bin/r.sh": "1" } };
   const key = renderKey("claude", base);
   assert.equal(renderKey("claude", { ...base }), key);
   for (const [what, client, inputs] of [
     ["the client", "codex", base],
-    ["the reader", "claude", { ...base, reader: false }],
-    ["the registry", "claude", { ...base, registry: { version: 1, services: {} } }],
-    ["no registry", "claude", { ...base, registry: undefined }],
-    ["a bridge file", "claude", { ...base, bridgeFiles: { "x.mjs": "1" } }],
+    ["the installer's arguments", "claude", { ...base, args: ["--mcp-transport", "stdio"] }],
+    ["the registry", "claude", { ...base, registry: JSON.stringify({ version: 1, services: {} }) }],
+    ["no registry", "claude", { ...base, registry: "" }],
+    ["a bridge file's bytes", "claude", { ...base, bridge: { "a.mjs": "2" } }],
+    ["a bridge file's name", "claude", { ...base, bridge: { "b.mjs": "1" } }],
+    ["a wrapper file's bytes", "claude", { ...base, wrapper: { "bin/r.sh": "2" } }],
+    ["a wrapper file left out", "claude", { ...base, wrapper: {} }],
   ]) assert.notEqual(renderKey(client, inputs), key, `${what} did not change the key`);
   assert.notEqual(renderKey("claude", base, "another checkout"), key, "the installer, templates, bin and lib did not change the key");
 });

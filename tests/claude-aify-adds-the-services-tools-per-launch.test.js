@@ -16,6 +16,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { definitionsEnv, readerWrapper } from "./definition-reader-wrapper.mjs";
+import { renderWorld } from "./launch-to-a-stub-runtime.mjs";
 import { ownerEnv, writePrivateCredential } from "./private-credential.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -47,9 +48,7 @@ function install({ transport, withEntry = true }) {
   fs.writeFileSync(registryFile, JSON.stringify(REGISTRY));
   const wrapper = readerWrapper(path.join(dir, "wrapper"));
   if (!withEntry) fs.rmSync(path.join(wrapper, "bin", "aify-session-mcp.mjs"));
-  const rendered = spawnSync("bash", [INSTALL, "--client", "claude", "--endpoint", NOWHERE, "--render-only", out, "--registry", registryFile,
-    "--bridge-dir", posix(bridge), "--wrapper-dir", posix(wrapper), "--mcp-transport", transport], { encoding: "utf8", timeout: 120_000 });
-  assert.equal(rendered.status, 0, `render failed: ${rendered.stdout}\n${rendered.stderr}`);
+  renderWorld("claude", dir, out, { args: ["--mcp-transport", transport] });
   const s = posix(seen);
   fs.writeFileSync(path.join(stubs, "claude"), [
     "#!/bin/sh",
