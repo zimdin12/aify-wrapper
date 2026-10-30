@@ -700,9 +700,11 @@ if [ -n "${CODEX_RESUME_HANDLE:-}" ]; then
   # Try dir-per-session
   elif [ -d "$CODEX_SESSIONS_DIR/$CODEX_RESUME_HANDLE" ]; then
     CODEX_SESSION_FOUND="$CODEX_SESSIONS_DIR/$CODEX_RESUME_HANDLE"
-  # Try date-sharded — search recursively for files containing the handle
+  # Try date-sharded — search recursively for files containing the handle. A find that fails is a session
+  # not found: under `set -euo pipefail` its status ended the launch silently, exit 1, on a CODEX_HOME with
+  # no sessions folder yet, and `head` closing the pipe early can fail it the same way.
   else
-    CODEX_SESSION_FOUND="$(find "$CODEX_SESSIONS_DIR" -type f -name "*$CODEX_RESUME_HANDLE*" 2>/dev/null | head -1)"
+    CODEX_SESSION_FOUND="$( { find "$CODEX_SESSIONS_DIR" -type f -name "*$CODEX_RESUME_HANDLE*" 2>/dev/null || true; } | head -1)"
   fi
 fi
 
