@@ -16,6 +16,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { emptyRegistry } from "./sealed-registry.mjs";
 import { configureChannel } from "./configured-channel.mjs";
+import { launch } from "./launch-to-a-stub-runtime.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
@@ -273,6 +274,26 @@ test("a launcher whose claim FAILED does not act as the lease holder", { skip: W
   const [afterFailure, afterSuccess] = w.runtimeLeases();
   assert.equal(afterFailure, "", "a launcher whose claim failed handed its runtime a lease");
   assert.match(afterSuccess, /^\d+$/, "control: a launcher whose claim succeeded hands its runtime the lease");
+});
+
+test("HERMES: a launch whose claim failed hands its gateway step no lease, not the one it inherited", () => {
+  // Review of 3653656: the inherited AIFY_AGENT_LEASE stays exported, for the nested refusal inside the runtime, and
+  // the gateway step took it as its owner, so a gateway would join, and die with, another agent's instance.
+  const lead = { version: 1, agent: { id: "lead", name: "Lead", role: "reviewer", harness: "hermes", mode: "resident",
+    workspace: "C:/work", model: "opus", effort: "high", instructions: "", env: {}, herdrSpace: true } };
+  const gateway = 'console.error("GATEWAY-SAW-LEASE=" + (process.env.AIFY_AGENT_LEASE || "<none>")); process.exit(3);';
+  // launch()'s wrapper directory holds the reader only, so the lease's shell half is placed beside the stub helper.
+  const own = (name) => [`wrapper/bin/${name}`, fs.readFileSync(path.join(ROOT, "bin", name), "utf8")];
+  const seen = (claim) => {
+    const r = launch("hermes", ["--aify-agent", "lead"], { definitions: { lead }, env: { AIFY_AGENT_LEASE: "4321" },
+      files: { ...Object.fromEntries(["aify-lease.sh", "aify-inherited-session.sh"].map(own)),
+        "wrapper/bin/aify-agent-lease.mjs": claim, "wrapper/bin/aify-hermes-gateway.mjs": gateway } });
+    return (/GATEWAY-SAW-LEASE=(\S+)/.exec(r.run.stderr) || [, `<no gateway step>\n${r.run.stderr}`])[1];
+  };
+  assert.equal(seen("process.exit(70);"), "<none>", "a launch whose claim failed handed its gateway the inherited lease");
+  const held = seen('if (process.argv[2] === "claim") console.log("none"); process.exit(0);');
+  assert.match(held, /^\d+$/, "control: a claim that succeeded hands its gateway a lease");
+  assert.notEqual(held, "4321", "control: the lease a won claim hands on is the launcher's own");
 });
 
 test("NO AGENT ID and --shared claim nothing", { skip: WIN }, () => {
