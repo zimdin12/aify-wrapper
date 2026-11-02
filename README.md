@@ -441,6 +441,23 @@ npm test
 deletes it afterwards. `npm test -- tests/<file>.test.js ...` runs only those files, under the same root and
 with the terminal's agent session stripped the same way.
 
+**The full run is on Linux.** Every process start costs 100-500 ms on Windows under load and 1-20 ms on Linux, so
+the same suite takes about a minute in a container and over ten on Windows:
+
+```bash
+scripts/test-linux.sh --log linux.log              # committed HEAD of this repo, aify-comms and aify-env
+scripts/test-linux.sh --worktree tests/x.test.js   # this repo's uncommitted tree, chosen files only
+```
+
+It runs `git archive` of this repo, of `AIFY_COMMS_REPO` (else `../aify-comms`) and of `AIFY_ENV_REPO` (else
+`../aify-env`) in `node:22.20.0-bookworm` with `npm ci && npm test`. The log names every sha and ends with
+`ACTUAL_EXIT`, the status of `npm test` itself. Windows then runs only the files about what Windows alone has (a
+test that skips elsewhere, `.cmd` shims, `PATHEXT` lookup), found from the files themselves:
+
+```bash
+npm test -- $(node scripts/windows-only-tests.mjs)
+```
+
 They render each launcher and run it, rather than reading the templates. A wrapper's failure mode is
 silence, so a test that only reads text cannot see it.
 
