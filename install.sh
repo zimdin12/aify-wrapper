@@ -177,40 +177,11 @@ WRAPPER_DIR="$_aify_wrapper_abs"
 
 VERSION="$(cat "$HERE/VERSION" 2>/dev/null || echo unknown)"
 
-# What this launcher is being built from, baked in so anything holding the CURRENT registry can see
-# the launcher is stale without executing it. An absent registry is a legitimate host state and
-# fingerprints as the empty registry; a MALFORMED one stops the install here rather than producing a
-# launcher built against whatever survived parsing.
+# Node reads the service registry and detects the runtimes, so the install stops here without it.
 if ! command -v node >/dev/null 2>&1; then
   echo "install.sh: node is required to read the service registry ($REGISTRY)." >&2
   exit "$EXIT_NO_RUNTIME"
 fi
-# Each path node reads, converted once (a cygpath start costs 100-500 ms on a loaded Windows host).
-REGISTRY_CLI="$(node_path "$HERE/lib/registry-cli.mjs")"
-REGISTRY_NATIVE="$(node_path "$REGISTRY")"
-# ONE READ OF THE REGISTRY for every value it decides, the same rule connect's re-render applies (registryPairs):
-# - REGISTRY_FINGERPRINT, the digest a launcher is built from.
-# - STRICT_EXTRA_MCP_B64, the servers that opted into strict mode, base64 so no path metacharacter survives the trip;
-#   empty unless a service asked, which keeps strict mode byte-identical on every host that did not.
-# - SESSION_MCP_B64, the services that opted into every default-mode session, as a whole --mcp-config document.
-# - MCP_TRANSPORT, only when the service declares one ("mcpTransport"): it decides over --mcp-transport, since the
-#   guided chain renders with no flag and a launcher must not take a transport its service has retired.
-# - SESSION_HTTP_B64, the services a launch reaches over HTTP (lib/session-http.mjs), this one too when its transport
-#   is http.
-# Each is cleared first and refused when missing, so nothing inherited from the environment is baked in.
-REGISTRY_FINGERPRINT=""; STRICT_EXTRA_MCP_B64=""; SESSION_MCP_B64=""; SESSION_HTTP_B64=""
-_pairs="$(node "$REGISTRY_CLI" install-pairs "$REGISTRY_NATIVE" "$SERVICE_NAME" "$MCP_TRANSPORT")" || exit "$EXIT_CONFIG"
-_seen=""
-while IFS= read -r _pair; do
-  case "$_pair" in
-    REGISTRY_FINGERPRINT=*|STRICT_EXTRA_MCP_B64=*|SESSION_MCP_B64=*|SESSION_HTTP_B64=*|MCP_TRANSPORT=*)
-      printf -v "${_pair%%=*}" '%s' "${_pair#*=}"; _seen="$_seen ${_pair%%=*}" ;;
-  esac
-done <<< "$_pairs"
-for _name in REGISTRY_FINGERPRINT STRICT_EXTRA_MCP_B64 SESSION_MCP_B64 SESSION_HTTP_B64; do
-  case "$_seen " in *" $_name "*) ;; *) echo "install.sh: the registry reader gave no $_name" >&2; exit "$EXIT_CONFIG" ;; esac
-done
-
 # The launcher name follows the client name, then any alias wrappers/aliases names for it (pi's omp-aify): real
 # information, not derivable from a filename, written down once for this installer and connect's re-render.
 names_for_client() {
@@ -329,6 +300,37 @@ if [ -z "$RENDER_ONLY" ]; then
     fi
   done
 fi
+
+# THE REGISTRY IS READ ONLY ONCE THE INSTALL IS KNOWN TO BE VALID: after the client set and every --wrapper-dir check
+# above, so a misconfigured install refuses without a node start or a registry read. What it reads is baked in so
+# anything holding the CURRENT registry can see a launcher is stale without executing it. An absent registry is a
+# legitimate host state and fingerprints as the empty registry; a MALFORMED one stops the install here, before any
+# launcher is written, rather than producing one built against whatever survived parsing.
+# Each path node reads, converted once (a cygpath start costs 100-500 ms on a loaded Windows host).
+REGISTRY_CLI="$(node_path "$HERE/lib/registry-cli.mjs")"
+REGISTRY_NATIVE="$(node_path "$REGISTRY")"
+# ONE READ OF THE REGISTRY for every value it decides, the same rule connect's re-render applies (registryPairs):
+# - REGISTRY_FINGERPRINT, the digest a launcher is built from.
+# - STRICT_EXTRA_MCP_B64, the servers that opted into strict mode, base64 so no path metacharacter survives the trip;
+#   empty unless a service asked, which keeps strict mode byte-identical on every host that did not.
+# - SESSION_MCP_B64, the services that opted into every default-mode session, as a whole --mcp-config document.
+# - MCP_TRANSPORT, only when the service declares one ("mcpTransport"): it decides over --mcp-transport, since the
+#   guided chain renders with no flag and a launcher must not take a transport its service has retired.
+# - SESSION_HTTP_B64, the services a launch reaches over HTTP (lib/session-http.mjs), this one too when its transport
+#   is http.
+# Each is cleared first and refused when missing, so nothing inherited from the environment is baked in.
+REGISTRY_FINGERPRINT=""; STRICT_EXTRA_MCP_B64=""; SESSION_MCP_B64=""; SESSION_HTTP_B64=""
+_pairs="$(node "$REGISTRY_CLI" install-pairs "$REGISTRY_NATIVE" "$SERVICE_NAME" "$MCP_TRANSPORT")" || exit "$EXIT_CONFIG"
+_seen=""
+while IFS= read -r _pair; do
+  case "$_pair" in
+    REGISTRY_FINGERPRINT=*|STRICT_EXTRA_MCP_B64=*|SESSION_MCP_B64=*|SESSION_HTTP_B64=*|MCP_TRANSPORT=*)
+      printf -v "${_pair%%=*}" '%s' "${_pair#*=}"; _seen="$_seen ${_pair%%=*}" ;;
+  esac
+done <<< "$_pairs"
+for _name in REGISTRY_FINGERPRINT STRICT_EXTRA_MCP_B64 SESSION_MCP_B64 SESSION_HTTP_B64; do
+  case "$_seen " in *" $_name "*) ;; *) echo "install.sh: the registry reader gave no $_name" >&2; exit "$EXIT_CONFIG" ;; esac
+done
 
 # The same session services for codex, as NUL-terminated `-c` words in base64, built only when a codex
 # launcher is being written. What the verb refuses is codex's own limit (a server name that is not a bare
