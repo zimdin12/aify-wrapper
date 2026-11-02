@@ -185,21 +185,31 @@ if ! command -v node >/dev/null 2>&1; then
   echo "install.sh: node is required to read the service registry ($REGISTRY)." >&2
   exit "$EXIT_NO_RUNTIME"
 fi
-REGISTRY_FINGERPRINT="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" fingerprint "$(node_path "$REGISTRY")")" || exit "$EXIT_CONFIG"
-# Services that opted into strict mode, base64 so no path metacharacter survives the trip. Empty
-# unless a service asked, which keeps strict mode byte-identical on every host that did not.
-STRICT_EXTRA_MCP_B64="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" strict-fragment-b64 "$(node_path "$REGISTRY")")" || exit "$EXIT_CONFIG"
-# Services that opted into every default-mode session ("sessionInject": {"mcp": true}), as a whole
-# --mcp-config document in base64. Empty unless a service asked, and then the launcher passes nothing.
-SESSION_MCP_B64="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" session-fragment-b64 "$(node_path "$REGISTRY")")" || exit "$EXIT_CONFIG"
-# A service that declares its transport ("mcpTransport") decides it for its launchers, over --mcp-transport: the
-# guided chain renders with no flag, and a launcher must not take a transport its service has retired.
-DECLARED_TRANSPORT="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" mcp-transport "$(node_path "$REGISTRY")" "$SERVICE_NAME")" || exit "$EXIT_CONFIG"
-[ -z "$DECLARED_TRANSPORT" ] || MCP_TRANSPORT="$DECLARED_TRANSPORT"
-# The services a launch reaches over HTTP, with their entry written per launch (lib/session-http.mjs): the others that
-# declare it, and this service itself when the transport just decided is http.
-SESSION_HTTP_OWN=""; [ "$MCP_TRANSPORT" != http ] || SESSION_HTTP_OWN="$SERVICE_NAME"
-SESSION_HTTP_B64="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" session-http-b64 "$(node_path "$REGISTRY")" "$SESSION_HTTP_OWN")" || exit "$EXIT_CONFIG"
+# Each path node reads, converted once (a cygpath start costs 100-500 ms on a loaded Windows host).
+REGISTRY_CLI="$(node_path "$HERE/lib/registry-cli.mjs")"
+REGISTRY_NATIVE="$(node_path "$REGISTRY")"
+# ONE READ OF THE REGISTRY for every value it decides, the same rule connect's re-render applies (registryPairs):
+# - REGISTRY_FINGERPRINT, the digest a launcher is built from.
+# - STRICT_EXTRA_MCP_B64, the servers that opted into strict mode, base64 so no path metacharacter survives the trip;
+#   empty unless a service asked, which keeps strict mode byte-identical on every host that did not.
+# - SESSION_MCP_B64, the services that opted into every default-mode session, as a whole --mcp-config document.
+# - MCP_TRANSPORT, only when the service declares one ("mcpTransport"): it decides over --mcp-transport, since the
+#   guided chain renders with no flag and a launcher must not take a transport its service has retired.
+# - SESSION_HTTP_B64, the services a launch reaches over HTTP (lib/session-http.mjs), this one too when its transport
+#   is http.
+# Each is cleared first and refused when missing, so nothing inherited from the environment is baked in.
+REGISTRY_FINGERPRINT=""; STRICT_EXTRA_MCP_B64=""; SESSION_MCP_B64=""; SESSION_HTTP_B64=""
+_pairs="$(node "$REGISTRY_CLI" install-pairs "$REGISTRY_NATIVE" "$SERVICE_NAME" "$MCP_TRANSPORT")" || exit "$EXIT_CONFIG"
+_seen=""
+while IFS= read -r _pair; do
+  case "$_pair" in
+    REGISTRY_FINGERPRINT=*|STRICT_EXTRA_MCP_B64=*|SESSION_MCP_B64=*|SESSION_HTTP_B64=*|MCP_TRANSPORT=*)
+      printf -v "${_pair%%=*}" '%s' "${_pair#*=}"; _seen="$_seen ${_pair%%=*}" ;;
+  esac
+done <<< "$_pairs"
+for _name in REGISTRY_FINGERPRINT STRICT_EXTRA_MCP_B64 SESSION_MCP_B64 SESSION_HTTP_B64; do
+  case "$_seen " in *" $_name "*) ;; *) echo "install.sh: the registry reader gave no $_name" >&2; exit "$EXIT_CONFIG" ;; esac
+done
 
 # The launcher name follows the client name, then any alias wrappers/aliases names for it (pi's omp-aify): real
 # information, not derivable from a filename, written down once for this installer and connect's re-render.
@@ -328,13 +338,13 @@ fi
 SESSION_MCP_CODEX_B64=""
 for _client in "${CLIENTS[@]}"; do
   if [ "$_client" = "codex" ]; then
-    SESSION_MCP_CODEX_B64="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" session-codex-b64 "$(node_path "$REGISTRY")")" || exit "$EXIT_CONFIG"
+    SESSION_MCP_CODEX_B64="$(node "$REGISTRY_CLI" session-codex-b64 "$REGISTRY_NATIVE")" || exit "$EXIT_CONFIG"
   fi
   # Hermes has no per-session MCP flag, so its session servers go into the USER'S hermes config, which every hermes
   # session on this host reads (docs/REGISTRY.md). What hermes could never be given is refused here, before any
   # launcher is written; the write itself is the hermes step after the launchers.
   if [ "$_client" = "hermes" ]; then
-    node "$(node_path "$HERE/lib/hermes-config-cli.mjs")" --check "$(node_path "$REGISTRY")" || exit "$EXIT_CONFIG"
+    node "$(node_path "$HERE/lib/hermes-config-cli.mjs")" --check "$REGISTRY_NATIVE" || exit "$EXIT_CONFIG"
   fi
 done
 
@@ -362,7 +372,7 @@ for _client in "${CLIENTS[@]}"; do
     # runs too): a running hermes reloads its servers when their content changes, so with hermes agents up the change
     # is recorded and waits for the first hermes start that finds none. A config already current records nothing.
     _status=0
-    node "$(node_path "$HERE/lib/hermes-config-cli.mjs")" "$(node_path "$REGISTRY")" || _status=$?
+    node "$(node_path "$HERE/lib/hermes-config-cli.mjs")" "$REGISTRY_NATIVE" || _status=$?
     if [ "$_status" != 0 ]; then
       echo "install.sh: the hermes launcher is installed, but the hermes config step above did not finish (exit $_status)." >&2
       exit "$EXIT_CONFIG"
