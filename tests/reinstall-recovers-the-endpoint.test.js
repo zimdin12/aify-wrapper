@@ -80,6 +80,15 @@ test("reads the endpoint back out of an installed launcher", () => {
   assert.equal(endpointInstalledAt(dest), KNOWN);
 });
 
+test("a destination holding only an alias (omp-aify, wrappers/aliases) recovers its endpoint too", () => {
+  // The launcher list is derived from the templates and the aliases file, not typed (lib/launcher-names.mjs).
+  const dest = tmp();
+  assert.equal(install(dest, ["--endpoint", KNOWN]).status, 0);
+  fs.renameSync(path.join(dest, "claude-aify"), path.join(dest, "omp-aify"));
+  assert.deepEqual(fs.readdirSync(dest), ["omp-aify"], "CONTROL: no other launcher can answer");
+  assert.equal(endpointInstalledAt(dest), KNOWN);
+});
+
 test("an empty destination has no endpoint to recover, and says so as null", () => {
   assert.equal(endpointInstalledAt(tmp()), null);
   assert.equal(endpointInstalledAt(path.join(tmp(), "does-not-exist")), null);
