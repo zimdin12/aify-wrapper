@@ -147,6 +147,8 @@ test("RE-RENDER: a recorded launcher is re-rendered for the new registry after a
   // npm's bin for this package's own `herdr-aify` lands in the same directory when the prefix is ~/.local; no template
   // here renders it, so it is not a launcher (fresh-install report, 2026-10-25).
   fs.writeFileSync(path.join(host.dest, "herdr-aify"), "#!/bin/sh\n");
+  // An alias install.sh wrote (wrappers/aliases), with no recorded launcher beside it: reported, never re-rendered.
+  fs.copyFileSync(recorded, path.join(host.dest, "omp-aify"));
   const before = bakedFingerprint(recorded);
   const spec = commsSpec(host);
   const service = await startService({ spec });
@@ -158,11 +160,37 @@ test("RE-RENDER: a recorded launcher is re-rendered for the new registry after a
     assert.equal(bakedFingerprint(recorded), now);
     assert.match(run.stdout, /launcher claude-aify: re-rendered/);
     assert.match(run.stdout, /launcher codex-aify: stale -- no render record/);
+    assert.match(run.stdout, /launcher omp-aify: stale -- no render record/, "an installed alias went unreported");
     assert.doesNotMatch(run.stdout, /launcher herdr-aify/);
     assert.notEqual(bakedFingerprint(path.join(host.dest, "codex-aify")), now, "the unrecorded launcher was left alone");
   } finally {
     await service.close();
   }
+});
+
+test("AN ALIAS GOES WITH ITS LAUNCHER: re-rendered as a copy of it, or reported stale with one that was not", () => {
+  // install.sh records pi-aify and copies it to omp-aify (wrappers/aliases); a re-render that left the copy behind kept
+  // the old registry baked into omp-aify (review of d714b83).
+  const host = makeHost();
+  seed(host, {});
+  const primary = renderLauncher(host, "pi-aify", "pi-aify.sh.in");
+  const alias = path.join(host.dest, "omp-aify");
+  fs.copyFileSync(primary, alias);
+  seed(host, { other: { endpoint: "http://other" } });
+  const now = fingerprint(parseRegistry(host.registryBytes().toString("utf8")).registry);
+  assert.notEqual(bakedFingerprint(alias), now, "CONTROL: the alias is stale before the re-render");
+  const rows = rerenderLaunchers({ dest: host.dest, registryPath: host.registry, wrapperRoot: ROOT });
+  assert.deepEqual(rows.map((row) => [row.name, row.state]), [["pi-aify", "re-rendered"], ["omp-aify", "re-rendered"]]);
+  assert.deepEqual(fs.readFileSync(alias), fs.readFileSync(primary), "the alias is not a copy of its re-rendered launcher");
+  assert.equal(bakedFingerprint(alias), now);
+  assert.deepEqual(fs.readdirSync(host.dest).sort(), ["omp-aify", "pi-aify"], "the copy left a staged file on PATH");
+  // A launcher rendered from another template is left alone, and so is its alias.
+  const [record] = fs.readdirSync(recordDirFor(host.registry));
+  const file = path.join(recordDirFor(host.registry), record);
+  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace(/^[0-9a-f]{64}/, "0".repeat(64)));
+  const stale = rerenderLaunchers({ dest: host.dest, registryPath: host.registry, wrapperRoot: ROOT });
+  assert.deepEqual(stale.map((row) => [row.name, row.state]), [["pi-aify", "stale"], ["omp-aify", "stale"]]);
+  assert.match(stale[1].detail, /a copy of pi-aify, which was not re-rendered/);
 });
 
 test("NO REPLACEMENT ON FAILURE: a refused connect leaves a recorded launcher byte for byte", async () => {

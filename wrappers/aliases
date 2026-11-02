@@ -1,0 +1,4 @@
+# Other names a launcher is installed under, one launcher per line: <launcher> <alias>...
+# A launcher reads its own name, so an alias is a copy of its launcher. Read by install.sh, which writes the copies,
+# and by lib/launcher-rerender.mjs, which re-renders them with their launcher. Not derivable from a template's name.
+pi-aify omp-aify

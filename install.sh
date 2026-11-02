@@ -201,13 +201,10 @@ DECLARED_TRANSPORT="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" mcp-trans
 SESSION_HTTP_OWN=""; [ "$MCP_TRANSPORT" != http ] || SESSION_HTTP_OWN="$SERVICE_NAME"
 SESSION_HTTP_B64="$(node "$(node_path "$HERE/lib/registry-cli.mjs")" session-http-b64 "$(node_path "$REGISTRY")" "$SESSION_HTTP_OWN")" || exit "$EXIT_CONFIG"
 
-# The launcher name follows the client name. pi is the one exception: it ships an alias, which is real
-# information and not derivable from a filename, so it is the only thing written down here.
+# The launcher name follows the client name, then any alias wrappers/aliases names for it (pi's omp-aify): real
+# information, not derivable from a filename, written down once for this installer and connect's re-render.
 names_for_client() {
-  case "$1" in
-    pi) echo "pi-aify omp-aify" ;;
-    *)  echo "$1-aify" ;;
-  esac
+  echo "$1-aify" $(awk -v launcher="$1-aify" '$1 == launcher { $1 = ""; print }' "$HERE/wrappers/aliases")
 }
 
 install_one() {
