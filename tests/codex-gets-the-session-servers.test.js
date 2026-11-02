@@ -57,6 +57,15 @@ test("with nothing opted in, the app-server is given no mcp_servers word", () =>
   assert.deepEqual(sessionValues(appServerArgs), []);
 });
 
+test("--check says whether servers were opted in at install, and starts nothing", () => {
+  // The report line is chosen without a subshell (each costs 100-500 ms on a loaded Windows host): both branches read.
+  const opted = launch("codex", ["--check"], { registry: REGISTRY });
+  assert.match(opted.run.stdout, /session {3}: the registry's opted-in servers, baked in at install/, opted.run.stdout);
+  const none = launch("codex", ["--check"]);
+  assert.match(none.run.stdout, /session {3}: <none opted in at install>/, none.run.stdout);
+  assert.deepEqual([opted.appServerArgs, none.appServerArgs].map((args) => args.includes("app-server")), [false, false], "--check started codex");
+});
+
 test("a launcher whose session words do not decode refuses to start, rather than starting without its servers", () => {
   // The bug this catches: reading the words from a process substitution, whose failure nothing sees, so the agent
   // starts quietly with none of the servers it was installed with.

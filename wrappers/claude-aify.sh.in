@@ -34,20 +34,16 @@ set -euo pipefail
 # THE UNCONVERTED PATH FIRST, and the substitution kept out of the assignment: under `set -e` a
 # `cygpath` that fails inside `VAR="$(...)"` would end the launch before the agent ran.
 AIFY_BRIDGE_DIR_FWD="@@BRIDGE_DIR@@"
-if command -v cygpath >/dev/null 2>&1; then
-  _aify_bridge_converted="$(cygpath -m "@@BRIDGE_DIR@@" 2>/dev/null || true)"
-  if [ -n "$_aify_bridge_converted" ]; then AIFY_BRIDGE_DIR_FWD="$_aify_bridge_converted"; fi
-fi
-
-# THE WRAPPER'S OWN INSTALL ROOT, where every bin/ and lib/ helper below is found. It is this package's
-# own directory, which arrives with the launcher; a service's bridge is used only for that service's code.
-# Converted for node once, here, for the reason the bridge directory is, and with the substitution kept out
-# of the assignment: under `set -e` a `cygpath` that fails inside `VAR="$(...)"` would end the launch
-# before the agent ran (`cygpath: can't convert empty path`, exit 1, proven in review against an empty path).
+# THE WRAPPER'S OWN INSTALL ROOT, where every bin/ and lib/ helper below is found: this package's own directory,
+# which arrives with the launcher (a service's bridge is used only for that service's code). Converted with the bridge
+# directory, by ONE cygpath for both, since each start costs 100-500 ms on a loaded Windows host. The wrapper FIRST:
+# cygpath answers each path in order and stops at an empty one, so an empty bridge path (render.sh run directly) still
+# leaves the wrapper converted, and the wrapper path is always absolute (render.sh refuses any other).
 AIFY_WRAPPER_DIR_FWD="@@WRAPPER_DIR@@"
 if command -v cygpath >/dev/null 2>&1; then
-  _aify_wrapper_converted="$(cygpath -m "@@WRAPPER_DIR@@" 2>/dev/null || true)"
-  if [ -n "$_aify_wrapper_converted" ]; then AIFY_WRAPPER_DIR_FWD="$_aify_wrapper_converted"; fi
+  _aify_converted="$(cygpath -m "@@WRAPPER_DIR@@" "@@BRIDGE_DIR@@" 2>/dev/null || true)"
+  if [ -n "${_aify_converted%%$'\n'*}" ]; then AIFY_WRAPPER_DIR_FWD="${_aify_converted%%$'\n'*}"; fi
+  case "$_aify_converted" in *$'\n'?*) AIFY_BRIDGE_DIR_FWD="${_aify_converted#*$'\n'}" ;; esac
 fi
 
 # ONE LIVE INSTANCE PER AGENT (bin/aify-lease.sh, lib/agent-lease.mjs). Sourced first so every exit path,
@@ -412,8 +408,8 @@ if [ "$HARNESS_CHECK" = true ]; then
   else echo "  instructions: <none>"; fi
   _aify_managed_kept="${!AIFY_MANAGED_@}"
   echo "  managed   : ${_aify_managed_kept:-<not a managed launch>}"
-  echo "  model     : $([ "$CLAUDE_HAS_MODEL" = true ] && echo "<given as an argument>" || echo "${CLAUDE_AIFY_MODEL:-<the runtime default>}")"
-  echo "  effort    : $([ "$CLAUDE_HAS_EFFORT" = true ] && echo "<given as an argument>" || echo "${CLAUDE_AIFY_EFFORT:-<the runtime default>}")"
+  if [ "$CLAUDE_HAS_MODEL" = true ]; then echo "  model     : <given as an argument>"; else echo "  model     : ${CLAUDE_AIFY_MODEL:-<the runtime default>}"; fi
+  if [ "$CLAUDE_HAS_EFFORT" = true ]; then echo "  effort    : <given as an argument>"; else echo "  effort    : ${CLAUDE_AIFY_EFFORT:-<the runtime default>}"; fi
   echo "  cwd       : ${HARNESS_CWD:-<inherited>}"
   # SAY WHETHER IT IS APPLIED, not merely what was configured. `HARNESS_MCP_COMMAND` is read ONLY
   # inside the strict-MCP branch below, which is opt-in via AIFY_CLAUDE_STRICT_MCP=1. In the default
