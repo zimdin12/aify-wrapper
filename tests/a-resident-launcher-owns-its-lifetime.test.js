@@ -133,6 +133,8 @@ function wrapper(client, { bridge, wrapperDir }) {
   region("AIFY_SESSION_MODE_INFERRED=0", client === "claude" ? "# claude-aify ALWAYS" : client === "codex"
     ? "# Fresh codex-aify launch" : "# Load aify-comms' durable Hermes runtime shim");
   if (client === "claude") {
+    // Include the production partial-install fallbacks that the actual tail now calls; never invent them in probes.
+    region("# Model reporting is a separate job", "if aify_herdr_hooks_report 2>/dev/null; then");
     region("AIFY_RUNTIME_RUNNING=0\n_aify_runtime_exited()", "# The lease is claimed by the run");
     region('if [ "$CLAUDE_AIFY_SHARED" = true ]; then', null);
   } else if (client === "codex") {

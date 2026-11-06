@@ -261,6 +261,12 @@ starting without the definition the operator wrote would look like honouring it.
 only the instructions from the file: aify-env hands it the rest, already checked. When it cannot read them,
 it says so and starts without them.
 
+**Explicit Claude model choices.** Named, lease-owning Claude launches can report their original
+`--model` argument and completed native `/model` selections to aify-env, which alone updates the
+existing definition. This requires the environment's model-selection receiver; an unavailable receiver
+logs the failed attempt without failing the launch or queuing a replay. See
+[the producer/receiver contract and qualification limits](docs/MODEL-SELECTION.md).
+
 **Its agent's instructions.** A claude definition's `agent.instructions` is written to
 `~/.aify/sessions/<id>/instructions.txt` (a folder only its owner can open), and Claude gets it with
 `--append-system-prompt-file` and `--system-prompt-snapshot off`, so a resumed conversation picks up today's

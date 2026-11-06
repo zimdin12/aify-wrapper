@@ -773,6 +773,15 @@ if [ "@@MCP_TRANSPORT@@" = "http" ]; then export AIFY_COMMS_MCP=http; fi  # the 
 . "@@WRAPPER_DIR@@/bin/aify-tool-hook-json.sh" # Activity combines local append and working; off keeps the legacy hooks.
 AIFY_HERDR_WORKING=""
 AIFY_HERDR_EVENTS=""
+# Model reporting is a separate job; a partial/older helper directory keeps its previous hooks.
+AIFY_MODEL_HOOK="" AIFY_MODEL_STOP="" AIFY_MODEL_EVENTS=""
+unset AIFY_MODEL_SELECTION
+aify_model_selection_start() { :; }
+aify_model_selection_finish() { :; }
+if [ -r "@@WRAPPER_DIR@@/bin/aify-model-selection.sh" ]; then
+  . "@@WRAPPER_DIR@@/bin/aify-model-selection.sh"
+  aify_model_selection_hooks "${CLAUDE_AIFY_AGENT_ID:-}" "$AIFY_WRAPPER_DIR_FWD"
+fi
 if aify_herdr_hooks_report 2>/dev/null; then
   export AIFY_HERDR_AGENT="${0##*/}"
   _aify_state_hook() {
@@ -784,8 +793,9 @@ if aify_herdr_hooks_report 2>/dev/null; then
     \"PostToolUseFailure\": [ { \"hooks\": [ $(_aify_tool_hook "${AIFY_FILE_ACTIVITY:-0}" "$AIFY_WRAPPER_DIR_FWD" failure) ] } ],
     \"Notification\": [ { \"matcher\": \"permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input\", \"hooks\": [ $(_aify_state_hook blocked) ] } ],
     \"PermissionRequest\": [ { \"hooks\": [ $(_aify_state_hook blocked) ] } ],
-    \"Stop\": [ { \"hooks\": [ $(_aify_state_hook idle) ] } ],
+    \"Stop\": [ { \"hooks\": [ $(_aify_state_hook idle)${AIFY_MODEL_HOOK} ] } ],
     \"StopFailure\": [ { \"hooks\": [ $(_aify_state_hook idle) ] } ]"
+  AIFY_MODEL_STOP="" # The Herdr Stop entry above already carries the scan; never duplicate a JSON key.
 elif [ "${AIFY_FILE_ACTIVITY:-0}" = 1 ]; then
   AIFY_HERDR_EVENTS=",
     \"PostToolUse\": [ { \"hooks\": [ $(_aify_tool_hook "${AIFY_FILE_ACTIVITY:-0}" "$AIFY_WRAPPER_DIR_FWD" success) ] } ],
@@ -797,12 +807,12 @@ cat > "$AIFY_HOOK_SETTINGS" <<JSON
   "hooks": {
     "SessionStart": [
       { "hooks": [ { "type": "command", "command": "node \"${AIFY_BRIDGE_DIR_FWD}/claude-session-hook.js\"" },
-        { "type": "command", "command": "node \"${AIFY_BRIDGE_DIR_FWD}/agent-state-event.mjs\" resident-started claude" },
+        { "type": "command", "command": "node \"${AIFY_BRIDGE_DIR_FWD}/agent-state-event.mjs\" resident-started claude" }${AIFY_MODEL_HOOK},
         { "type": "command", "command": "node \"${AIFY_WRAPPER_DIR_FWD}/bin/aify-turn-start.mjs\"", "timeout": 15 } ] } ],
     "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "node \"${AIFY_BRIDGE_DIR_FWD}/claude-session-hook.js\"" }${AIFY_HERDR_WORKING},
+      { "hooks": [ { "type": "command", "command": "node \"${AIFY_BRIDGE_DIR_FWD}/claude-session-hook.js\"" }${AIFY_HERDR_WORKING}${AIFY_MODEL_HOOK},
         { "type": "command", "command": "node \"${AIFY_WRAPPER_DIR_FWD}/bin/aify-turn-start.mjs\"", "timeout": 15 } ] }
-    ]${AIFY_HERDR_EVENTS}
+    ]${AIFY_HERDR_EVENTS}${AIFY_MODEL_STOP}${AIFY_MODEL_EVENTS}
   }
 }
 JSON
@@ -824,7 +834,7 @@ _aify_runtime_exited() {
   if aify_herdr_hooks_report 2>/dev/null; then _aify_exit_herdr=herdr; fi
   sh "@@WRAPPER_DIR@@/bin/aify-runtime-exited.sh" "@@BRIDGE_DIR@@" "$_aify_exit_herdr" </dev/null >/dev/null 2>&1 || true
 }
-trap 'rm -f "$AIFY_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null; _aify_runtime_exited; aify_lifetime_release; aify_lease_release' EXIT
+trap 'aify_model_selection_finish; rm -f "$AIFY_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null; _aify_runtime_exited; aify_lifetime_release; aify_lease_release' EXIT
 
 # The lease is claimed by the run that starts claude: not by a `--shared` launch, which hands the start
 # to the host, whose own run of this launcher claims. 75 is a refused start. BEFORE THE REAP BELOW: that
@@ -922,6 +932,7 @@ fi
 aify_place_instructions "${CLAUDE_AIFY_AGENT_ID:-}"
 
 aify_lifetime_start "${CLAUDE_AIFY_AGENT_ID:-}" claude "$AIFY_SESSION_MODE" SessionStart || exit $?
+aify_model_selection_start "${CLAUDE_AIFY_AGENT_ID:-}" "${CLAUDE_RESUME_ID:-}" "$AIFY_HOOK_SETTINGS" "${CLAUDE_AIFY_PASSTHRU[@]}"
 AIFY_RUNTIME_RUNNING=1
 claude "${AIFY_CHANNEL_FLAGS[@]}" "${CLAUDE_MCP_FLAGS[@]}" "${CLAUDE_PERMISSION_FLAGS[@]}" "${CLAUDE_INSTRUCTION_FLAGS[@]}" "${CLAUDE_ARGS[@]}"
 STATUS=$?

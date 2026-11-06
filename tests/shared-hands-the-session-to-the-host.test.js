@@ -295,9 +295,9 @@ test("THE SHARED BRANCH SITS BELOW EVERYTHING, IN EVERY TEMPLATE", () => {
   // of the branch. Checked for claude alone until now.
   //
   // COUNTED FROM THE BRANCH'S CLOSING `fi`, so the branch's own body is not charged to what follows
-  // it. Measured 2026-10-12: 2 to 5 code lines follow -- a lifetime or lease start, the runtime
-  // launch, a status capture and an exit. The bound is 6 so an honest extra line does not fail this,
-  // while a branch that drifts up above real work does.
+  // it. Claude additionally initializes its model producer after the lifetime and before the runtime:
+  // seven tail lines, still wholly below the handoff. The other launchers keep their six-line bound.
+  // Actual shared-exec tests above prove no local runtime is started; this count only detects source drift.
   for (const name of LAUNCHERS) {
     const lines = fs.readFileSync(path.join(ROOT, "wrappers", `${name}.sh.in`), "utf8").split("\n");
     const at = lines.findIndex((l) => /_AIFY_SHARED" = true/.test(l));
@@ -305,7 +305,7 @@ test("THE SHARED BRANCH SITS BELOW EVERYTHING, IN EVERY TEMPLATE", () => {
     const end = lines.findIndex((l, i) => i > at && /^fi\s*$/.test(l));
     assert.ok(end > at, `${name}.sh.in: the shared branch has no closing fi at column 0`);
     const after = lines.slice(end + 1).filter((l) => l.trim() && !/^\s*#/.test(l));
-    assert.ok(after.length <= 6,
+    assert.ok(after.length <= (name === "claude-aify" ? 7 : 6),
       `${name}.sh.in: ${after.length} code lines run after the shared branch — it is no longer last, `
       + "so an ordinary run now executes part of it");
   }
