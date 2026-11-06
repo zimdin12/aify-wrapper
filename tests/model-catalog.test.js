@@ -17,7 +17,7 @@ function world(t, user = picker("provider/user")) {
   return { home, root, file, own, options, load: (extra = {}) => readModelCatalog({ ...options, ...extra }) };
 }
 
-test("a unique user catalog is read from the selected config home, not settings.model", (t) => {
+test("readModelCatalog / pickerCatalog: a unique user catalog is read from the selected config home, not settings.model", (t) => {
   const w = world(t, { ...picker("provider/user"), model: "WRONG-SHARED-MODEL" });
   assert.deepEqual(w.load(), { rows: [{ model: "provider/user", label: "Visible name" }], problem: "" });
 });
@@ -29,7 +29,7 @@ test("present managed picker outranks user picker; no merging", (t) => {
   assert.equal(result.problem, "");
 });
 
-test("even readable forwarded settings leave command reporting unsupported without merging hooks", (t) => {
+test("hasForwardedSettings: even readable forwarded settings leave command reporting unsupported without merging hooks", (t) => {
   const w = world(t); const file = path.join(w.home, "cli.json"); fs.writeFileSync(file, JSON.stringify(picker("provider/cli")));
   const result = w.load({ argv: ["--settings=cli.json"] });
   assert.match(result.problem, /forwarded --settings/);

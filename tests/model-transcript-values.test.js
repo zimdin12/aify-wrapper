@@ -51,7 +51,7 @@ for (const typed of ["a", "model-a", "MODEL A"]) {
   });
 }
 
-test("explicit Default is empty string, not unresolved null or the displayed resolved model", () => {
+test("selectionValue: explicit Default is empty string, not unresolved null or the displayed resolved model", () => {
   assert.deepEqual(values(pair({ display: "Model A (default)" })), [""]);
 });
 for (const [name, catalog] of [

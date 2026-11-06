@@ -186,11 +186,16 @@ test('Claude hook settings wire startup only on SessionStart and retain prompt c
   const f = fixture(t), source = read('wrappers/claude-aify.sh.in');
   const begin = source.indexOf('AIFY_HOOK_SETTINGS="$(mktemp'), end = source.indexOf('\n# THE TURN-START RUNNER', begin);
   assert.ok(begin > 0 && end > begin, 'closed production settings region');
+  const modelBegin = source.indexOf('# Model reporting is a separate job');
+  const modelEnd = source.indexOf('if aify_herdr_hooks_report 2>/dev/null; then', modelBegin);
+  assert.ok(modelBegin > 0 && modelEnd > modelBegin && modelEnd < begin, 'closed production hook-default region');
+  const modelDefaults = source.slice(modelBegin, modelEnd).replaceAll('@@WRAPPER_DIR@@', native(ROOT));
   const bridge = native(path.join(f.home, 'bridge with space')); fs.mkdirSync(bridge);
   fs.writeFileSync(path.join(bridge, 'agent-state-event.mjs'), `import ${JSON.stringify(new URL('./test-data/resident-start-fixture.mjs', import.meta.url).href)};\n`);
   const result = f.run(`AIFY_BRIDGE_DIR_FWD=${q(bridge)}
 AIFY_WRAPPER_DIR_FWD=${q(native(ROOT))}
 AIFY_HERDR_WORKING=''; AIFY_HERDR_EVENTS=''
+${modelDefaults}
 ${source.slice(begin, end)}
 cat "$AIFY_HOOK_SETTINGS"\n`);
   assert.equal(result.status, 0, result.stderr);

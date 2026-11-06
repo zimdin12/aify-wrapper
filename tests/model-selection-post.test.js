@@ -63,7 +63,7 @@ test("the descriptor comes from the platform's home variable, and from the suppl
   assert.equal(fallback.sends[0]?.url, `http://127.0.0.1:3333/agents/${AGENT}/model-selection`);
 });
 
-test("a malformed or foreign envelope or agent id is refused before any descriptor read or send", async (t) => {
+test("a malformed or foreign envelope or agent id is refused before any descriptor read or send (modelEnvelopeValid)", async (t) => {
   const cases = {
     "no envelope": { body: null },
     "agent id that is a path": { agent: "../agent" },

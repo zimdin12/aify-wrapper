@@ -45,6 +45,7 @@ test("init captures launch and resumed fence; repeated completion sends exact ag
   const w = await world(t); append(w.file, "B");
   const init = await w.reporter.initialize({ claimedAgent: "test-agent", resumeId: SESSION, ownSettings: w.own, argv: ["--model", "provider/a"] });
   assert.equal(init.ready, true); assert.equal(w.posted.length, 1);
+  assert.equal(fs.existsSync(path.join(w.home, ".aify", "sessions", "test-agent", "model-selection.json")), true, "writeSessionFileSync completes the claimed cursor write before ready");
   assert.deepEqual(w.posted[0].body, { instance: "test-instance", lifetime: w.env.AIFY_LIFETIME, harness: "claude", source: "launch", session: "", transcriptIdentity: null, endOffset: null, recordUuid: null, value: "provider/a" });
   await w.reporter.hook(w.payload("SessionStart")); assert.equal(w.posted.length, 1, "resumed history replayed");
   append(w.file); await w.reporter.hook(w.payload()); append(w.file); await w.reporter.hook(w.payload());

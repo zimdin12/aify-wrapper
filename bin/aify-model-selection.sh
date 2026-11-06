@@ -2,9 +2,9 @@
 # No native settings composition: forwarded --settings keeps its own semantics in the Node producer.
 aify_model_selection_hooks() {
   unset AIFY_MODEL_SELECTION
-  [ -n "$1" ] && [ -f "$2/bin/aify-model-selection.mjs" ] || return 0
-  local hook
-  hook="$(printf '{ "type": "command", "command": "node \\"%s/bin/aify-model-selection.mjs\\" hook", "timeout": 5 }' "$2")"
+  local AIFY_WRAPPER_DIR_FWD="$2" hook
+  [ -n "$1" ] && [ -f "$AIFY_WRAPPER_DIR_FWD/bin/aify-model-selection.mjs" ] || return 0
+  hook="$(printf '{ "type": "command", "command": "node \\"%s/bin/aify-model-selection.mjs\\" hook", "timeout": 5 }' "$AIFY_WRAPPER_DIR_FWD")"
   AIFY_MODEL_HOOK=", $hook"
   AIFY_MODEL_STOP=", \"Stop\": [ { \"hooks\": [ $hook ] } ]"
   AIFY_MODEL_EVENTS=", \"PostModelSwitch\": [ { \"hooks\": [ $hook ] } ], \"SessionEnd\": [ { \"hooks\": [ $hook ] } ]"

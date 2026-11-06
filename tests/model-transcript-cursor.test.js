@@ -54,7 +54,7 @@ test("one scan returns the latest native completion, even with no request betwee
   assert.equal(result.selection.value, "provider/a"); assert.equal(result.selection.endOffset, fs.statSync(f.file).size);
 });
 
-test("command/confirmation split across scans keeps its exact pairing", (t) => {
+test("command/confirmation split across scans keeps its exact pairing (modelCommandStep)", (t) => {
   const f = fixture(t); const selected = choice();
   fs.appendFileSync(f.file, JSON.stringify(selected.command) + "\n");
   const first = scan(f.captured.state); assert.equal(first.selection, null);
