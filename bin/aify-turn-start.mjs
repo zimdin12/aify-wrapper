@@ -13,6 +13,7 @@ import { readCredential } from "../lib/credential-file.mjs";
 import { hostIsWsl, machineIdFor } from "../lib/machine-id.mjs";
 import { parseRegistry, TURN_START_DEADLINE_MS } from "../lib/registry.mjs";
 import { hookOutput, momentOf, runTurnStart, turnStartTargets } from "../lib/turn-start.mjs";
+import { WslFactsReader } from "../lib/wsl-facts.mjs";
 
 const startedAt = Date.now();
 const dueAt = startedAt + TURN_START_DEADLINE_MS;
@@ -49,6 +50,7 @@ function readHookInput() {
 async function main() {
   const agentId = String(process.env.AIFY_AGENT_ID || "").trim();
   if (!agentId) return "";
+  const wslPending = byDue(new WslFactsReader({ platform: process.platform, readFile: fs.promises.readFile }).read().catch(() => null), null);
   const input = await readHookInput();
   const sessionKey = typeof input?.session_id === "string" ? input.session_id : "";
   if (!sessionKey) return "";
@@ -61,11 +63,13 @@ async function main() {
   if (!parsed.ok) return "";
   const targets = turnStartTargets(parsed.registry);
   if (!targets.length) return "";
+  const wsl = await wslPending;
   const request = {
     agentId,
     cwd: typeof input.cwd === "string" && input.cwd ? input.cwd : process.cwd(),
     machineId: machineIdFor({ platform: process.platform, hostname: os.hostname(), env: process.env, isWsl: hostIsWsl() }),
     sessionKey,
+    ...(wsl === null ? {} : { wsl }),
     // Left out when the input names no moment, so a service keeps its own re-send for it.
     ...(momentOf(input) ? { moment: momentOf(input) } : {}),
   };

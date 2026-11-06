@@ -217,6 +217,8 @@ their answers' `text`, joined in the parser's service order, as the turn's `addi
 names as `x-api-key`, and the agent as `x-aify-agent`. A service that is slow past its budget, fails, answers anything
 but a 200 with a string `text`, redirects, or has no key contributes nothing; the runner always exits 0, and adds
 nothing once `TURN_START_DEADLINE_MS` has passed. `machineId` is aify-env's derivation exactly (`lib/machine-id.mjs`).
+The body can additionally carry the harness's `moment` and verified `wsl` facts. Only a Linux publisher with
+WSL kernel evidence adds `wsl`; other platforms omit it. See [the WSL wire contract and qualification limits](TURN-START-WSL.md).
 
 ## Rules the parser enforces
 

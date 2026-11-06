@@ -1,0 +1,58 @@
+[
+  {
+    "name": "Windows proc emulation is not WSL", "platform": "win32",
+    "files": {"/proc/version": "MINGW64_NT-10.0-26200 version 3.6.7"}, "expected": null
+  },
+  {
+    "name": "Windows planted Microsoft release must not publish", "platform": "win32",
+    "files": {"/proc/sys/kernel/osrelease": "5.15.167.4-microsoft-standard-WSL2\n", "/etc/machine-id": "0f3c9a7e5b2d4c6e8a1b3d5f7e9c2a4b\n", "/proc/mounts": "C:\\134 /mnt/c 9p rw,aname=drvfs;path=C:\\ 0 0\n"},
+    "expected": null
+  },
+  {
+    "name": "plain Linux ignores misleading WSL environment", "platform": "linux", "env": {"WSL_DISTRO_NAME":"Ubuntu","WSL_INTEROP":"/fixture/not-real"},
+    "files": {"/proc/sys/kernel/osrelease":"6.1.0-18-amd64\n"}, "expected": null
+  },
+  {
+    "name": "unreadable osrelease is not evidence", "platform": "linux", "files": {}, "expected": null
+  },
+  {
+    "name": "standard WSL mount", "platform": "linux",
+    "files": {"/proc/sys/kernel/osrelease":"5.15.167.4-microsoft-standard-WSL2\n","/etc/machine-id":"0f3c9a7e5b2d4c6e8a1b3d5f7e9c2a4b\n","/proc/mounts":"C:\\134 /mnt/c 9p rw,aname=drvfs;path=C:\\ 0 0\n"},
+    "expected": {"distroId":"0f3c9a7e5b2d4c6e8a1b3d5f7e9c2a4b","driveMounts":[{"mountPoint":"/mnt/c","drive":"C"}]}
+  },
+  {
+    "name": "empty WSL evidence stays explicit", "platform": "linux",
+    "files": {"/proc/sys/kernel/osrelease":"5.15.167.4-microsoft-standard-WSL2\n"},
+    "expected": {"distroId":null,"driveMounts":[]}
+  },
+  {
+    "name": "blank identity with good mount still places a drive", "platform": "linux",
+    "files": {"/proc/sys/kernel/osrelease":"5.15.167.4-microsoft-standard-WSL2\n","/etc/machine-id":" \n\t ","/proc/mounts":"C:\\134 /mnt/c 9p rw,aname=drvfs;path=c:\\ 0 0\n"},
+    "expected": {"distroId":null,"driveMounts":[{"mountPoint":"/mnt/c","drive":"C"}]}
+  },
+  {
+    "name": "nonstandard mount is declared not guessed", "platform": "linux",
+    "files": {"/proc/sys/kernel/osrelease":"5.15.167.4-microsoft-standard-WSL2\n","/etc/machine-id":"0f3c9a7e5b2d4c6e8a1b3d5f7e9c2a4b","/proc/mounts":"C:\\134 /mnt/host/c 9p rw,aname=drvfs;path=C:\\ 0 0\n"},
+    "expected": {"distroId":"0f3c9a7e5b2d4c6e8a1b3d5f7e9c2a4b","driveMounts":[{"mountPoint":"/mnt/host/c","drive":"C"}]}
+  },
+  {
+    "name": "escaped mount survives to placement", "platform": "linux",
+    "files": {"/proc/sys/kernel/osrelease":"5.15.167.4-microsoft-standard-WSL2\n","/etc/machine-id":"0f3c9a7e5b2d4c6e8a1b3d5f7e9c2a4b","/proc/mounts":"C:\\134 /mnt/my\\040drive 9p rw,aname=drvfs;path=C:\\ 0 0\n"},
+    "expected": {"distroId":"0f3c9a7e5b2d4c6e8a1b3d5f7e9c2a4b","driveMounts":[{"mountPoint":"/mnt/my drive","drive":"C"}]}
+  },
+  {
+    "name": "malformed mounts are skipped and valid order is preserved", "platform": "linux",
+    "files": {"/proc/sys/kernel/osrelease":"5.15.167.4-microsoft-standard-WSL2\n","/etc/machine-id":"0f3c9a7e5b2d4c6e8a1b3d5f7e9c2a4b","/proc/mounts":"bad\nx /mnt/x ext4 rw,aname=drvfs;path=X:\\ 0 0\nx /mnt/y 9p rw,path=Y:\\ 0 0\nx /mnt/z 9p rw,aname=drvfs;path=Z:/ 0 0\nx /mnt/q 9p rw,aname=drvfs;path=QQ:\\ 0 0\nx /mnt/d drvfs rw,aname=drvfs,path=d:\\ 0 0\nx /mnt/c 9p rw,aname=drvfs;path=C:\\ 0 0\n"},
+    "expected": {"distroId":"0f3c9a7e5b2d4c6e8a1b3d5f7e9c2a4b","driveMounts":[{"mountPoint":"/mnt/d","drive":"D"},{"mountPoint":"/mnt/c","drive":"C"}]}
+  },
+  {
+    "name": "identity is trimmed and unreadable mounts stay empty", "platform": "linux",
+    "files": {"/proc/sys/kernel/osrelease":"5.15.167.4-microsoft-standard-WSL2\n","/etc/machine-id":"  0f3c9a7e5b2d4c6e8a1b3d5f7e9c2a4b \n"},
+    "expected": {"distroId":"0f3c9a7e5b2d4c6e8a1b3d5f7e9c2a4b","driveMounts":[]}
+  },
+  {
+    "name": "only the four kernel escape forms are decoded", "platform": "linux",
+    "files": {"/proc/sys/kernel/osrelease":"5.15.167.4-microsoft-standard-WSL2\n","/proc/mounts":"x /mnt/a\\011b\\012c\\134d\\777e 9p rw,aname=drvfs;path=C:\\ 0 0\n"},
+    "expected": {"distroId":null,"driveMounts":[{"mountPoint":"/mnt/a\tb\nc\\d\\777e","drive":"C"}]}
+  }
+]
