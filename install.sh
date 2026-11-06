@@ -72,23 +72,36 @@ MCP_TRANSPORT="stdio"
 SERVICE_NAME="aify-comms"
 EXTRAS=()
 
+# Empty is a supplied value; paths may even spell an option. Only enum/URL values cannot be option tokens.
+need_value() {
+  local option="$1"
+  if [ $# -ge 2 ]; then
+    case "$option" in
+      --client|--endpoint|--mcp-transport) case "$2" in --*|-h) ;; *) return 0 ;; esac ;;
+      *) return 0 ;;
+    esac
+  fi
+  echo "install.sh: $option needs a value" >&2
+  exit "$EXIT_CONFIG"
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --all) ALL=1; shift ;;
-    --client) CLIENT="${2:-}"; shift 2 ;;
-    --endpoint) ENDPOINT="${2:-}"; shift 2 ;;
-    --dest) DEST="${2:-}"; shift 2 ;;
-    --bridge-dir) BRIDGE_DIR="${2:-}"; shift 2 ;;
-    --native-base) NATIVE_BASE="${2:-}"; shift 2 ;;
-    --wrapper-dir) WRAPPER_DIR="${2:-}"; shift 2 ;;
-    --host-repo) HOST_REPO="${2:-}"; shift 2 ;;
-    --set) EXTRAS+=("${2:-}"); shift 2 ;;
-    --render-only) RENDER_ONLY="${2:-}"; shift 2 ;;
-    --registry) REGISTRY="${2:-}"; shift 2 ;;
-    --mcp-transport) MCP_TRANSPORT="${2:-}"; shift 2 ;;
+    --client) need_value "$@"; CLIENT="${2:-}"; shift 2 ;;
+    --endpoint) need_value "$@"; ENDPOINT="${2:-}"; shift 2 ;;
+    --dest) need_value "$@"; DEST="${2:-}"; shift 2 ;;
+    --bridge-dir) need_value "$@"; BRIDGE_DIR="${2:-}"; shift 2 ;;
+    --native-base) need_value "$@"; NATIVE_BASE="${2:-}"; shift 2 ;;
+    --wrapper-dir) need_value "$@"; WRAPPER_DIR="${2:-}"; shift 2 ;;
+    --host-repo) need_value "$@"; HOST_REPO="${2:-}"; shift 2 ;;
+    --set) need_value "$@"; EXTRAS+=("${2:-}"); shift 2 ;;
+    --render-only) need_value "$@"; RENDER_ONLY="${2:-}"; shift 2 ;;
+    --registry) need_value "$@"; REGISTRY="${2:-}"; shift 2 ;;
+    --mcp-transport) need_value "$@"; MCP_TRANSPORT="${2:-}"; shift 2 ;;
     # The channel name is DERIVED from this rather than taken separately: two names that must agree
     # are a defect with a delay on it.
-    --service) SERVICE_NAME="${2:-}"; shift 2 ;;
+    --service) need_value "$@"; SERVICE_NAME="${2:-}"; shift 2 ;;
     -h|--help) sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "install.sh: unknown option '$1'" >&2; exit "$EXIT_CONFIG" ;;
   esac
