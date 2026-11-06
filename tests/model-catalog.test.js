@@ -80,6 +80,17 @@ test("own hook-settings carrier must not declare a modelPicker", (t) => {
   assert.notEqual(w.load().problem, "");
 });
 
+// Initialization adds a policy read before useful native launch; its external registry command needs its own bound.
+for (const failed of [false, true]) test(`default managed-policy adapter ${failed ? "timeout is unresolved" : "bounds each registry read"}`, (t) => {
+  const w = world(t); const { managed, ...options } = w.options; const calls = [];
+  const result = readModelCatalog({ ...options, platform: "win32", env: { ...options.env, ProgramFiles: path.join(w.home, "program-files") },
+    run: (command, argv, settings) => { calls.push({ command, argv, settings }); return failed ? { status: null, error: { code: "ETIMEDOUT" } } : { status: 1, stderr: "unable to find the specified registry key" }; } });
+  assert.equal(calls.length, 2, "both managed hives must be inspected through the injected adapter, not the real registry");
+  for (const call of calls) { assert.equal(call.command, "reg"); assert.equal(call.settings.timeout, 1000, "unbounded registry command can block useful launch"); }
+  if (failed) { assert.notEqual(result.problem, ""); assert.deepEqual(result.rows, []); }
+  else assert.equal(result.rows[0]?.model, "provider/user");
+});
+
 test("frozen projection owns its rows and never rereads later shared settings.model", (t) => {
   const w = world(t); const first = w.load();
   fs.writeFileSync(w.file, JSON.stringify({ ...picker("provider/changed"), model: "provider/not-selected" }));
