@@ -237,11 +237,18 @@ for _ORIGINAL in "$@"; do
   [ "$_ORIGINAL" = "--shared" ] || CLAUDE_AIFY_PASSTHRU+=("$_ORIGINAL")
 done
 CLAUDE_RESUME_FROM_ARG=false
+CLAUDE_AIFY_AGENT_FROM_ARG=false
+CLAUDE_SESSION_SELECTOR=false
+CLAUDE_NEW_SESSION=false
 CLAUDE_RESUME_FLAG="--resume"
 CLAUDE_HAS_MODEL=false
 CLAUDE_HAS_EFFORT=false
 PREV_ARG=""
 for ARG in "$@"; do
+  if [ "$ARG" = "--new-session" ]; then
+    CLAUDE_NEW_SESSION=true
+    continue
+  fi
   if [ "$PREV_ARG" = "--resume" ] || [ "$PREV_ARG" = "--session-id" ] || [ "$PREV_ARG" = "-r" ]; then
     CLAUDE_RESUME_ID="$ARG"
     CLAUDE_RESUME_FLAG="$PREV_ARG"
@@ -251,6 +258,7 @@ for ARG in "$@"; do
   fi
   if [ "$PREV_ARG" = "--aify-agent" ] || [ "$PREV_ARG" = "--agent-id" ]; then
     CLAUDE_AIFY_AGENT_ID="$ARG"
+    CLAUDE_AIFY_AGENT_FROM_ARG=true
     PREV_ARG=""
     continue
   fi
@@ -307,6 +315,7 @@ for ARG in "$@"; do
   case "$ARG" in
   --aify-agent=*|--agent-id=*)
     CLAUDE_AIFY_AGENT_ID="${ARG#*=}"
+    CLAUDE_AIFY_AGENT_FROM_ARG=true
     continue
     ;;
   --aify-role=*)
@@ -323,16 +332,23 @@ for ARG in "$@"; do
     CLAUDE_RESUME_ID="${ARG#*=}"
     CLAUDE_RESUME_FLAG="${ARG%%=*}"
     CLAUDE_RESUME_FROM_ARG=true
+    CLAUDE_SESSION_SELECTOR=true
     continue
     ;;
   esac
   if [ "$ARG" = "--resume" ] || [ "$ARG" = "--session-id" ] || [ "$ARG" = "-r" ]; then
+    CLAUDE_SESSION_SELECTOR=true
     PREV_ARG="$ARG"
     continue
   fi
+  case "$ARG" in --continue|--continue=*|-c|-c?*|--fork-session|--fork-session=*|-r?*) CLAUDE_SESSION_SELECTOR=true ;; esac
   CLAUDE_ARGS+=("$ARG")
   PREV_ARG="$ARG"
 done
+if [ "$CLAUDE_NEW_SESSION" = true ] && [ "$CLAUDE_SESSION_SELECTOR" = true ]; then
+  echo "[claude-aify] --new-session conflicts with a native conversation selector; nothing was started." >&2
+  exit 78
+fi
 # A MANAGED LAUNCH IS ADDRESSED TO ONE AGENT. The service writes AIFY_MANAGED_* beside AIFY_AGENT_ID for the
 # agent it launches, and every process that agent starts inherits them, so a *-aify started from inside its
 # session for ANOTHER agent took them as its own and ran the parent's model or effort (external review of
@@ -431,6 +447,19 @@ if [ "$HARNESS_CHECK" = true ]; then
   exit 0
 fi
 
+# Only the actual launch resolves an operator pin; the helper owns policy and the service bridge owns auth.
+CLAUDE_PIN_SELECTED=false
+if [ "$CLAUDE_NEW_SESSION" = true ]; then CLAUDE_RESUME_ID=""; unset CLAUDE_SESSION_ID AIFY_SESSION_HANDLE; fi
+_claude_session_reader="$AIFY_WRAPPER_DIR_FWD/bin/aify-claude-session.mjs"
+if [ "$CLAUDE_AIFY_AGENT_FROM_ARG" = true ] && [ "$CLAUDE_AIFY_SHARED" != true ]; then
+  if [ -f "$_claude_session_reader" ]; then
+    _claude_pin="$(node "$_claude_session_reader" select "$AIFY_BRIDGE_DIR_FWD" "$HARNESS_ENDPOINT" "$CLAUDE_AIFY_AGENT_ID" "$CLAUDE_AIFY_AGENT_FROM_ARG" "$CLAUDE_SESSION_SELECTOR" "$CLAUDE_NEW_SESSION" "$CLAUDE_AIFY_SHARED" "${CLAUDE_RESUME_ID:-}")" || _claude_pin=""
+    if [ -n "$_claude_pin" ]; then CLAUDE_RESUME_ID="$_claude_pin"; CLAUDE_PIN_SELECTED=true; fi
+  elif [ "$CLAUDE_NEW_SESSION" = false ] && [ "$CLAUDE_SESSION_SELECTOR" = false ] && [ -z "${CLAUDE_RESUME_ID:-}" ]; then
+    echo "[claude-aify] the optional session-default helper is unavailable; continuing with a fresh session." >&2
+  fi
+fi
+
 # Plan 6 B4 (2026-05-26): validate CLAUDE_SESSION_ID against the on-disk
 # transcript. Claude stores transcripts at
 # ~/.claude/projects/<encoded-cwd>/<session-id>.jsonl; if the operator's
@@ -448,7 +477,9 @@ fi
 validate_claude_session_id() {
   local id="$1"
   [ -z "$id" ] && return 1
-  local root="$HOME/.claude/projects"
+  if [ -f "$_claude_session_reader" ]; then node "$_claude_session_reader" exists "$id" </dev/null >/dev/null 2>&1; return $?; fi
+  # An older partial helper directory retains its legacy validation, never an automatic pin.
+  local root="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
   [ -d "$root" ] || return 1
   # Cheap glob: any project dir containing <id>.jsonl.
   local hit
@@ -457,14 +488,18 @@ validate_claude_session_id() {
 }
 
 if [ -n "${CLAUDE_RESUME_ID:-}" ] && ! validate_claude_session_id "$CLAUDE_RESUME_ID"; then
-  echo "[claude-aify] CLAUDE_SESSION_ID '$CLAUDE_RESUME_ID' has no transcript under ~/.claude/projects/...; clearing (claude will create a fresh session)" >&2
+  echo "[claude-aify] CLAUDE_SESSION_ID '$CLAUDE_RESUME_ID' has no transcript in the selected Claude profile; clearing (claude will create a fresh session)" >&2
   unset CLAUDE_RESUME_ID
-  unset CLAUDE_SESSION_ID
+  unset CLAUDE_SESSION_ID AIFY_SESSION_HANDLE
 fi
 if [ -n "${CLAUDE_RESUME_ID:-}" ]; then
   export CLAUDE_SESSION_ID="$CLAUDE_RESUME_ID"
-  if [ "$CLAUDE_RESUME_FROM_ARG" = true ]; then
+  if [ "$CLAUDE_RESUME_FROM_ARG" = true ] || [ "$CLAUDE_PIN_SELECTED" = true ]; then
     CLAUDE_ARGS+=("${CLAUDE_RESUME_FLAG:---resume}" "$CLAUDE_RESUME_ID")
+  fi
+  if [ "$CLAUDE_PIN_SELECTED" = true ]; then
+    export AIFY_SESSION_HANDLE="$CLAUDE_RESUME_ID"
+    echo "[claude-aify] resuming pinned Claude session '$CLAUDE_RESUME_ID' for '$CLAUDE_AIFY_AGENT_ID'." >&2
   fi
 fi
 # IDENTITY RECOVERY (2026-07-14). EVERY turn-state path is gated on AIFY_AGENT_ID: the
@@ -878,7 +913,7 @@ fi
 # dispatch is delivered to a RANDOM sibling, not the console. Reaping by the
 # per-agent resume handle collapses that to one (mirrors hermes kill-prior).
 # Managed-only: resident is the operator's own visible window.
-if [ "$CLAUDE_AIFY_SHARED" != true ] && [ "$AIFY_SESSION_MODE" = "managed" ] && [ -n "${CLAUDE_RESUME_ID:-}" ] && [ -n "${CLAUDE_AIFY_AGENT_ID:-}" ]; then
+if [ "$CLAUDE_AIFY_SHARED" != true ] && [ "$AIFY_SESSION_MODE" = "managed" ] && [ -n "${CLAUDE_RESUME_ID:-}" ] && [ -n "${CLAUDE_AIFY_AGENT_ID:-}" ] && [ "${AIFY_LEASE_AGENT:-}" = "$CLAUDE_AIFY_AGENT_ID" ]; then
   # AGENT-SCOPED reap (safety, 2026-05-31): pass the agent id so the reaper only
   # kills THIS agent's prior managed claude (verified via the candidate's parent
   # --aify-agent wrapper), never another agent or a resident operator session

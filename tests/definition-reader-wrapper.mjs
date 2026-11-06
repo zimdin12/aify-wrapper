@@ -19,7 +19,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 /** The readers and pure hook formatter, without any lease or runtime-start helpers. */
 export const READER_FILES = Object.freeze([
   "bin/aify-definition.mjs", "bin/aify-definition.sh", "lib/agent-definition-defaults.mjs", "lib/agent-definition-schema.mjs", "lib/main-module.mjs",
-  "bin/aify-claude-default-model.mjs", "lib/claude-default-model.mjs",
+  "bin/aify-claude-default-model.mjs", "lib/claude-default-model.mjs", "lib/claude-sessions.mjs", "bin/aify-claude-session.mjs",
   "bin/aify-tool-hook-json.sh",
   // The helpers install.sh requires because a launcher skips them without a word (Herdr's claim, hermes' Node >= 22).
   "bin/aify-herdr-launch.sh", "bin/aify-node-22.sh",

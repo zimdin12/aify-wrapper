@@ -7,11 +7,12 @@
 // nothing, as it did before (lib/claude-default-model.mjs says why it asks).
 
 import process from "node:process";
+import os from "node:os";
 
 import { claudeDefaultModel, claudeSettingsFiles, readSettings } from "../lib/claude-default-model.mjs";
 import { isMainModule } from "../lib/main-module.mjs";
 
 if (isMainModule(import.meta.url)) {
-  const model = claudeDefaultModel(readSettings(claudeSettingsFiles(process.argv[2] || process.cwd())));
+  const model = claudeDefaultModel(readSettings(claudeSettingsFiles(process.argv[2] || process.cwd(), process.env, os.homedir())));
   if (model) process.stdout.write(`${model}\n`);
 }

@@ -261,6 +261,12 @@ starting without the definition the operator wrote would look like honouring it.
 only the instructions from the file: aify-env hands it the rest, already checked. When it cannot read them,
 it says so and starts without them.
 
+**Named Claude conversations.** An explicitly named operator launch can resume its own persisted
+service pin when the optional comms helper and selected-profile transcript are available; otherwise
+it visibly starts fresh. Native selectors and matched managed-fresh intent win. `--new-session` is
+the wrapper's explicit fresh escape. See [conversation precedence and the bridge contract](docs/CLAUDE-CONVERSATIONS.md);
+the wrapper half does not install or implement the comms helper.
+
 **Explicit Claude model choices.** Named, lease-owning Claude launches can report their original
 `--model` argument and completed native `/model` selections to aify-env, which alone updates the
 existing definition. This requires the environment's model-selection receiver; an unavailable receiver
