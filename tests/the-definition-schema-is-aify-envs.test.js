@@ -3,14 +3,15 @@
 //
 // A COPY, NOT A PORT. A launcher must validate a definition exactly as the store that wrote it does,
 // and a second implementation is a second opinion that drifts. So this file is aify-env's module byte
-// for byte, and this test fails on any difference. Its exports (SCHEMA_VERSION, UNAVAILABLE_HARNESS,
+// for byte, and this test fails on any difference. Its exports (SCHEMA_VERSION, HARNESS_FACTS, UNAVAILABLE_HARNESS,
 // MAX_COUNTER, ENV_NAME_PATTERN, PLUGIN_SUPPLIED_FIELDS, suppliedNames, isCounter, isOperationId, idProblems,
 // numberProblems, definitionBytesProblems, definitionProblems, canonicalJson, sha256Hex, definitionDigest,
 // formatDefinitionFile) are aify-env's
 // and tested there; here the copy also runs aify-env's shared fixture, so a stale copy fails twice.
 //
-// THE SIBLING CHECKOUT: `AIFY_ENV_REPO`, else beside this checkout, else ~/projects/aify-env. With none,
-// this SKIPS BY NAME: a cross-repo proof that ran nothing must not read as a pass.
+// PAIRED CANDIDATE: explicit AIFY_ENV_SCHEMA_REPO selects the unpublished schema/store source and fails
+// closed when missing, never falling back to frozen live bytes. Otherwise use AIFY_ENV_REPO, a sibling,
+// or ~/projects/aify-env. With none, this SKIPS BY NAME; a proof that ran nothing is not a pass.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -25,7 +26,10 @@ import { definitionsDir } from "../lib/agent-definition-defaults.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCHEMA = path.join("lib", "agent-definition-schema.mjs");
-const CANDIDATES = [process.env.AIFY_ENV_REPO, path.join(ROOT, "..", "aify-env"), path.join(os.homedir(), "projects", "aify-env")].filter(Boolean);
+const explicitSource = process.env.AIFY_ENV_SCHEMA_REPO;
+if (explicitSource !== undefined) assert.ok(explicitSource && fs.existsSync(path.join(explicitSource, SCHEMA)),
+  "NOT_RUN: explicit AIFY_ENV_SCHEMA_REPO has no readable schema source; refusing fallback");
+const CANDIDATES = [explicitSource, process.env.AIFY_ENV_REPO, path.join(ROOT, "..", "aify-env"), path.join(os.homedir(), "projects", "aify-env")].filter(Boolean);
 const ENV_REPO = CANDIDATES.find((dir) => fs.existsSync(path.join(dir, SCHEMA)));
 const skip = ENV_REPO ? false : `no aify-env checkout with ${SCHEMA} (looked in ${CANDIDATES.join(", ")}): NOT verified`;
 
