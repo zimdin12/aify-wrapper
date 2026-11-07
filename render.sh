@@ -77,11 +77,18 @@ fi
 # `#|` lines are documentation for whoever edits the template. They never reach the launcher.
 text="$(grep -v "^#|" "$template")"
 
+_aify_owner_raw=unavailable
+_aify_owner_seen=false
 for pair in "$@"; do
   case "$pair" in *=*) ;; *) echo "render.sh: expected KEY=VALUE input" >&2; exit 78 ;; esac
   key="${pair%%=*}"; value="${pair#*=}"
   aify_render_key_safe "$key" || exit 78
+  case "$key" in HARNESS_TEMPLATE_*) echo "render.sh: $key is reserved for generated provenance." >&2; exit 78 ;; esac
   aify_render_value_safe "$key" "$value" || exit 78
+  if [ "$key" = WRAPPER_DIR ] && [ "$_aify_owner_seen" = false ]; then
+    _aify_owner_raw="$value"
+    _aify_owner_seen=true
+  fi
   # THE WRAPPER ROOT IS BAKED IN ABSOLUTE OR NOT AT ALL. The launcher finds its own helpers there from whatever
   # directory it is started in, so a relative root works only in the cwd it was rendered from (review of 0.9.7).
   # Refused here as well as resolved by install.sh, because a host can render without install.sh. A path, not a
@@ -106,6 +113,34 @@ if [ -n "${leftover// /}" ]; then
   echo "           supply them as KEY=VALUE arguments." >&2
   exit 78
 fi
+
+# Generated from the actual template, even for render-only and subset-copy callers. No sibling dependency.
+sha_of() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 | awk '{print $1}'
+  else return 1
+  fi
+}
+_aify_template_sha="$(sha_of < "$template")" || _aify_template_sha=unavailable
+[[ "$_aify_template_sha" =~ ^[0-9a-f]{64}$ ]] || _aify_template_sha=unavailable
+_aify_template_name="${template##*/}"
+printf -v _aify_template_word '%q' "$_aify_template_name"
+_aify_owner_native=unavailable
+# The first pair filled the helper slot. A nested placeholder is not an owner declaration we can stamp.
+if [ "$_aify_owner_seen" = true ] && [[ "$_aify_owner_raw" != *@@* ]]; then
+  _aify_owner_native="$_aify_owner_raw"
+  if command -v cygpath >/dev/null 2>&1; then
+    _aify_owner_native="$(cygpath -m "$_aify_owner_raw" 2>/dev/null)" || _aify_owner_native=unavailable
+  fi
+fi
+printf -v _aify_owner_word '%q' "$_aify_owner_native"
+printf -v _aify_stamp 'HARNESS_TEMPLATE_NAME=%s\nHARNESS_TEMPLATE_SHA256="%s"\nHARNESS_TEMPLATE_OWNER_ROOT=%s' \
+  "$_aify_template_word" "$_aify_template_sha" "$_aify_owner_word"
+case "$text" in
+  '#!'*$'\n'*) text="${text%%$'\n'*}"$'\n'"$_aify_stamp"$'\n'"${text#*$'\n'}" ;;
+  '#!'*) text="$text"$'\n'"$_aify_stamp" ;;
+  *) text="$_aify_stamp"$'\n'"$text" ;;
+esac
 
 mkdir -p "$(dirname "$target")"
 # CREATED PRIVATE, THEN OPENED, rather than written at the umask's mercy and tightened afterwards.
@@ -156,7 +191,7 @@ mv -f "$staged" "$target"
 # names a place for it in RENDER_RECORD_DIR -- install.sh names `launchers/` beside the registry -- so a launcher
 # directory on PATH never gains a file, and a render that did not ask leaves nothing anywhere. One file per launcher,
 # named for its path: the template's sha256, its name, TARGET=<the launcher>, then every KEY=VALUE pair,
-# NUL-terminated so no value needs escaping. The four registry-derived pairs are left out: connect recomputes them.
+# NUL-terminated so no value needs escaping. Registry-derived pairs are left out: connect recomputes them.
 # A host with no sha256 tool writes no record, and connect then reports the launcher stale.
 #
 # THE TARGET IS RECORDED NATIVE. connect reads it in Node, and under git-bash the path an installer passes is
@@ -164,17 +199,12 @@ mv -f "$staged" "$target"
 # under the current drive's root, so the record named no file and every launcher read stale (2026-10-21). `cygpath -m`
 # knows the mounts; off Windows there is no cygpath and the path is already native. The record's name hashes the same
 # native form, so a re-render, which passes the recorded target back, rewrites this record rather than adding one.
-sha_of() {
-  if command -v sha256sum >/dev/null 2>&1; then sha256sum | awk '{print $1}'
-  elif command -v shasum >/dev/null 2>&1; then shasum -a 256 | awk '{print $1}'
-  else return 1
-  fi
-}
 record_render() {
   local sha name record pair native="$target"
   [ -n "${RENDER_RECORD_DIR:-}" ] || return 0
   if command -v cygpath >/dev/null 2>&1; then native="$(cygpath -m "$target")" || return 0; fi
-  sha="$(sha_of < "$template")" || return 0
+  [ "$_aify_template_sha" != unavailable ] || return 0
+  sha="$_aify_template_sha"
   name="$(printf '%s' "$native" | sha_of)" || return 0
   [ -n "$sha" ] && [ -n "$name" ] || return 0
   record="$RENDER_RECORD_DIR/${name:0:24}.args"
@@ -182,7 +212,7 @@ record_render() {
   (
     umask 077
     {
-      printf '%s\0' "$sha" "$(basename "$template")" "TARGET=$native"
+      printf '%s\0' "$sha" "$_aify_template_name" "TARGET=$native"
       for pair in "$@"; do
         case "$pair" in
           REGISTRY_FINGERPRINT=*|STRICT_EXTRA_MCP_B64=*|SESSION_MCP_B64=*|SESSION_HTTP_B64=*|SESSION_MCP_CODEX_B64=*) ;;

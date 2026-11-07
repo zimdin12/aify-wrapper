@@ -28,13 +28,15 @@ function fixture(t){
  const start=render(good);assert.equal(start.status,0,start.stderr);assert.ok(fs.readdirSync(records).length,'healthy record control missing');
  return{dir,target,records,env,render,good,snapshot};
 }
-test('the existing direct argv interface renders byte-identical ordinary output to the approved parent',t=>{
+test('direct argv preserves parent body bytes and matches framed output including provenance',t=>{
  const f=fixture(t),parent=spawnSync('git',['-C',ROOT,'show','262c6e4:render.sh'],{encoding:'utf8'});assert.equal(parent.status,0,'approved parent source missing');
  const beforeFile=path.join(f.dir,'before-render.sh');fs.writeFileSync(beforeFile,parent.stdout);
  const args=['probe-aify.sh.in',native(f.target),...f.good];
  const before=spawnSync('bash',[native(beforeFile),...args],{env:f.env,encoding:'utf8'});assert.equal(before.status,0,before.stderr);const bytes=fs.readFileSync(f.target);
- const after=spawnSync('bash',[native(path.join(f.dir,'render.sh')),...args],{env:f.env,encoding:'utf8'});assert.equal(after.status,0,after.stderr);assert.deepEqual(fs.readFileSync(f.target),bytes);
- const framed=f.render(f.good);assert.equal(framed.status,0,framed.stderr);assert.deepEqual(fs.readFileSync(f.target),bytes);
+ const after=spawnSync('bash',[native(path.join(f.dir,'render.sh')),...args],{env:f.env,encoding:'utf8'});assert.equal(after.status,0,after.stderr);
+ const current=fs.readFileSync(f.target);const text=current.toString('utf8');assert.equal((text.match(/^HARNESS_TEMPLATE_.*$/gm)||[]).length,3);
+ assert.deepEqual(Buffer.from(text.replace(/^HARNESS_TEMPLATE_.*\n/gm,'')),bytes);
+ const framed=f.render(f.good);assert.equal(framed.status,0,framed.stderr);assert.deepEqual(fs.readFileSync(f.target),current);
 });
 for(const key of ['','lower','BAD*KEY','BAD[KEY]','KEY-NAME'])test(`render refuses invalid key ${JSON.stringify(key)} without changing output or record`,t=>{
  const f=fixture(t),before=f.snapshot(),result=f.render([...f.good,`${key}=ordinary`]);

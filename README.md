@@ -140,9 +140,9 @@ report says why.
 
 `install.sh` records what each launcher was rendered from in `launchers/` beside the registry
 (`RENDER_RECORD_DIR`, which `render.sh` honours only when a caller sets it): the template's sha256, its name, the
-launcher's path, and its pairs without the four the registry decides. Nothing is added to the launcher directory,
-which is on PATH. A launcher with no record (one rendered by an installer that does not record yet, aify-comms'
-among them, or by `--render-only`), or one rendered from another template, is reported stale and left alone,
+launcher's path, and its pairs without those the registry decides. Nothing is added to the launcher directory,
+which is on PATH. aify-comms records normal installations too; its `--emit-wrappers`, and this installer's
+`--render-only`, do not. A launcher with no record, or one rendered from another template, is reported stale by connect and left alone,
 never re-rendered from guessed values.
 
 Exit codes: 0 published, 78 refused with nothing published, 75 the publish outcome is unknown (the staged keys
@@ -449,8 +449,15 @@ opposite of the bridge it points at, which is a running process that keeps whate
 
 `--check` reports the wrapper's own version so a host can tell what it has. Whether the installed
 launchers are current is answered by `aify-wrapper-check` (below), which reads them without running
-them and says REINSTALL, where aify-comms' `bridge-current` says RESTART. That check used to live in
-`aify-comms doctor` as `wrapper-current` and has left it.
+them and says REINSTALL, where aify-comms' `bridge-current` says RESTART. It checks registry drift and
+template provenance against the launcher's own baked helper package, not the checker's package on PATH.
+A generated template digest wins over version-only skew, so a version bump with unchanged template bytes
+does not force reinstall. Without usable generated provenance a known owner-version mismatch is stale;
+otherwise the result is unknown, even for equal versions. A surviving legacy render record is not proof
+that its target still holds the recorded bytes. Re-run the owning package's installer to stamp provenance;
+an older pinned producer may need upgrading first. Updating the global checker or restarting agents is
+not that remedy. `--strict` fails unknown as well as stale. This check used to live in `aify-comms doctor`
+as `wrapper-current` and has left it.
 
 ## Where the runtime is loaded from
 
@@ -544,9 +551,9 @@ INERT for a day because of it. `npm link` in this checkout, or reinstall the pac
 ## Checking what is installed
 
 ```bash
-aify-wrapper-check            # is every launcher here built from this host's registry?
+aify-wrapper-check            # registry and owning-template provenance, without starting anything
 aify-wrapper-check --json
-aify-wrapper-check --strict   # exit 1 when anything is stale or unreadable
+aify-wrapper-check --strict   # exit 1 when anything is stale, unknown or refused
 ```
 
 **It reads. It never runs a launcher.** A wrapper built before the harness contract does not know
@@ -554,11 +561,13 @@ aify-wrapper-check --strict   # exit 1 when anything is stale or unreadable
 There is a test that plants a launcher which would leave a sentinel file if it ever ran, and requires
 the sentinel not to exist.
 
-Three states, because two would lose the one that matters: **current**, **stale** (built from a
-different registry, and it prints both digests so you can see they differ), and **unreadable** — a
-launcher installed before fingerprints existed, which is the population most likely to be stale and the
-one an absent-means-fine reading would report as healthy. A host with no launchers at all is not
-"fine"; nothing was verified.
+Three states: **current**, **stale** (known registry, template, version or alias disagreement), and
+**unknown** (unreadable or unavailable evidence, including legacy provenance). Text and JSON name the
+source of disagreement; JSON's existing `installed`/`expected` fields stay registry fingerprints, with
+additive typed `reasons` for other evidence. Aliases must agree with their primary. A host with no
+launchers is not "fine"; nothing was verified. See the [staleness contract](docs/contracts/launcher-staleness.md)
+for generated metadata, owning-package selection, strict exits and the unchanged `hermesConfigPending`
+interface. Current is not a per-launch capability guarantee.
 
 The remedy is **reinstall**, never restart. Relaunching an agent runs the same launcher text again, so
 nothing about the launcher changes until the file does.

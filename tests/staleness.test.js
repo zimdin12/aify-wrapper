@@ -23,6 +23,18 @@ const launcher = (fingerprint) => [
   'exec claude "$@"',
 ].join("\n");
 
+// The CLI supplies a provenance map. Its missing/bad entries are a different property from a reader's
+// valid UNKNOWN result; neither may silently recover the legacy registry-only verdict.
+for (const [label, provenance] of [
+  ["missing", new Map()],
+  ["invalid state", new Map([["claude-aify", { state: "not-a-verdict" }]])],
+]) test(`explicit provenance map fails closed for ${label}`, () => {
+  const result = stalenessOf({ launchers: [{ name: "claude-aify", text: launcher("same") }], registryFingerprint: "same", provenance });
+  assert.equal(result.ok, false);
+  assert.equal(result.unknown.length, 1);
+  assert.equal(result.current.length, 0);
+});
+
 test("a launcher built from the CURRENT registry is current", () => {
   const result = stalenessOf({
     launchers: [{ name: "claude-aify", text: launcher("abc123") }],

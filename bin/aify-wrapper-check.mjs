@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Are the launchers on this host still built from the registry this host has?
+// Are this host's launchers consistent with its registry and their owning template packages?
 //
 //   aify-wrapper-check              human-readable
 //   aify-wrapper-check --json       {ok, summary, current, stale, unknown}, plus errors when it refuses
-//   aify-wrapper-check --strict     exit 1 when anything is stale OR unreadable
+//   aify-wrapper-check --strict     exit 1 for stale, unknown or refused launcher judgments
 //   aify-wrapper-check --dest <dir> --registry <path> --pending <path>
 //
 // It also says whether an install left a hermes config change PENDING (lib/hermes-pending-config.mjs), which the
@@ -24,6 +24,7 @@ import { join } from "node:path";
 import { PendingHermesConfig, pendingMarkerPath } from "../lib/hermes-pending-config.mjs";
 import { parseRegistry, fingerprint } from "../lib/registry.mjs";
 import { stalenessOf } from "../lib/staleness.mjs";
+import { LauncherProvenanceReader } from "../lib/launcher-provenance.mjs";
 
 const args = process.argv.slice(2);
 const flag = (name, fallback) => {
@@ -60,10 +61,11 @@ function judge() {
       .filter((name) => !/\.(cmd|ps1)$/i.test(name))
       .map((name) => {
         try {
-          return { name, text: readFileSync(join(DEST, name), "utf8") };
+          const bytes = readFileSync(join(DEST, name));
+          return { name, path: join(DEST, name), bytes, text: bytes.toString("utf8") };
         } catch {
           // Unreadable is not absent: it lands in `unknown` rather than vanishing from the count.
-          return { name, text: null };
+          return { name, path: join(DEST, name), text: null };
         }
       });
   } catch (error) {
@@ -83,7 +85,15 @@ function judge() {
     // the launchers and hides the real problem, which is the registry.
     return refusal(`registry ${REGISTRY} is not usable`, parsed.errors);
   }
-  return { refused: false, report: stalenessOf({ launchers, registryFingerprint: fingerprint(parsed.registry) }) };
+  const reader = new LauncherProvenanceReader({ registryPath: REGISTRY });
+  const provenance = new Map(launchers.map(launcher => [launcher.name, reader.read(launcher)]));
+  return { refused: false, report: stalenessOf({ launchers, registryFingerprint: fingerprint(parsed.registry), provenance }) };
+}
+
+function reasonText(reason) {
+  const values = reason.installed !== null && reason.expected !== null
+    ? ` (built from ${reason.installed}, expected ${reason.expected})` : "";
+  return `${reason.detail}${values}${reason.remedy ? `; ${reason.remedy}` : ""}`;
 }
 
 const { refused, report } = judge();
@@ -96,10 +106,10 @@ if (asJson) {
 } else if (!refused) {
   for (const row of report.current) process.stdout.write(`  ok    ${row.name}\n`);
   for (const row of report.stale) {
-    process.stdout.write(`  STALE ${row.name}  built from ${row.installed}, registry is ${row.expected}\n`);
+    process.stdout.write(`  STALE ${row.name}  ${row.reasons.filter(reason => reason.state !== "current").map(reasonText).join("; ")}\n`);
   }
   for (const row of report.unknown) {
-    process.stdout.write(`  ??    ${row.name}  no registry fingerprint — installed before this existed?\n`);
+    process.stdout.write(`  ??    ${row.name}  ${row.reasons.filter(reason => reason.state === "unknown").map(reasonText).join("; ")}\n`);
   }
   process.stdout.write(`\n${report.summary}\n`);
 }
