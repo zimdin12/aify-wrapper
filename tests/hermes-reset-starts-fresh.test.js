@@ -61,7 +61,7 @@ for (const [fresh, failure] of [[true, ""], [false, ""], [true, "import"], [true
         fs.cpSync(path.join(ROOT, name), path.join(bundle, name), { recursive: true });
       }
       const values = Object.fromEntries([...TEMPLATE.matchAll(/@@([A-Z0-9_]+)@@/g)].map((m) => [m[1], ""]));
-      Object.assign(values, { WRAPPER_DIR: bundle.replaceAll("\\", "/"),
+      Object.assign(values, { SERVICE_NAME: "owned-service", WRAPPER_DIR: bundle.replaceAll("\\", "/"),
         HERMES_STDIO_DIR: (failure === "import" ? path.join(dir, "missing-stdio") : stdio).replaceAll("\\", "/") });
       const launcher = path.join(dir, "hermes-aify");
       const render = spawnSync("bash", [path.join(bundle, "render.sh").replaceAll("\\", "/"),

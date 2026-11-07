@@ -48,9 +48,11 @@ function renderPi() {
   const out = path.join(dir, "pi-aify");
   // EVERY placeholder: render.sh refuses a partial substitution rather than shipping a launcher with
   // `@@...@@` still in it, which is the right call and means a test must supply them all.
-  // BRIDGE_DIR and WRAPPER_DIR arrived with the Herdr pane claim, which every template now carries. They point
-  // at directories that do not exist on purpose: this test must never reach the helper it names, and a
-  // path under the throwaway render directory makes that explicit rather than accidental.
+  // The bridge and optional side-effect helpers remain absent. The mandatory pure scalar validator
+  // is present: configuration checks still validate input, but must never reach a service/lifetime probe.
+  const wrapper = path.join(dir, "no-wrapper-here");
+  fs.mkdirSync(path.join(wrapper, "bin"), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, "bin/aify-input-boundary.sh"), path.join(wrapper, "bin/aify-input-boundary.sh"));
   execFileSync("bash", [RENDER, "pi-aify.sh.in", out,
     `ENDPOINT=${NOWHERE}`, "REGISTRY_FINGERPRINT=test-fp", "SERVICE_NAME=aify-comms",
     `BRIDGE_DIR=${path.join(dir, "no-bridge-here").replace(/\\/g, "/")}`,

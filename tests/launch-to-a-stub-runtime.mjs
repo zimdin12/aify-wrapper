@@ -161,6 +161,9 @@ function world(client, { reader, registry, bridgeFiles = {}, fresh = false, runt
   for (const d of [out, stubs, home, bridge, wrapper]) fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(bridge, "agent-for-handle.mjs"), LOOKUP);
   if (reader) readerWrapper(wrapper);
+  // reader:false omits definitions, not the launcher's independent mandatory scalar validator.
+  fs.mkdirSync(path.join(wrapper, "bin"), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, "bin/aify-input-boundary.sh"), path.join(wrapper, "bin/aify-input-boundary.sh"));
   for (const [name, text] of Object.entries(bridgeFiles)) fs.writeFileSync(path.join(bridge, name), text);
   // claude-aify keeps a `--resume` only for a session it can find on disk; codex-aify reads CODEX_HOME.
   fs.mkdirSync(path.join(home, ".claude", "projects", "p"), { recursive: true });

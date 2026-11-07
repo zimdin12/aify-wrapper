@@ -29,6 +29,35 @@ set -euo pipefail
 shopt -u patsub_replacement 2>/dev/null || true
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Self-contained: external installers copy this file alone beside wrappers/<template>.
+_aify_input_has_control() {
+  local LC_ALL=C
+  case "$1" in *[[:cntrl:]]*|*$'\302'[$'\200'-$'\237']*) return 0 ;; esac
+  return 1
+}
+_aify_input_refused() {
+  printf '%s: %s contains unsupported %s; input refused.\n' "${0##*/}" "$1" "$2" >&2
+  return 78
+}
+aify_render_key_safe() {
+  local LC_ALL=C
+  if [ "$#" -ne 1 ] || [[ ! "$1" =~ ^[A-Z0-9_]+$ ]]; then
+    printf '%s: invalid render key (expected A-Z, digits and underscore).\n' "${0##*/}" >&2
+    return 78
+  fi
+}
+aify_render_value_safe() {
+  [ "$#" -eq 2 ] || return 78
+  local key="$1" value="$2"
+  if _aify_input_has_control "$value"; then _aify_input_refused "$key" 'control characters'; return 78; fi
+  case "$value" in
+    *\"*|*\$*|*\`*|*\}*) _aify_input_refused "$key" 'shell-source characters'; return 78 ;;
+  esac
+  if [ "$key" = SERVICE_NAME ]; then
+    case "$value" in ''|*[!A-Za-z0-9_-]*) _aify_input_refused "$key" 'service-name characters'; return 78 ;; esac
+  fi
+  return 0
+}
 
 if [ "$#" -lt 2 ]; then
   echo "usage: render.sh <template-name> <output-path> [KEY=VALUE ...]" >&2
@@ -49,6 +78,10 @@ fi
 text="$(grep -v "^#|" "$template")"
 
 for pair in "$@"; do
+  case "$pair" in *=*) ;; *) echo "render.sh: expected KEY=VALUE input" >&2; exit 78 ;; esac
+  key="${pair%%=*}"; value="${pair#*=}"
+  aify_render_key_safe "$key" || exit 78
+  aify_render_value_safe "$key" "$value" || exit 78
   # THE WRAPPER ROOT IS BAKED IN ABSOLUTE OR NOT AT ALL. The launcher finds its own helpers there from whatever
   # directory it is started in, so a relative root works only in the cwd it was rendered from (review of 0.9.7).
   # Refused here as well as resolved by install.sh, because a host can render without install.sh. A path, not a
@@ -60,13 +93,9 @@ for pair in "$@"; do
       exit 78
       ;;
   esac
-  case "$pair" in
-    *=*) text="${text//@@${pair%%=*}@@/${pair#*=}}" ;;
-    *)
-      echo "render.sh: expected KEY=VALUE, got '$pair'" >&2
-      exit 78
-      ;;
-  esac
+  # Every scalar slot is double-quoted (or a safe service-name word). Records keep the raw pair below.
+  value="${value//\\/\\\\}"
+  text="${text//@@${key}@@/$value}"
 done
 
 # A placeholder the host did not supply would reach the launcher as literal `@@NAME@@` and fail at

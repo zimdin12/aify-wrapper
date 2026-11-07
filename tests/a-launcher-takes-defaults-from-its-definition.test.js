@@ -290,6 +290,9 @@ for (const client of ["claude", "codex", "hermes"]) {
     // Not being able to look is not finding nothing (review of P6, R2): with no file at all, the launch
     // still refuses, because without the reader it cannot know there is none.
     fs.rmSync(setup.wrapper, { recursive: true, force: true });
+    // Remove the reader, not the independent mandatory input boundary: this probe must reach the reader refusal.
+    fs.mkdirSync(path.join(setup.wrapper, "bin"), { recursive: true });
+    fs.copyFileSync(path.join(ROOT, "bin", "aify-input-boundary.sh"), path.join(setup.wrapper, "bin", "aify-input-boundary.sh"));
     const refused = check(setup, { args: ["--aify-agent", "lead"] });
     assert.equal(refused.status, 78, `${refused.stdout}${refused.stderr}`);
     assert.match(refused.stderr, /no definition reader at .*, so the definition of 'lead' cannot be checked/);

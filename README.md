@@ -408,6 +408,8 @@ that really is gone: delete `~/.aify/agents/<id>.json` and `<id>.json.lock`.
 
 `wrappers/*.sh.in` are ordinary bash with two additions: `@@TOKEN@@` placeholders a host substitutes at
 install time, and `#|` lines that document the template and are stripped from the output.
+Render keys/values are validated before publication; runtime JSON scalars are checked at launch.
+Windows backslash paths are encoded for their context rather than broadly banned. See [input boundaries and refusal behavior](docs/INPUT-BOUNDARIES.md).
 
 | Placeholder | Supplied by |
 |---|---|

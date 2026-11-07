@@ -18,12 +18,12 @@ const INSTALL = fileURLToPath(new URL("../install.sh", import.meta.url));
 const posix = (p) => p.split(String.fromCharCode(92)).join("/");
 const tmp = (name) => fs.mkdtempSync(path.join(os.tmpdir(), `aify-${name}-`));
 
-function install({ wrapper, client = "claude" } = {}) {
+function install({ wrapper, client = "claude", env = {} } = {}) {
   const dest = tmp("reader-dest");
   const run = spawnSync("bash", [INSTALL, "--client", client, "--endpoint", "http://127.0.0.1:1", "--dest", posix(dest),
     "--bridge-dir", posix(tmp("bridge-without-the-wrapper")), ...(wrapper ? ["--wrapper-dir", posix(wrapper)] : []),
     "--registry", posix(path.join(tmp("reader-reg"), "services.json"))],
-    { encoding: "utf8", timeout: 120_000, env: { ...process.env, AIFY_NO_PROMPT: "1" } });
+    { encoding: "utf8", timeout: 120_000, env: { ...process.env, AIFY_NO_PROMPT: "1", ...env } });
   return { run, written: fs.readdirSync(dest) };
 }
 
@@ -39,7 +39,7 @@ test("a bridge that holds nothing of aify-wrapper: the launcher is written, find
 function wrapperWith(name, files) {
   const wrapper = tmp(name);
   fs.mkdirSync(path.join(wrapper, "bin"), { recursive: true });
-  for (const file of files) fs.writeFileSync(path.join(wrapper, "bin", file), "");
+  for (const file of ["aify-input-boundary.sh", ...files]) fs.writeFileSync(path.join(wrapper, "bin", file), "");
   return wrapper;
 }
 
@@ -78,6 +78,22 @@ test("a --wrapper-dir without a helper the launcher would skip without a word: r
   }
   const { run } = install({ wrapper: wrapperWith("wrapper-for-claude", [...reader, "aify-herdr-launch.sh"]), client: "claude" });
   assert.equal(run.status, 0, `CONTROL: claude needs no Node 22 helper: ${run.stderr}`);
+});
+
+// New property: every independently installable template must have its mandatory runtime validator.
+// Earlier missing-helper cases guard optional/skipped helpers, not this fail-closed dependency.
+for (const client of ["claude", "codex", "hermes", "pi"]) test(`${client}: missing input boundary refuses before installing a launcher`, () => {
+  const files = ["aify-definition.mjs", "aify-definition.sh", ...SILENT_HELPERS, "aify-hermes-pending-config.mjs"];
+  const wrapper = wrapperWith("wrapper-without-boundary", files);
+  fs.unlinkSync(path.join(wrapper, "bin", "aify-input-boundary.sh"));
+  // A deleted installer guard must hit an owned tripwire, not run later config/process inspection.
+  const stubs = tmp("boundary-node-tripwire"), marker = path.join(stubs, "called");
+  fs.writeFileSync(path.join(stubs, "node"), '#!/bin/bash\nprintf called > "$BOUNDARY_NODE_MARKER"\nexit 91\n', { mode: 0o755 });
+  const { run, written } = install({ wrapper, client, env: { PATH: stubs + path.delimiter + process.env.PATH, BOUNDARY_NODE_MARKER: posix(marker) } });
+  assert.equal(run.status, 78, run.stderr);
+  assert.match(run.stderr, /has no bin\/aify-input-boundary\.sh/);
+  assert.equal(fs.existsSync(marker), false, "missing validator must refuse before a Node child");
+  assert.deepEqual(written, [], "missing validator must not install an unusable launcher");
 });
 
 test("a launcher that reads no definition is written without the reader (pi; review of 0.8.2)", () => {

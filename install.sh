@@ -300,8 +300,9 @@ fi
 # hermes' Node >= 22 (bin/aify-node-22.sh). Neither can fail a launch, so a --wrapper-dir without one would install
 # launchers that silently lose what it does. Which launchers need which is read from their templates. The same for
 # the pending hermes config step (bin/aify-hermes-pending-config.mjs), without which a recorded change is never applied.
+# The input boundary helper is required too: new launchers refuse rather than skip validation without it.
 if [ -z "$RENDER_ONLY" ]; then
-  for _helper in aify-herdr-launch.sh aify-node-22.sh aify-hermes-pending-config.mjs; do
+  for _helper in aify-herdr-launch.sh aify-node-22.sh aify-hermes-pending-config.mjs aify-input-boundary.sh; do
     _needing=()
     for _client in "${CLIENTS[@]}"; do
       if grep -q "bin/$_helper" "$HERE/wrappers/$_client-aify.sh.in" 2>/dev/null; then _needing+=("$_client"); fi
