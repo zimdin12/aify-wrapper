@@ -9,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { COMMITTED, NOT_COMMITTED, UNKNOWN, acquireLock, publish, releaseLock, snapshot } from "../lib/registry-publish.mjs";
+import { COMMITTED, NOT_COMMITTED, UNKNOWN, publish, snapshot } from "../lib/registry-publish.mjs";
 
 function registry(text = "{\"version\":1,\"services\":{}}\n") {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-publish-"));
@@ -34,14 +34,7 @@ test("an absent registry is an empty snapshot, and a first publish commits", asy
   assert.equal((await publish(file, "{}\n", before.hash)).result, COMMITTED);
 });
 
-test("WRITER EXCLUSION: a held lock blocks the publish, which fails naming the holder and writes nothing", async () => {
-  const file = registry();
-  fs.writeFileSync(`${file}.lock`, "{\"pid\":4242,\"who\":\"another connect\"}");
-  const before = snapshot(file);
-  await assert.rejects(publish(file, "{\"new\":true}\n", before.hash, { waitMs: 300 }), /held by .*4242.*never taken over/);
-  assert.deepEqual(fs.readFileSync(file), before.bytes);
-  assert.ok(fs.existsSync(`${file}.lock`), "the other writer's lock was not stolen");
-});
+// Held/live/dead/unknown owners and foreign-lock release are covered once through publish in connect-publish-lock.test.js.
 
 test("WRITER EXCLUSION: a write that lands between prepare and the locked reread aborts the publish", async () => {
   const file = registry();
@@ -77,13 +70,4 @@ test("COMMIT BOUNDARY: a rename that fails leaves the old text and reports not-c
   assert.equal(result.result, NOT_COMMITTED);
   assert.deepEqual(fs.readFileSync(file), before.bytes);
   assert.deepEqual(fs.readdirSync(path.dirname(file)).filter((n) => n.endsWith(".tmp")), [], "no temp file is left");
-});
-
-test("a lock is released only by the connect that holds it", async () => {
-  const file = registry();
-  const held = await acquireLock(file);
-  releaseLock({ lockPath: held.lockPath, token: "someone else's token" });
-  assert.ok(fs.existsSync(held.lockPath));
-  releaseLock(held);
-  assert.ok(!fs.existsSync(held.lockPath));
 });

@@ -11,9 +11,20 @@ service touches another's entry.
 
 **Or by `aify-wrapper-connect`**, from the spec a service serves (README, "Connecting a service"). It writes
 the raw entry, keeping every field the spec does not name, under `<registry>.lock`, and only when the file still
-holds what it read. The lock binds cooperating writers only: aify-dashboard's own register (a temp file and a
-rename, no lock) is not excluded by it; the reread catches it when it lands between connect's read and its
-write.
+holds what it read. aify-dashboard's register uses the same publisher and is a cooperating writer. A writer
+ignoring the lock is not excluded; the CAS reread detects a change since connect's initial read.
+
+The publisher uses `FileLock`, with a default 10,000 ms wait and both age-based takeover thresholds disabled
+(`staleMs: Infinity`, `unreadableMs: Infinity`). Only its existing process probe's positive evidence of a dead
+or reused holder can recover the lock. Legacy `{pid, at, nonce}` records remain subject to that same proof;
+unknown, partial or unreadable owners stay held and the diagnostic names the manual-repair path. Never remove
+one merely because it is old. No new process query or identity policy is introduced.
+
+`publish(path, candidateText, expectedHash, {waitMs})` remains asynchronous and returns the existing
+`committed`, `not-committed` or `unknown` result/detail. Its held filesystem callback is synchronous: reread/CAS,
+stage, verify the lock token immediately before rename, then rename/readback. Losing the token removes only
+that publisher's staged file and returns `not-committed`, without changing the registry. The dashboard's
+`COMMITTED`, `NOT_COMMITTED`, `publish` and `snapshot` import surface is unchanged.
 
 **Read by aify-wrapper at install time** to decide what to bake into each launcher, and by the host
 process runner when it starts.
