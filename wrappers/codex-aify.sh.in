@@ -179,25 +179,51 @@ pick_port() {
 }
 
 wait_for_port() {
-  local port="$1"
-  node -e '
-    const net = require("net");
-    const port = Number(process.argv[1]);
-    const deadline = Date.now() + 10000;
-    function attempt() {
-      const socket = net.createConnection({ host: "127.0.0.1", port });
-      socket.on("connect", () => {
-        socket.end();
-        process.exit(0);
-      });
-      socket.on("error", () => {
-        socket.destroy();
-        if (Date.now() > deadline) process.exit(1);
-        setTimeout(attempt, 150);
-      });
-    }
-    attempt();
-  ' "$port"
+  local port="$1" app_pid="$2" event waiter_pid result=1
+  kill -0 "$app_pid" >/dev/null 2>&1 || return 1
+  # The owning Bash job survives MSYS exec; a cached native winpid does not. Check it here,
+  # between private events from ONE bounded TCP waiter. Every iteration uses only builtins.
+  while IFS= read -r event; do
+    kill -0 "$app_pid" >/dev/null 2>&1 || break
+    case "$event" in
+      poll) ;;
+      ready) result=0; break ;;
+      *) break ;;
+    esac
+  done < <(
+    node -e '
+      const net = require("net");
+      const port = Number(process.argv[1]), pid = Number(process.argv[2]);
+      if (!Number.isSafeInteger(pid) || pid <= 0) process.exit(1);
+      const deadline = Date.now() + 10000;
+      setTimeout(() => process.exit(1), 10000);
+      process.stdout.on("error", () => process.exit(1));
+      function appAlive() {
+        if (process.platform === "win32") return true; // The parent checks its MSYS job.
+        try { process.kill(pid, 0); return true; } catch { return false; }
+      }
+      function attempt() {
+        if (!appAlive()) process.exit(1);
+        process.stdout.write("poll\n");
+        const socket = net.createConnection({ host: "127.0.0.1", port });
+        socket.on("connect", () => {
+          socket.end();
+          if (!appAlive()) process.exit(1);
+          process.stdout.write("ready\n", () => process.exit(0));
+        });
+        socket.on("error", () => {
+          socket.destroy();
+          if (!appAlive() || Date.now() > deadline) process.exit(1);
+          setTimeout(attempt, 150);
+        });
+      }
+      attempt();
+    ' "$port" "$app_pid"
+  )
+  waiter_pid=$!
+  kill "$waiter_pid" >/dev/null 2>&1 || true
+  wait "$waiter_pid" 2>/dev/null || true
+  return "$result"
 }
 
 CODEX_AUTO=true
@@ -401,6 +427,8 @@ codex_aify_defaults() {
   esac
 }
 
+AIFY_CODEX_AUTH_MODULE="$AIFY_WRAPPER_DIR_FWD/lib/codex-app-server-auth.mjs"
+
 # --check answers "is this configured and can it find its runtime" WITHOUT starting anything. It
 # reports what the argument loop resolved and exits before the service lookup and the app-server
 # launch, neither of which it may do; an id only a resume handle would name is therefore not shown.
@@ -415,6 +443,8 @@ if [ "$HARNESS_CHECK" = true ]; then
     _codex_permission_mode=omitted
   fi
   echo "  wrapper-selected permissions: mode=$_codex_permission_mode; source=$CODEX_PERMISSION_SOURCE; not final runtime permissions"
+  echo "  app-server auth: capability-token required; runtime support not probed by --check"
+  [ -r "$AIFY_CODEX_AUTH_MODULE" ] || echo "  missing helper: $AIFY_CODEX_AUTH_MODULE"
   echo "  endpoint  : $HARNESS_ENDPOINT"
   echo "  identity  : ${CODEX_AIFY_AGENT_ID:-<none — this session would be anonymous>}"
   echo "  role      : $CODEX_AIFY_ROLE"
@@ -519,7 +549,40 @@ else
   export AIFY_SESSION_HANDLE="$CODEX_RESUME_HANDLE"
 fi
 
-# The app-server's port and log, chosen here, below --check, which writes nothing.
+# Definition resolution keeps its existing refusal precedence; auth still refuses before runtime startup.
+if [ ! -r "$AIFY_CODEX_AUTH_MODULE" ]; then
+  echo "codex-aify: missing auth helper $AIFY_CODEX_AUTH_MODULE; refusing an unauthenticated app-server." >&2
+  exit "$HARNESS_EXIT_CONFIG"
+fi
+# One launch, one capability. Its verifier is public argv; raw material travels only in inherited env.
+# Descendants (including agent tools) may inherit it: TOKEN filtering is not a security assumption.
+_aify_auth_trace=0
+case "$-" in *x*) set +x; _aify_auth_trace=1 ;; esac
+unset AIFY_CODEX_APP_SERVER_TOKEN AIFY_CODEX_APP_SERVER_TOKEN_SHA256 AIFY_CODEX_REMOTE_AUTH_TOKEN_ENV
+_aify_auth_status=0
+_aify_auth_material="$(node --input-type=module -e '
+  import { randomBytes } from "node:crypto";
+  import { pathToFileURL } from "node:url";
+  const { codexAuthMaterial } = await import(pathToFileURL(process.argv[1]).href);
+  const material = codexAuthMaterial(randomBytes(32));
+  process.stdout.write(material.token + "\t" + material.sha256);
+' "$AIFY_CODEX_AUTH_MODULE")" || _aify_auth_status=$?
+# Parameter expansion performs no I/O; older Bash can put a here-string's raw material in a temp file.
+AIFY_CODEX_APP_SERVER_TOKEN="${_aify_auth_material%%$'\t'*}"
+AIFY_CODEX_APP_SERVER_TOKEN_SHA256="${_aify_auth_material#*$'\t'}"
+if [ "$_aify_auth_status" -ne 0 ] \
+  || [[ ! "$AIFY_CODEX_APP_SERVER_TOKEN" =~ ^[A-Za-z0-9_-]{43}$ ]] \
+  || [[ ! "$AIFY_CODEX_APP_SERVER_TOKEN_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "codex-aify: could not create app-server authentication; refusing to start." >&2
+  exit "$HARNESS_EXIT_CONFIG"
+fi
+export AIFY_CODEX_APP_SERVER_TOKEN
+export AIFY_CODEX_REMOTE_AUTH_TOKEN_ENV=AIFY_CODEX_APP_SERVER_TOKEN
+unset _aify_auth_material _aify_auth_status
+if [ "$_aify_auth_trace" = 1 ]; then unset _aify_auth_trace; set -x; else unset _aify_auth_trace; fi
+CODEX_APP_SERVER_AUTH=(--ws-auth capability-token --ws-token-sha256 "$AIFY_CODEX_APP_SERVER_TOKEN_SHA256")
+
+# The app-server's port and log, below the check block.
 PORT="$(pick_port)"
 if [ -z "$PORT" ]; then
   echo "Failed to allocate a local port for codex app-server." >&2
@@ -608,9 +671,9 @@ if [ "$CODEX_AIFY_SHARED" != true ]; then
   trap 'aify_lifetime_release; aify_lease_release' EXIT
 fi
 if command -v setsid >/dev/null 2>&1; then
-  setsid codex "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_HERDR_HOOKS[@]}" "${CODEX_APP_SERVER_CONFIG[@]}" app-server --listen "$APP_SERVER_URL" </dev/null >>"$LOG_FILE" 2>&1 &
+  setsid codex "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_HERDR_HOOKS[@]}" "${CODEX_APP_SERVER_CONFIG[@]}" app-server --listen "$APP_SERVER_URL" "${CODEX_APP_SERVER_AUTH[@]}" </dev/null >>"$LOG_FILE" 2>&1 &
 else
-  codex "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_HERDR_HOOKS[@]}" "${CODEX_APP_SERVER_CONFIG[@]}" app-server --listen "$APP_SERVER_URL" </dev/null >>"$LOG_FILE" 2>&1 &
+  codex "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_HERDR_HOOKS[@]}" "${CODEX_APP_SERVER_CONFIG[@]}" app-server --listen "$APP_SERVER_URL" "${CODEX_APP_SERVER_AUTH[@]}" </dev/null >>"$LOG_FILE" 2>&1 &
 fi
 APP_SERVER_PID=$!
 RUNTIME_PID=""
@@ -665,7 +728,16 @@ run_codex_foreground() {
   return "$status"
 }
 
-if ! wait_for_port "$PORT"; then
+if ! wait_for_port "$PORT" "$APP_SERVER_PID"; then
+  # Match a real argument-rejection line, never a generic error that merely mentions an auth flag.
+  for _aify_auth_flag in "${CODEX_APP_SERVER_AUTH[@]}"; do
+    case "$_aify_auth_flag" in --*)
+      if tail -n 8 "$LOG_FILE" 2>/dev/null | grep -Fxq -- "error: unexpected argument '$_aify_auth_flag' found"; then
+        echo "codex-aify: this Codex does not support app-server auth (qualified codex-cli 0.166.0); rejected $_aify_auth_flag." >&2
+        exit "$HARNESS_EXIT_CONFIG"
+      fi ;;
+    esac
+  done
   echo "codex-aify could not reach the local app-server at $APP_SERVER_URL." >&2
   echo "Check $LOG_FILE for details." >&2
   exit 1
@@ -723,7 +795,7 @@ fi
 # session on the far side. What changes is WHERE it resumes.
 if [ -n "${CODEX_RESUME_HANDLE:-}" ] && [ "$CODEX_AIFY_SHARED" != true ]; then
   if [ -n "$CODEX_SESSION_FOUND" ]; then
-    run_codex_foreground --remote "$APP_SERVER_URL" "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_ARGS[@]}" resume --include-non-interactive "$CODEX_RESUME_HANDLE"
+    run_codex_foreground --remote "$APP_SERVER_URL" --remote-auth-token-env AIFY_CODEX_APP_SERVER_TOKEN "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_ARGS[@]}" resume --include-non-interactive "$CODEX_RESUME_HANDLE"
     exit $?
   else
     echo "[codex-aify] saved session $CODEX_RESUME_HANDLE not found in codex storage; starting fresh codex" >&2
@@ -747,8 +819,10 @@ if [ "$CODEX_AIFY_SHARED" = true ]; then
   aify_shared_drop_inferred_mode
   cleanup
   trap - EXIT INT TERM HUP
+  # Only handoff outlives this shell: never give the host the superseded capability or verifier.
+  unset AIFY_CODEX_APP_SERVER_TOKEN AIFY_CODEX_REMOTE_AUTH_TOKEN_ENV AIFY_CODEX_APP_SERVER_TOKEN_SHA256 _aify_auth_material
   aify_shared_handoff "@@SERVICE_NAME@@" "$0" "${CODEX_AIFY_AGENT_ID:-}" "${CODEX_AIFY_PASSTHRU[@]}"
 fi
 
-run_codex_foreground --remote "$APP_SERVER_URL" "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_ARGS[@]}"
+run_codex_foreground --remote "$APP_SERVER_URL" --remote-auth-token-env AIFY_CODEX_APP_SERVER_TOKEN "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_ARGS[@]}"
 exit $?

@@ -45,8 +45,9 @@ inference. A nested launch drops another session's identity/context by the inher
 
 Wrapper-selected bypass is reported separately from final native permissions. The unattended defaults are
 unchanged; `--safe` is not a guarantee about a runtime's own config or an explicitly forwarded bypass argument.
-The current Codex loopback app-server security issue is not solved merely by documenting this contract; native
-auth advertising/enforcement, TUI attach and resident delivery require their separately qualified change.
+Codex requires a per-launch app-server capability and a name-only inherited pointer for its TUI/service consumers;
+[the Codex authentication contract](codex-app-server-auth.md) names the fields, exposure and qualification limits.
+Native TUI attach, resident delivery and installed adoption remain separate from source/stub qualification.
 
 ## Check, exits and lifetime
 

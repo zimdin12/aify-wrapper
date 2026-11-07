@@ -146,7 +146,7 @@ function wrapper(client, { bridge, wrapperDir }) {
     region("AIFY_RUNTIME_RUNNING=0\n_aify_runtime_exited()", "# The lease is claimed by the run");
     region('if [ "$CLAUDE_AIFY_SHARED" = true ]; then', null);
   } else if (client === "codex") {
-    region('fi\n\nif [ "$CODEX_AIFY_SHARED" != true ]; then\n', 'if ! wait_for_port "$PORT"; then');
+    region('fi\n\nif [ "$CODEX_AIFY_SHARED" != true ]; then\n', 'if ! wait_for_port "$PORT" "$APP_SERVER_PID"; then');
     region('\nrun_codex_foreground --remote', null);
   } else {
     region('if [ -n "$HERMES_AIFY_AGENT_ID" ] &&', "  # Per-agent TUI active-session file:");

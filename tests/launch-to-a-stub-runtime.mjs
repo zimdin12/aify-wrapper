@@ -58,7 +58,7 @@ function runtimeStub(node) {
     '  printf "%s\\0" "$@" > "$STUB_RUNTIME_ENV.app-server"',
     '  env > "$STUB_RUNTIME_ENV.app-server-env"',
     '  url=""; prev=""; for b in "$@"; do [ "$prev" = "--listen" ] && url="$b"; prev="$b"; done',
-    `  exec "${node}" -e 'require("net").createServer(s => s.end()).listen(Number(process.argv[1].split(":").pop()), "127.0.0.1")' "$url"`,
+    `  exec "${node}" -e 'require("net").createServer(s => { s.on("error", () => {}); s.end(); }).listen(Number(process.argv[1].split(":").pop()), "127.0.0.1")' "$url"`,
     "fi; done",
     'env > "$STUB_RUNTIME_ENV"',
     'printf "%s\\n" "$@" > "$STUB_RUNTIME_ENV.args"',

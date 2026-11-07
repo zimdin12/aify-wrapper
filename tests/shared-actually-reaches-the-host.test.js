@@ -95,7 +95,7 @@ function world() {
   fs.writeFileSync(path.join(bin, "app-server-stub.mjs"), [
     'import net from "node:net";',
     'const port = Number(String(process.argv[2] || "").split(":").pop());',
-    'net.createServer().listen(port, "127.0.0.1");',
+    'net.createServer(s => { s.on("error", () => {}); s.end(); }).listen(port, "127.0.0.1");',
     "setInterval(() => {}, 1e9);",
     "",
   ].join(LF));

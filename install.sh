@@ -298,13 +298,13 @@ fi
 # the pending hermes config step (bin/aify-hermes-pending-config.mjs), without which a recorded change is never applied.
 # Input validation and launcher common functions are required too: missing ones refuse rather than lose behavior.
 if [ -z "$RENDER_ONLY" ]; then
-  for _helper in aify-herdr-launch.sh aify-node-22.sh aify-hermes-pending-config.mjs aify-input-boundary.sh aify-launcher-common.sh; do
+  for _helper in bin/aify-herdr-launch.sh bin/aify-node-22.sh bin/aify-hermes-pending-config.mjs bin/aify-input-boundary.sh bin/aify-launcher-common.sh lib/codex-app-server-auth.mjs; do
     _needing=()
     for _client in "${CLIENTS[@]}"; do
-      if grep -q "bin/$_helper" "$HERE/wrappers/$_client-aify.sh.in" 2>/dev/null; then _needing+=("$_client"); fi
+      if grep -q "$_helper" "$HERE/wrappers/$_client-aify.sh.in" 2>/dev/null; then _needing+=("$_client"); fi
     done
-    if [ "${#_needing[@]}" -gt 0 ] && [ ! -f "$WRAPPER_DIR/bin/$_helper" ]; then
-      echo "install.sh: $WRAPPER_DIR has no bin/$_helper, which the ${_needing[*]} launcher sources." >&2
+    if [ "${#_needing[@]}" -gt 0 ] && [ ! -f "$WRAPPER_DIR/$_helper" ]; then
+      echo "install.sh: $WRAPPER_DIR has no $_helper, which the ${_needing[*]} launcher sources." >&2
       echo "            Point --wrapper-dir at an installed aify-wrapper, or leave it out to use this one." >&2
       exit "$EXIT_CONFIG"
     fi
