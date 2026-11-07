@@ -18,8 +18,7 @@ const INSTALL = fileURLToPath(new URL("../install.sh", import.meta.url));
 const posix = (p) => p.split(String.fromCharCode(92)).join("/");
 const tmp = (name) => fs.mkdtempSync(path.join(os.tmpdir(), `aify-${name}-`));
 
-function install({ wrapper, client = "claude", env = {} } = {}) {
-  const dest = tmp("reader-dest");
+function install({ wrapper, client = "claude", env = {}, dest = tmp("reader-dest") } = {}) {
   const run = spawnSync("bash", [INSTALL, "--client", client, "--endpoint", "http://127.0.0.1:1", "--dest", posix(dest),
     "--bridge-dir", posix(tmp("bridge-without-the-wrapper")), ...(wrapper ? ["--wrapper-dir", posix(wrapper)] : []),
     "--registry", posix(path.join(tmp("reader-reg"), "services.json"))],
@@ -39,7 +38,7 @@ test("a bridge that holds nothing of aify-wrapper: the launcher is written, find
 function wrapperWith(name, files) {
   const wrapper = tmp(name);
   fs.mkdirSync(path.join(wrapper, "bin"), { recursive: true });
-  for (const file of ["aify-input-boundary.sh", ...files]) fs.writeFileSync(path.join(wrapper, "bin", file), "");
+  for (const file of ["aify-input-boundary.sh", "aify-launcher-common.sh", ...files]) fs.writeFileSync(path.join(wrapper, "bin", file), "");
   return wrapper;
 }
 
@@ -94,6 +93,22 @@ for (const client of ["claude", "codex", "hermes", "pi"]) test(`${client}: missi
   assert.match(run.stderr, /has no bin\/aify-input-boundary\.sh/);
   assert.equal(fs.existsSync(marker), false, "missing validator must refuse before a Node child");
   assert.deepEqual(written, [], "missing validator must not install an unusable launcher");
+});
+
+// New common-function prerequisite: all four installable clients refuse before Node or target replacement.
+for (const client of ["claude", "codex", "hermes", "pi"]) test(`${client}: missing launcher common helper preserves the target before any Node child`, () => {
+  const wrapper = wrapperWith("wrapper-without-common", ["aify-definition.mjs", "aify-definition.sh", ...SILENT_HELPERS, "aify-hermes-pending-config.mjs"]);
+  fs.unlinkSync(path.join(wrapper, "bin", "aify-launcher-common.sh"));
+  const dest = tmp("common-existing-target"), target = path.join(dest, `${client}-aify`), before = Buffer.from("owned prior launcher bytes");
+  fs.writeFileSync(target, before);
+  const stubs = tmp("common-node-tripwire"), marker = path.join(stubs, "unexpected"), positive = path.join(stubs, "positive");
+  fs.writeFileSync(path.join(stubs, "node"), '#!/bin/bash\nprintf called > "$COMMON_NODE_MARKER"\nexit 91\n', { mode: 0o755 });
+  const PATH = stubs + path.delimiter + process.env.PATH;
+  const control = spawnSync("bash", ["-c", "node"], { env: { ...process.env, PATH, COMMON_NODE_MARKER: posix(positive) }, encoding: "utf8" });
+  assert.equal(control.status, 91, control.stderr);assert.equal(fs.readFileSync(positive, "utf8"), "called");
+  const { run, written } = install({ wrapper, client, dest, env: { PATH, COMMON_NODE_MARKER: posix(marker) } });
+  assert.deepEqual({ status: run.status, named: /has no bin\/aify-launcher-common\.sh/.test(run.stderr), nodeCalled: fs.existsSync(marker), target: fs.readFileSync(target), written },
+    { status: 78, named: true, nodeCalled: false, target: before, written: [`${client}-aify`] }, 'common prerequisite refuses before Node or target mutation');
 });
 
 test("a launcher that reads no definition is written without the reader (pi; review of 0.8.2)", () => {

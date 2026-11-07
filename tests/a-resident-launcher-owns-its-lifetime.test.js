@@ -124,10 +124,11 @@ function wrapper(client, { bridge, wrapperDir }) {
   }
   region('AIFY_BRIDGE_DIR_FWD="@@BRIDGE_DIR@@"', "# ── Herdr:");
   region('HARNESS_IDENTITY="', 'HARNESS_CWD="');
+  region('HARNESS_EXTRA_ENV="${HARNESS_EXTRA_ENV:-}"', '\n');
+  // Keep the real common-loader region and its input initializer in source order, not invented readiness state.
+  if (client === "claude") region("# ── The agent's definition (P0 C9)", "# Host-supplied environment");
+  region('AIFY_LAUNCHER_COMMON_SH="', '\n\n');
   if (client === "claude") {
-    // Where `aify_place_instructions`, called on the way to the runtime, is defined; the fixture holds no reader, so
-    // the launcher's own fallback defines it.
-    region("# ── The agent's definition (P0 C9)", "# Host-supplied environment");
     region('CLAUDE_RESUME_ID="${CLAUDE_SESSION_ID:-}"', "# Role, model and effort for the id known now");
     region('export AIFY_RUNTIME="claude-code"', "# Expose the aify service URL");
   } else if (client === "codex") {
@@ -206,7 +207,7 @@ EPOCHREALTIME=1780000000.123456
 function fixture(home) {
   const bridge = path.join(home, "bridge"), wrapperDir = path.join(home, "wrapper"), bin = path.join(wrapperDir, "bin");
   fs.mkdirSync(bin, { recursive: true });
-  for (const name of ["aify-lease.sh", "aify-lifetime.sh", "aify-inherited-session.sh", "aify-resident-record.mjs"])
+  for (const name of ["aify-lease.sh", "aify-lifetime.sh", "aify-inherited-session.sh", "aify-resident-record.mjs", "aify-launcher-common.sh"])
     fs.copyFileSync(path.join(root, "bin", name), path.join(bin, name));
   return { bridge: bridge.replaceAll("\\", "/"), wrapperDir: wrapperDir.replaceAll("\\", "/"), bin };
 }

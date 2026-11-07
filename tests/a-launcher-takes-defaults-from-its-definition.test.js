@@ -233,7 +233,7 @@ test("CLAUDE: the instructions are written below the claim and the --shared hand
   const text = fs.readFileSync(path.join(ROOT, "wrappers", "claude-aify.sh.in"), "utf8");
   const at = (needle) => { const i = text.indexOf(needle); assert.ok(i >= 0, needle); return i; };
   const placed = at('\naify_place_instructions "${CLAUDE_AIFY_AGENT_ID:-}"');
-  assert.ok(at("  aify_lease_claim ") < placed && at("  exec aify-env run ") < placed && placed < at("\nclaude "), "placed above the claim or the handoff");
+  assert.ok(at("  aify_lease_claim ") < placed && at("  aify_shared_handoff ") < placed && placed < at("\nclaude "), "placed above the claim or the handoff");
 });
 
 test("CLAUDE: --check says whether the definition holds instructions, and writes none", () => withLauncher("claude", (setup) => {

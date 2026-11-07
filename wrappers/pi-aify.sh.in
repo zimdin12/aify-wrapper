@@ -101,25 +101,14 @@ HARNESS_EXTRA_ENV="${HARNESS_EXTRA_ENV:-}"
 HARNESS_EXIT_CONFIG=78
 HARNESS_EXIT_NO_RUNTIME=127
 
-if [ -n "$HARNESS_EXTRA_ENV" ]; then
-  while IFS= read -r _pair; do
-    case "$_pair" in
-      ""|"#"*) continue ;;
-      *=*)
-        # AIFY_ AND HARNESS_ ARE AIFY'S OWN, in any case (Windows hands a child its environment without
-        # regard to case). This runs after the definition was read, so a line here could otherwise set the
-        # model, the mode or the launcher's own controls that a definition may not (external review of 0.8.1).
-        # MATCHED BY THE GLOB, NOT CONVERTED BY A COMMAND: `tr` missing from PATH made the conversion
-        # empty and the line was exported (review of 0.8.2). A glob needs nothing outside the shell.
-        case "${_pair%%=*}" in
-          [Aa][Ii][Ff][Yy]_*|[Hh][Aa][Rr][Nn][Ee][Ss][Ss]_*) echo "${0##*/}: HARNESS_EXTRA_ENV may not set ${_pair%%=*}, which aify owns; skipped" >&2 ;;
-          *) export "${_pair%%=*}=${_pair#*=}" ;;
-        esac ;;
-    esac
-  done <<HARNESS_ENV_EOF
-$HARNESS_EXTRA_ENV
-HARNESS_ENV_EOF
+AIFY_LAUNCHER_COMMON_SH="$AIFY_WRAPPER_DIR_FWD/bin/aify-launcher-common.sh"
+AIFY_LAUNCHER_COMMON_READY=false
+aify_extra_env_apply() { :; }
+if [ -r "$AIFY_LAUNCHER_COMMON_SH" ]; then
+  . "$AIFY_LAUNCHER_COMMON_SH"
+  AIFY_LAUNCHER_COMMON_READY=true
 fi
+aify_extra_env_apply "$HARNESS_EXTRA_ENV"
 
 # `-` not `:-` above: an explicitly emptied endpoint is a configuration error, not an unset one.
 if [ -z "$HARNESS_ENDPOINT" ]; then
@@ -228,6 +217,12 @@ for ARG in "$@"; do
   fi
   PREV_ARG="$ARG"
 done
+# Missing common functionality refuses only a real launch that needs it, after the existing parser.
+if [ "$AIFY_LAUNCHER_COMMON_READY" != true ] && [ "$HARNESS_CHECK" != true ] \
+  && { [ -n "$HARNESS_EXTRA_ENV" ] || [ "$PI_AIFY_SHARED" = true ]; }; then
+  echo "${0##*/}: missing launcher common helper $AIFY_LAUNCHER_COMMON_SH; extra env and --shared cannot be applied." >&2
+  exit "$HARNESS_EXIT_CONFIG"
+fi
 
 # A MANAGED LAUNCH IS ADDRESSED TO ONE AGENT. The service writes AIFY_MANAGED_* beside AIFY_AGENT_ID for the
 # agent it launches, and every process that agent starts inherits them, so a *-aify started from inside its
@@ -374,6 +369,7 @@ if [ "$PI_AUTO" = true ]; then
 fi
 
 if [ "${HARNESS_CHECK:-false}" = true ]; then
+  [ "$AIFY_LAUNCHER_COMMON_READY" = true ] || echo "  missing helper: $AIFY_LAUNCHER_COMMON_SH"
   echo "pi-aify $HARNESS_WRAPPER_VERSION"
   echo "  runtime   : $HARNESS_WRAPPER_RUNTIME ($(command -v "$PI_RUNTIME_COMMAND"))"
   echo "  wrapper-selected permissions: flag=${PI_PERMISSION_FLAGS[*]:-<none>}; source=$PI_PERMISSION_SOURCE; not final runtime permissions"
@@ -402,19 +398,9 @@ fi
 # BELOW EVERYTHING, so an ordinary run reaches the launch having executed not one instruction of
 # this. The operator's constraint on the feature is that the default path is unchanged.
 if [ "$PI_AIFY_SHARED" = true ]; then
-  if ! command -v aify-env >/dev/null 2>&1; then
-    # `${0##*/}` rather than a hardcoded name: this block is shared by all four wrappers, and a
-    # message naming one launcher is how the copy in another starts lying about itself.
-    echo "${0##*/}: --shared needs aify-env on PATH; it is the tier that would own the session." >&2
-    echo "  Install it, or run without --shared to start in this terminal as usual." >&2
-    exit 69
-  fi
-  # AN INFERRED SESSION MODE DOES NOT CROSS THIS BOUNDARY (R9-M10). It was resolved from THIS
-  # process's stdin, and the host will run the launcher in a PTY where the answer differs. Dropping
-  # it lets the relaunched wrapper infer from the terminal it actually gets; an explicit --resident,
-  # --managed or AIFY_SESSION_MODE is left alone and still travels.
-  [ "${AIFY_SESSION_MODE_INFERRED:-0}" = 1 ] && unset AIFY_SESSION_MODE
-  exec aify-env run --service "@@SERVICE_NAME@@" --launcher "$0" --label "${PI_AIFY_AGENT_ID:-}" -- "${PI_AIFY_PASSTHRU[@]}"
+  aify_shared_require_host || exit $?
+  aify_shared_drop_inferred_mode
+  aify_shared_handoff "@@SERVICE_NAME@@" "$0" "${PI_AIFY_AGENT_ID:-}" "${PI_AIFY_PASSTHRU[@]}"
 fi
 
 # pi replaces this shell, so nothing releases the lease; the next claim finds the instance gone.

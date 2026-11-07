@@ -32,6 +32,7 @@ import { emptyRegistry } from "./sealed-registry.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INSTALL = path.join(ROOT, "install.sh");
+const COMMON = fs.readFileSync(path.join(ROOT, "bin", "aify-launcher-common.sh"), "utf8");
 const posix = (p) => p.split(String.fromCharCode(92)).join("/");
 
 /** Every launcher this repo renders, by name. DERIVED from the templates rather than listed, so a
@@ -71,6 +72,7 @@ function renderClaude() {
 
 /** Executable lines only: this feature is heavily commented, and a comment is not wiring. */
 const code = (text) => text.split("\n").filter((line) => !/^\s*#/.test(line)).join("\n");
+const sharedStart = (text) => text.search(/^if \[ "\$[A-Z]+_AIFY_SHARED" = true \]; then$/m);
 
 test("THE DEFAULT PATH STILL ENDS EXACTLY AS IT DID", () => {
   // The operator's constraint. If this line ever changes shape, an ordinary resident session is no
@@ -109,10 +111,10 @@ test("the shared branch sits BELOW everything, so a normal run never enters it",
 
 test("IT ASKS THE HOST TO RUN THIS WRAPPER, not a rebuilt command", () => {
   const claude = code(renderClaude());
-  assert.match(claude, /exec aify-env run/, "the branch does not hand the session to the host tier");
-  assert.match(claude, /--launcher "\$0"/,
+  assert.match(claude, /aify_shared_handoff/, "the branch does not hand the session to the host tier");
+  assert.match(claude, /aify_shared_handoff "[^"]+" "\$0"/,
     "the request names something other than this wrapper, so what runs is a guess at what would have");
-  assert.match(claude, /--service "aify-comms"/, "the service is not carried, and the host requires an owner");
+  assert.match(claude, /aify_shared_handoff "aify-comms"/, "the service is not carried, and the host requires an owner");
 });
 
 test("the flag is stripped from what the host re-runs", () => {
@@ -122,7 +124,7 @@ test("the flag is stripped from what the host re-runs", () => {
   const claude = code(renderClaude());
   assert.match(claude, /for _ORIGINAL in "\$@"; do/, "the passthrough is not built from the original argv");
   assert.match(claude, /\[ "\$_ORIGINAL" = "--shared" \] \|\| CLAUDE_AIFY_PASSTHRU\+=\("\$_ORIGINAL"\)/);
-  assert.match(claude, /-- "\$\{CLAUDE_AIFY_PASSTHRU\[@\]\}"/, "the host is handed something other than the original args");
+  assert.match(claude, / "\$\{CLAUDE_AIFY_PASSTHRU\[@\]\}"/, "the host is handed something other than the original args");
 });
 
 test("EXACTLY --shared, so a neighbouring flag is somebody else's", () => {
@@ -137,8 +139,9 @@ test("a missing aify-env is REFUSED, not silently ignored", () => {
   // Falling through to an ordinary start would be the worst outcome: the operator asked for a
   // session that survives their terminal, got one that does not, and nothing said so.
   const claude = code(renderClaude());
-  assert.match(claude, /command -v aify-env/, "nothing checks that the host tier is present");
-  assert.match(claude, /exit 69/, "a missing host tier does not fail the run");
+  assert.match(claude, /aify_shared_require_host \|\| exit \$\?/, "caller does not propagate the host refusal");
+  assert.match(code(COMMON), /command -v aify-env/, "common owner does not check the host tier");
+  assert.match(code(COMMON), /return 69/, "missing host tier no longer refuses");
 });
 
 test("the shared branch names no runtime of its own", () => {
@@ -146,7 +149,7 @@ test("the shared branch names no runtime of its own", () => {
   // template's own substitutions carry the service, and `$0` carries the launcher.
   const claude = renderClaude();
   // To the branch's own closing `fi`: the launch path below it names claude, and that is not the branch.
-  const start = claude.indexOf("CLAUDE_AIFY_SHARED\" = true");
+  const start = sharedStart(claude);
   const branch = claude.slice(start, claude.indexOf("\nfi\n", start));
   assert.ok(!/\bclaude\b/.test(code(branch)),
     "the shared branch names claude, so it cannot be copied to the other three wrappers as-is");
@@ -162,7 +165,7 @@ test("EVERY LAUNCHER OFFERS --shared", () => {
   const rendered = renderAll();
   assert.ok(LAUNCHERS.length >= 4, `only ${LAUNCHERS.length} launcher(s) found; the scan is not reaching them`);
   for (const [name, text] of Object.entries(rendered)) {
-    assert.match(code(text), /exec aify-env run/, `${name} cannot hand its session to the host tier`);
+    assert.match(code(text), /aify_shared_handoff/, `${name} cannot hand its session to the host tier`);
   }
 });
 
@@ -173,9 +176,9 @@ test("THE PASSTHROUGH IS EXPANDED, not named", () => {
   // instead of everything the operator typed. A wrong expansion is silent in exactly the way a
   // missing one is not.
   for (const [name, text] of Object.entries(renderAll())) {
-    const exec = code(text).split("\n").find((line) => line.includes("exec aify-env run"));
+    const exec = code(text).split("\n").find((line) => line.includes("aify_shared_handoff "));
     assert.ok(exec, `${name} has no exec line`);
-    assert.match(exec, /-- "\$\{[A-Z]+_AIFY_PASSTHRU\[@\]\}"$/,
+    assert.match(exec, / "\$\{[A-Z]+_AIFY_PASSTHRU\[@\]\}"$/,
       `${name} passes something other than its own expanded passthrough array: ${exec}`);
   }
 });
@@ -201,7 +204,7 @@ test("no launcher names another launcher's runtime in the block", () => {
   // A message hardcoding one name is how a copy starts lying about itself: `codex-aify` announcing
   // that "claude-aify needs aify-env on PATH" sends the reader to the wrong file.
   for (const [name, text] of Object.entries(renderAll())) {
-    const start = text.indexOf("_AIFY_SHARED\" = true");
+    const start = sharedStart(text);
     if (start < 0) continue;
     const block = code(text.slice(start, start + 900));
     for (const other of ["claude-aify", "codex-aify", "hermes-aify", "pi-aify"]) {
@@ -243,12 +246,12 @@ test("EVERY RENDERED LAUNCHER HANDS THE SESSION TO THE HOST THE SAME WAY", () =>
 
   for (const [name, text] of Object.entries(rendered)) {
     const body = code(text);
-    assert.match(body, /exec aify-env run/, `${name}: does not hand the session to the host tier`);
-    assert.match(body, /--launcher "\$0"/,
+    assert.match(body, /aify_shared_handoff/, `${name}: does not hand the session to the host tier`);
+    assert.match(body, /aify_shared_handoff "[^"]+" "\$0"/,
       `${name}: hands the host something other than THIS wrapper — the host would start the wrong `
       + "runtime, or refuse it for carrying no wrapper marker");
-    assert.match(body, /--service "aify-comms"/, `${name}: carries no service, and the host needs an owner`);
-    assert.match(body, /-- "\$\{[A-Z]+_AIFY_PASSTHRU\[@\]\}"/,
+    assert.match(body, /aify_shared_handoff "aify-comms"/, `${name}: carries no service, and the host needs an owner`);
+    assert.match(body, / "\$\{[A-Z]+_AIFY_PASSTHRU\[@\]\}"/,
       `${name}: hands the host something other than the original arguments`);
     // EXACTLY THIS WORD, which claude's template calls out as a decision and only claude's tests
     // enforced. A glob would swallow `--shared-anything`, which belongs to whoever reads it, and
@@ -267,13 +270,11 @@ test("THE REFUSAL EXISTS AND NAMES ITSELF FROM $0", () => {
   //
   // It also skips any launcher missing the block entirely (`if (start < 0) continue`); a lost block
   // is caught by "EVERY RENDERED LAUNCHER HANDS THE SESSION TO THE HOST THE SAME WAY" above.
+  const line = code(COMMON).split(String.fromCharCode(10)).find((text) => text.includes("needs aify-env on PATH"));
+  assert.ok(line, "common owner's PATH refusal is missing entirely");
+  assert.match(line, /\$\{0##\*\/\}/, "common refusal must name its caller, not a literal runtime");
   for (const [name, text] of Object.entries(renderAll())) {
-    const line = code(text).split(String.fromCharCode(10))
-      .find((l) => l.includes("needs aify-env on PATH"));
-    assert.ok(line, `${name}: the PATH refusal is missing entirely`);
-    assert.match(line, /\$\{0##\*\/\}/,
-      `${name}: the refusal hardcodes a name instead of taking it from $0, so a copy of this block ` +
-      "into the next wrapper would introduce it as this one");
+    assert.match(code(text), /aify_shared_require_host \|\| exit \$\?/, `${name}: the common refusal is not wired`);
   }
 });
 
@@ -284,8 +285,8 @@ test("EVERY TEMPLATE CARRIES THE BLOCK, including the one --all does not render"
   for (const name of LAUNCHERS) {
     const template = fs.readFileSync(path.join(ROOT, "wrappers", `${name}.sh.in`), "utf8");
     const body = code(template);
-    assert.match(body, /exec aify-env run/, `${name}.sh.in: no shared branch`);
-    assert.match(body, /--launcher "\$0"/, `${name}.sh.in: hands the host the wrong launcher`);
+    assert.match(body, /aify_shared_handoff/, `${name}.sh.in: no shared branch`);
+    assert.match(body, /aify_shared_handoff "[^"]+" "\$0"/, `${name}.sh.in: hands the host the wrong launcher`);
   }
 });
 
@@ -300,7 +301,7 @@ test("THE SHARED BRANCH SITS BELOW EVERYTHING, IN EVERY TEMPLATE", () => {
   // Actual shared-exec tests above prove no local runtime is started; this count only detects source drift.
   for (const name of LAUNCHERS) {
     const lines = fs.readFileSync(path.join(ROOT, "wrappers", `${name}.sh.in`), "utf8").split("\n");
-    const at = lines.findIndex((l) => /_AIFY_SHARED" = true/.test(l));
+    const at = lines.findIndex((l) => /^if \[ "\$[A-Z]+_AIFY_SHARED" = true \]; then$/.test(l));
     assert.ok(at > 0, `${name}.sh.in: no shared branch to place`);
     const end = lines.findIndex((l, i) => i > at && /^fi\s*$/.test(l));
     assert.ok(end > at, `${name}.sh.in: the shared branch has no closing fi at column 0`);
@@ -330,7 +331,7 @@ test("EVERY TEMPLATE THAT TRAPS ALSO CLEANS UP BEFORE HANDING OVER", () => {
   for (const name of LAUNCHERS) {
     const text = fs.readFileSync(path.join(ROOT, "wrappers", `${name}.sh.in`), "utf8");
     const lines = text.split("\n");
-    const execAt = lines.findIndex((l) => l.trim().startsWith("exec aify-env run"));
+    const execAt = lines.findIndex((l) => l.trim().startsWith("aify_shared_handoff "));
     if (execAt < 0) { offenders.push(`${name}: no shared exec at all`); continue; }
     // A TRAP AT TOP LEVEL is one the exec would skip. An INDENTED trap is armed inside a branch,
     // and a branch the shared path does not take arms nothing -- hermes is exactly that shape: its

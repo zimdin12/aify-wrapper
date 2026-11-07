@@ -175,25 +175,14 @@ fi
 
 # Host-supplied environment, exported verbatim before launch. Malformed lines are skipped rather than
 # fatal: a config file with a trailing newline must not stop an agent starting.
-if [ -n "$HARNESS_EXTRA_ENV" ]; then
-  while IFS= read -r _pair; do
-    case "$_pair" in
-      ""|"#"*) continue ;;
-      *=*)
-        # AIFY_ AND HARNESS_ ARE AIFY'S OWN, in any case (Windows hands a child its environment without
-        # regard to case). This runs after the definition was read, so a line here could otherwise set the
-        # model, the mode or the launcher's own controls that a definition may not (external review of 0.8.1).
-        # MATCHED BY THE GLOB, NOT CONVERTED BY A COMMAND: `tr` missing from PATH made the conversion
-        # empty and the line was exported (review of 0.8.2). A glob needs nothing outside the shell.
-        case "${_pair%%=*}" in
-          [Aa][Ii][Ff][Yy]_*|[Hh][Aa][Rr][Nn][Ee][Ss][Ss]_*) echo "${0##*/}: HARNESS_EXTRA_ENV may not set ${_pair%%=*}, which aify owns; skipped" >&2 ;;
-          *) export "${_pair%%=*}=${_pair#*=}" ;;
-        esac ;;
-    esac
-  done <<HARNESS_ENV_EOF
-$HARNESS_EXTRA_ENV
-HARNESS_ENV_EOF
+AIFY_LAUNCHER_COMMON_SH="$AIFY_WRAPPER_DIR_FWD/bin/aify-launcher-common.sh"
+AIFY_LAUNCHER_COMMON_READY=false
+aify_extra_env_apply() { :; }
+if [ -r "$AIFY_LAUNCHER_COMMON_SH" ]; then
+  . "$AIFY_LAUNCHER_COMMON_SH"
+  AIFY_LAUNCHER_COMMON_READY=true
 fi
+aify_extra_env_apply "$HARNESS_EXTRA_ENV"
 
 # A LAUNCHER MUST NOT INHERIT ANOTHER SESSION'S CHILD MARKER.
 #
@@ -352,6 +341,12 @@ for ARG in "$@"; do
   CLAUDE_ARGS+=("$ARG")
   PREV_ARG="$ARG"
 done
+# Missing common functionality refuses only a real launch that needs it, after the existing parser.
+if [ "$AIFY_LAUNCHER_COMMON_READY" != true ] && [ "$HARNESS_CHECK" != true ] \
+  && { [ -n "$HARNESS_EXTRA_ENV" ] || [ "$CLAUDE_AIFY_SHARED" = true ]; }; then
+  echo "${0##*/}: missing launcher common helper $AIFY_LAUNCHER_COMMON_SH; extra env and --shared cannot be applied." >&2
+  exit "$HARNESS_EXIT_CONFIG"
+fi
 if [ "$CLAUDE_NEW_SESSION" = true ] && [ "$CLAUDE_SESSION_SELECTOR" = true ]; then
   echo "[claude-aify] --new-session conflicts with a native conversation selector; nothing was started." >&2
   exit 78
@@ -420,6 +415,7 @@ if ! command -v claude >/dev/null 2>&1; then
 fi
 
 if [ "$HARNESS_CHECK" = true ]; then
+  [ "$AIFY_LAUNCHER_COMMON_READY" = true ] || echo "  missing helper: $AIFY_LAUNCHER_COMMON_SH"
   echo "claude-aify $HARNESS_WRAPPER_VERSION"
   echo "  runtime   : $HARNESS_WRAPPER_RUNTIME ($(command -v claude))"
   if [ "$CLAUDE_AUTO" = true ]; then
@@ -949,32 +945,13 @@ fi
 # BELOW EVERYTHING, so an ordinary run reaches the line after it having executed not one instruction
 # of this. The operator's constraint on the feature is that the default path is unchanged.
 if [ "$CLAUDE_AIFY_SHARED" = true ]; then
-  if ! command -v aify-env >/dev/null 2>&1; then
-    # `${0##*/}` RATHER THAN THE NAME, so this block is copyable to the other three wrappers with no
-    # edit. A message that hardcodes one launcher's name is the reason a shared block stops being
-    # shared -- somebody copies it, forgets the string, and codex-aify starts calling itself claude.
-    echo "${0##*/}: --shared needs aify-env on PATH; it is the tier that would own the session." >&2
-    echo "  Install it, or run without --shared to start in this terminal as usual." >&2
-    exit 69
-  fi
-  # `$0` IS THIS WRAPPER, which is precisely what should be re-run. The label is the agent id when
-  # there is one, so the host lists the session under the name the operator thinks in.
-  # THE TRAP DOES NOT RUN ON A SUCCESSFUL `exec`, so the cleanup happens here or not at all.
-  # External review, Round 8 (LOW), and the same defect as codex's orphaned app-server: bash
-  # simply does not fire EXIT traps when the shell is replaced. Claude's trap removes two mktemp
-  # files, and in strict-MCP mode `AIFY_MCP_CONFIG` holds the DECODED credential -- so every
-  # `--shared` launch left a file containing the service key behind, for ever.
-  #
-  # The trapped command is reused rather than a second copy written beside it: one of the two
-  # would drift. Cleared afterwards so an INT between here and the exec cannot run it twice.
+  aify_shared_require_host || exit $?
+  # exec skips EXIT: remove Claude's two temp files and clear its trap BEFORE dropping inferred mode.
+  # Shared claims no lifetime; do not add model-selection finish or the runtime-exit/lifetime callbacks.
   rm -f "$AIFY_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null
   trap - EXIT
-  # AN INFERRED SESSION MODE DOES NOT CROSS THIS BOUNDARY (R9-M10). It was resolved from THIS
-  # process's stdin, and the host will run the launcher in a PTY where the answer differs. Dropping
-  # it lets the relaunched wrapper infer from the terminal it actually gets; an explicit --resident,
-  # --managed or AIFY_SESSION_MODE is left alone and still travels.
-  [ "${AIFY_SESSION_MODE_INFERRED:-0}" = 1 ] && unset AIFY_SESSION_MODE
-  exec aify-env run     --service "@@SERVICE_NAME@@"     --launcher "$0"     --label "${CLAUDE_AIFY_AGENT_ID:-}"     -- "${CLAUDE_AIFY_PASSTHRU[@]}"
+  aify_shared_drop_inferred_mode
+  aify_shared_handoff "@@SERVICE_NAME@@" "$0" "${CLAUDE_AIFY_AGENT_ID:-}" "${CLAUDE_AIFY_PASSTHRU[@]}"
 fi
 
 # THE AGENT'S INSTRUCTIONS (bin/aify-definition.sh), below the claim and the --shared handoff so only the start that

@@ -147,25 +147,14 @@ else
   }
 fi
 
-if [ -n "$HARNESS_EXTRA_ENV" ]; then
-  while IFS= read -r _pair; do
-    case "$_pair" in
-      ""|"#"*) continue ;;
-      *=*)
-        # AIFY_ AND HARNESS_ ARE AIFY'S OWN, in any case (Windows hands a child its environment without
-        # regard to case). This runs after the definition was read, so a line here could otherwise set the
-        # model, the mode or the launcher's own controls that a definition may not (external review of 0.8.1).
-        # MATCHED BY THE GLOB, NOT CONVERTED BY A COMMAND: `tr` missing from PATH made the conversion
-        # empty and the line was exported (review of 0.8.2). A glob needs nothing outside the shell.
-        case "${_pair%%=*}" in
-          [Aa][Ii][Ff][Yy]_*|[Hh][Aa][Rr][Nn][Ee][Ss][Ss]_*) echo "${0##*/}: HARNESS_EXTRA_ENV may not set ${_pair%%=*}, which aify owns; skipped" >&2 ;;
-          *) export "${_pair%%=*}=${_pair#*=}" ;;
-        esac ;;
-    esac
-  done <<HARNESS_ENV_EOF
-$HARNESS_EXTRA_ENV
-HARNESS_ENV_EOF
+AIFY_LAUNCHER_COMMON_SH="$AIFY_WRAPPER_DIR_FWD/bin/aify-launcher-common.sh"
+AIFY_LAUNCHER_COMMON_READY=false
+aify_extra_env_apply() { :; }
+if [ -r "$AIFY_LAUNCHER_COMMON_SH" ]; then
+  . "$AIFY_LAUNCHER_COMMON_SH"
+  AIFY_LAUNCHER_COMMON_READY=true
 fi
+aify_extra_env_apply "$HARNESS_EXTRA_ENV"
 
 # `-` not `:-` above: an explicitly emptied endpoint is a configuration error, not an unset one.
 if [ -z "$HARNESS_ENDPOINT" ]; then
@@ -341,6 +330,12 @@ for ARG in "$@"; do
   esac
   CODEX_ARGS+=("$ARG")
 done
+# Missing common functionality refuses only a real launch that needs it, after the existing parser.
+if [ "$AIFY_LAUNCHER_COMMON_READY" != true ] && [ "$HARNESS_CHECK" != true ] \
+  && { [ -n "$HARNESS_EXTRA_ENV" ] || [ "$CODEX_AIFY_SHARED" = true ]; }; then
+  echo "${0##*/}: missing launcher common helper $AIFY_LAUNCHER_COMMON_SH; extra env and --shared cannot be applied." >&2
+  exit "$HARNESS_EXIT_CONFIG"
+fi
 # A model or effort the operator gave codex itself (`-m`, `--model`, `-c model=...`,
 # `-c model_reasoning_effort=...`) is theirs: nothing below adds one beside it.
 CODEX_HAS_MODEL=false
@@ -412,6 +407,7 @@ codex_aify_defaults() {
 # reports what the argument loop resolved and exits before the service lookup and the app-server
 # launch, neither of which it may do; an id only a resume handle would name is therefore not shown.
 if [ "$HARNESS_CHECK" = true ]; then
+  [ "$AIFY_LAUNCHER_COMMON_READY" = true ] || echo "  missing helper: $AIFY_LAUNCHER_COMMON_SH"
   codex_aify_defaults
   echo "codex-aify $HARNESS_WRAPPER_VERSION"
   echo "  runtime   : $HARNESS_WRAPPER_RUNTIME ($(command -v codex))"
@@ -748,29 +744,12 @@ fi
 # BELOW EVERYTHING, so an ordinary run reaches the launch having executed not one instruction of
 # this. The operator's constraint on the feature is that the default path is unchanged.
 if [ "$CODEX_AIFY_SHARED" = true ]; then
-  if ! command -v aify-env >/dev/null 2>&1; then
-    # `${0##*/}` rather than a hardcoded name: this block is shared by all four wrappers, and a
-    # message naming one launcher is how the copy in another starts lying about itself.
-    echo "${0##*/}: --shared needs aify-env on PATH; it is the tier that would own the session." >&2
-    echo "  Install it, or run without --shared to start in this terminal as usual." >&2
-    exit 69
-  fi
-  # THE APP-SERVER THIS SHELL STARTED MUST DIE FIRST. External review, Round 8 M13: `cleanup` is
-  # trapped on EXIT, and bash does NOT run EXIT traps on a SUCCESSFUL exec -- so replacing this
-  # shell orphaned the app-server it had already started, on every `--shared` launch. It listens
-  # on a port, so the next launch picks a new one and the old process is left holding the first.
-  #
-  # The trapped function is CALLED rather than a second teardown written here: one of the two
-  # would drift, and this is the one that already knows about both children. The trap is then
-  # cleared so an INT arriving between here and the exec cannot run it twice.
-  # AN INFERRED SESSION MODE DOES NOT CROSS THIS BOUNDARY (R9-M10). It was resolved from THIS
-  # process's stdin, and the host will run the launcher in a PTY where the answer differs. Dropping
-  # it lets the relaunched wrapper infer from the terminal it actually gets; an explicit --resident,
-  # --managed or AIFY_SESSION_MODE is left alone and still travels.
-  [ "${AIFY_SESSION_MODE_INFERRED:-0}" = 1 ] && unset AIFY_SESSION_MODE
+  aify_shared_require_host || exit $?
+  # Keep Codex's order: drop inferred mode, stop its already-started children, then clear traps before exec.
+  aify_shared_drop_inferred_mode
   cleanup
   trap - EXIT INT TERM HUP
-  exec aify-env run --service "@@SERVICE_NAME@@" --launcher "$0" --label "${CODEX_AIFY_AGENT_ID:-}" -- "${CODEX_AIFY_PASSTHRU[@]}"
+  aify_shared_handoff "@@SERVICE_NAME@@" "$0" "${CODEX_AIFY_AGENT_ID:-}" "${CODEX_AIFY_PASSTHRU[@]}"
 fi
 
 run_codex_foreground --remote "$APP_SERVER_URL" "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_ARGS[@]}"

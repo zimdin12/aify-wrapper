@@ -292,15 +292,16 @@ test("NEGATIVE CONTROL: without --shared, a resume still runs locally", () => {
 // real PTY as a backing process with nobody at it.
 //
 // DERIVED OVER EVERY LAUNCHER, so a fifth wrapper is covered the day it lands rather than the day
-// somebody remembers. All four carry the same block by hand, which is exactly the shape that rots.
+// somebody remembers. The common helper owns the condition; every caller must invoke it before handoff.
 
 test("EVERY LAUNCHER DROPS AN INFERRED SESSION MODE BEFORE HANDING OVER", () => {
   const { rendered, dir } = world();
   const missing = [];
   for (const name of rendered) {
     const text = fs.readFileSync(path.join(dir, name), "utf8");
-    const shared = text.slice(text.indexOf("exec aify-env run") - 2000, text.indexOf("exec aify-env run"));
-    if (!/AIFY_SESSION_MODE_INFERRED/.test(shared)) missing.push(name);
+    const handoff = text.indexOf("aify_shared_handoff ");
+    const mode = text.lastIndexOf("aify_shared_drop_inferred_mode", handoff);
+    if (handoff < 0 || mode < 0 || mode > handoff) missing.push(name);
   }
   assert.deepEqual(missing, [],
     `${missing.join(", ")} hand an inferred session mode to the host. It was resolved from this `
@@ -308,6 +309,9 @@ test("EVERY LAUNCHER DROPS AN INFERRED SESSION MODE BEFORE HANDING OVER", () => 
 });
 
 test("...and an EXPLICIT session mode still travels", () => {
+  const common = fs.readFileSync(path.join(ROOT, "bin", "aify-launcher-common.sh"), "utf8");
+  assert.match(common, /if \[ "\$\{AIFY_SESSION_MODE_INFERRED:-0\}" = 1 \]; then unset AIFY_SESSION_MODE; fi/);
+  assert.doesNotMatch(common, /^\s*unset AIFY_SESSION_MODE\s*$/m, "common owner discards an explicit mode");
   // The control. Dropping the value outright would also discard `--managed`, which is a choice the
   // operator made and the host cannot re-derive.
   const { rendered, dir } = world();

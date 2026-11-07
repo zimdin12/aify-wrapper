@@ -425,6 +425,13 @@ install time, and `#|` lines that document the template and are stripped from th
 Render keys/values are validated before publication; runtime JSON scalars are checked at launch.
 Windows backslash paths are encoded for their context rather than broadly banned. See [input boundaries and refusal behavior](docs/INPUT-BOUNDARIES.md).
 
+The common extra-env filter and shared-host operations live in `bin/aify-launcher-common.sh`; its header
+is the v1 positional call contract. Rendered launchers source the installed package's live helper, so
+later helpers keep v1 or add v2 names. Cleanup stays in each launcher. A partial copy missing the helper
+still answers `--check` and names it, but real extra-env/shared use refuses78; an earlier independent
+missing-runtime refusal still wins. Normal installation rejects that partial wrapper directory;
+`--render-only` remains available for deliberate rendering without a complete runtime helper tree.
+
 | Placeholder | Supplied by |
 |---|---|
 | `@@ENDPOINT@@` | `--endpoint` |
