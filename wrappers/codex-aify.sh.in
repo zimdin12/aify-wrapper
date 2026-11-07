@@ -80,10 +80,8 @@ fi
 
 # ── The harness wrapper contract ────────────────────────────────────────────
 #
-# Same six inputs as claude-aify, same precedence, same reasons — see
-# docs/superpowers/specs/2026-08-19-harness-wrapper-contract.md and the fuller commentary in
-# wrappers/claude-aify.sh.in. Every input falls back to its legacy AIFY_* name, so with no HARNESS_*
-# set this resolves to exactly what the wrapper used before the contract existed.
+# Common host inputs, with Codex's usage and legacy fallbacks:
+# docs/contracts/harness-wrapper.md and the fuller commentary in wrappers/claude-aify.sh.in.
 #
 # RESOLVED AND CHECKED AT THE TOP, ahead of everything, because this wrapper's first act is to
 # allocate a port and start a background `codex app-server`. A validation placed after that would have

@@ -67,9 +67,8 @@ fi
 
 # ── The harness wrapper contract ────────────────────────────────────────────
 #
-# Same six inputs, same precedence, same reasons as claude-aify and codex-aify — see
-# docs/superpowers/specs/2026-08-19-harness-wrapper-contract.md. Every input falls back to its legacy
-# AIFY_* name, so with nothing set this resolves to what the wrapper used before the contract existed.
+# Common host inputs, with Pi's usage and legacy fallbacks:
+# docs/contracts/harness-wrapper.md.
 #
 # HARNESS_MCP_COMMAND is accepted and reported as unused, as in codex: this launcher writes no MCP
 # config. Pi is also the runtime whose RESIDENT wrapper is deliberately not installed — OMP is

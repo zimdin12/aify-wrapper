@@ -13,6 +13,19 @@
 
 set -euo pipefail
 
+# Canonical category data, read by the builtin installer helper and the JS reader too.
+# Literal only: this file must still work when copied alone beside a template.
+_aify_registry_pair_categories='
+# AIFY_REGISTRY_PAIR_CATEGORIES_BEGIN
+REGISTRY_FINGERPRINT recomputed
+STRICT_EXTRA_MCP_B64 recomputed
+SESSION_MCP_B64 recomputed
+SESSION_HTTP_B64 recomputed
+SESSION_MCP_CODEX_B64 client-specific
+MCP_TRANSPORT service-override
+# AIFY_REGISTRY_PAIR_CATEGORIES_END
+'
+
 # AN & IN A VALUE IS A LITERAL &, NOT THE MATCHED TEXT (R9-M12, external review 2026-09-06).
 #
 # bash 5.2 added `patsub_replacement`, ON BY DEFAULT, which makes an unquoted `&` in the replacement
@@ -158,10 +171,10 @@ staged="$target.render.$$"
   printf '%s\n' "$text" > "$staged"
 )
 
-# A LAUNCHER THAT CARRIES A SECRET STAYS PRIVATE. `keyEnv` values are baked in at render time -- the
-# MCP `env` block REPLACES the inherited environment for that server, so the value has to be in the
-# file -- and `chmod +x` under the usual umask makes that file 0755. Everyone on the host can then
-# read a service credential out of a launcher.
+# Conservative privacy for embedded MCP fragments, not a claim that keyEnv is baked here. The registry
+# parser refuses keyEnv with session injection; strictMcpSecretProblem refuses an exported strict-mode
+# key before rendering. HTTP credentials are resolved into private session files at launch. This content
+# check also covers direct render callers, whose supplied fragment need not have come from the registry.
 #
 # The check is on the CONTENT, not on a flag the caller passes, because the caller that bakes the
 # secret and the caller that sets the mode would otherwise be two places to keep in step. A rendered
@@ -214,8 +227,9 @@ record_render() {
     {
       printf '%s\0' "$sha" "$_aify_template_name" "TARGET=$native"
       for pair in "$@"; do
-        case "$pair" in
-          REGISTRY_FINGERPRINT=*|STRICT_EXTRA_MCP_B64=*|SESSION_MCP_B64=*|SESSION_HTTP_B64=*|SESSION_MCP_CODEX_B64=*) ;;
+        # Recomputed/client-specific values are rebuilt; a transport override stays recorded.
+        case "$_aify_registry_pair_categories" in
+          *$'\n'"${pair%%=*} recomputed"$'\n'*|*$'\n'"${pair%%=*} client-specific"$'\n'*) ;;
           *) printf '%s\0' "$pair" ;;
         esac
       done

@@ -1,4 +1,4 @@
-// This package declares its version in two files, and nothing checked they agree.
+// Package release declarations agree; the externally consumed Herdr declaration is reported separately.
 //
 // SPLIT-M1, external review round 7. aify-comms has carried a single-source version gate since
 // v0.2.0 -- `test_version_single_source.py` and `version-consistency.test.js` -- because four
@@ -17,8 +17,9 @@
 // claiming one version while the package that produced it claims another -- and the aify-comms
 // doctor's staleness checks read the launcher.
 //
-// DERIVED, NOT LISTED. The declarations are discovered from the files rather than enumerated, so a
-// third one added later cannot sit outside a gate that only knows about two.
+// Values are read from the actual release files, including the lock's own package entry. Herdr's
+// plugin version is an independent declaration until its external loader/version contract is verified;
+// reporting its drift does not authorize changing it or silently equate it with the npm release.
 
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -28,7 +29,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-/** Every file in this package that states its own version, and what each states. */
+/** Package release declarations, not an inventory of every external manifest's independent version. */
 function declarations() {
   const found = {};
   const versionFile = path.join(ROOT, "VERSION");
@@ -48,6 +49,23 @@ function declarations() {
 }
 
 const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+
+// This guards the previously unobserved declaration without assuming Herdr's loader uses package semver.
+const pluginVersion = (toml) => /^version\s*=\s*"([^"\r\n]+)"\s*$/m.exec(toml)?.[1] ?? null;
+
+test("Herdr's independent version is read and its drift reported, not rewritten on an unverified loader assumption", (t) => {
+  const manifest = fs.readFileSync(path.join(ROOT, "herdr-plugin/herdr-plugin.toml"), "utf8");
+  const plugin = pluginVersion(manifest), release = declarations().VERSION;
+  assert.equal(typeof plugin, "string", "Herdr plugin version declaration was not read");
+  assert.ok(plugin.length > 0);
+  t.diagnostic(`Herdr plugin version=${plugin}; package VERSION=${release}; ${plugin === release ? "aligned" : "DRIFT"}; retained pending verified external loader/version contract`);
+});
+
+test("the independent manifest reader distinguishes version from min_herdr_version and can report an absent field", () => {
+  assert.equal(pluginVersion('version = "0.8.0"\nmin_herdr_version = "0.9.0"'), "0.8.0");
+  assert.equal(pluginVersion('min_herdr_version = "0.9.0"'), null);
+  assert.equal(pluginVersion('version = "changed-independent-value"'), "changed-independent-value");
+});
 
 test("the scan finds the declarations that are definitely there", () => {
   // POSITIVE CONTROL. A scan that found nothing would make the agreement assertion vacuous -- it is

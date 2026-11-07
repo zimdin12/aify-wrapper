@@ -94,18 +94,16 @@ fi
 
 # ── The harness wrapper contract ────────────────────────────────────────────
 #
-# Six inputs a HOST supplies, named once here and used below. Spec:
-# docs/superpowers/specs/2026-08-19-harness-wrapper-contract.md.
+# Current host inputs, precedence and runtime-specific usage:
+# docs/contracts/harness-wrapper.md.
 #
 # HARNESS_MCP_COMMAND is the pivot of the whole thing: it is this launcher saying "point me at an
 # environment" without knowing which one. Everything else the wrapper does — resolve the CLI, export
 # an identity, forward argv — is already host-agnostic in shape; what tied it to one service was
 # knowing where that service's bridge lives.
 #
-# EVERY input falls back to the legacy AIFY_* name, and that is not politeness. A live fleet launches
-# through this wrapper and uses those names for every agent; a contract that required them all to
-# change would be a rewrite wearing a refactor's clothes. With no HARNESS_* set, this block resolves
-# to exactly the values the wrapper used before it existed.
+# Existing legacy names remain fallbacks where the input defines one. The contract distinguishes
+# those from optional inputs with no legacy counterpart, and describes strict/default MCP differences.
 #
 # Precedence, deliberate and tested: an explicit flag > HARNESS_* > legacy AIFY_* > the value baked in
 # at install time. The contract name beats the legacy one because it is the canonical one; an argument

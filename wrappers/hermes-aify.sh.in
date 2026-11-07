@@ -103,9 +103,8 @@ export HARNESS_REGISTRY_FINGERPRINT="$HARNESS_REGISTRY_FINGERPRINT"
 
 # ── The harness wrapper contract ────────────────────────────────────────────
 #
-# The same six inputs as the other three wrappers, with the same precedence and the same fallbacks to
-# the legacy AIFY_* names — see docs/superpowers/specs/2026-08-19-harness-wrapper-contract.md and the
-# fuller commentary in wrappers/claude-aify.sh.in.
+# Common host inputs, with Hermes' usage and legacy fallbacks:
+# docs/contracts/harness-wrapper.md and the fuller commentary in wrappers/claude-aify.sh.in.
 #
 # HARNESS_MCP_COMMAND is accepted and reported as unused: hermes loads its MCP servers through its own
 # config, patched at install time, not through anything this launcher writes.

@@ -228,12 +228,7 @@ install_one() {
       bash "$HERE/render.sh" "$client-aify.sh.in" "$target" \
         "ENDPOINT=$ENDPOINT" \
         "WRAPPER_VERSION=$VERSION" \
-        "REGISTRY_FINGERPRINT=$REGISTRY_FINGERPRINT" \
-        "STRICT_EXTRA_MCP_B64=$STRICT_EXTRA_MCP_B64" \
-        "SESSION_MCP_B64=$SESSION_MCP_B64" \
-        "SESSION_HTTP_B64=$SESSION_HTTP_B64" \
-        "SESSION_MCP_CODEX_B64=$SESSION_MCP_CODEX_B64" \
-        "MCP_TRANSPORT=$MCP_TRANSPORT" \
+        "${AIFY_REGISTRY_RENDER_PAIRS[@]}" \
         "SERVICE_NAME=$SERVICE_NAME" \
         "BRIDGE_DIR=$BRIDGE_DIR" \
         "WRAPPER_DIR=$WRAPPER_DIR" \
@@ -324,28 +319,13 @@ fi
 # Each path node reads, converted once (a cygpath start costs 100-500 ms on a loaded Windows host).
 REGISTRY_CLI="$(node_path "$HERE/lib/registry-cli.mjs")"
 REGISTRY_NATIVE="$(node_path "$REGISTRY")"
-# ONE READ OF THE REGISTRY for every value it decides, the same rule connect's re-render applies (registryPairs):
-# - REGISTRY_FINGERPRINT, the digest a launcher is built from.
-# - STRICT_EXTRA_MCP_B64, the servers that opted into strict mode, base64 so no path metacharacter survives the trip;
-#   empty unless a service asked, which keeps strict mode byte-identical on every host that did not.
-# - SESSION_MCP_B64, the services that opted into every default-mode session, as a whole --mcp-config document.
-# - MCP_TRANSPORT, only when the service declares one ("mcpTransport"): it decides over --mcp-transport, since the
-#   guided chain renders with no flag and a launcher must not take a transport its service has retired.
-# - SESSION_HTTP_B64, the services a launch reaches over HTTP (lib/session-http.mjs), this one too when its transport
-#   is http.
-# Each is cleared first and refused when missing, so nothing inherited from the environment is baked in.
-REGISTRY_FINGERPRINT=""; STRICT_EXTRA_MCP_B64=""; SESSION_MCP_B64=""; SESSION_HTTP_B64=""
+# One registry read; required/optional names come from the renderer's categorized block, not another list.
+# The helper clears required values before reading and refuses missing results, including inherited ones.
+. "$HERE/bin/aify-registry-pair-categories.sh" || exit "$EXIT_CONFIG"
+aify_registry_pair_categories_read "$HERE/render.sh" || exit "$EXIT_CONFIG"
+aify_registry_install_pairs_clear
 _pairs="$(node "$REGISTRY_CLI" install-pairs "$REGISTRY_NATIVE" "$SERVICE_NAME" "$MCP_TRANSPORT")" || exit "$EXIT_CONFIG"
-_seen=""
-while IFS= read -r _pair; do
-  case "$_pair" in
-    REGISTRY_FINGERPRINT=*|STRICT_EXTRA_MCP_B64=*|SESSION_MCP_B64=*|SESSION_HTTP_B64=*|MCP_TRANSPORT=*)
-      printf -v "${_pair%%=*}" '%s' "${_pair#*=}"; _seen="$_seen ${_pair%%=*}" ;;
-  esac
-done <<< "$_pairs"
-for _name in REGISTRY_FINGERPRINT STRICT_EXTRA_MCP_B64 SESSION_MCP_B64 SESSION_HTTP_B64; do
-  case "$_seen " in *" $_name "*) ;; *) echo "install.sh: the registry reader gave no $_name" >&2; exit "$EXIT_CONFIG" ;; esac
-done
+aify_registry_install_pairs_apply "$_pairs" || exit "$EXIT_CONFIG"
 
 # The same session services for codex, as NUL-terminated `-c` words in base64, built only when a codex
 # launcher is being written. What the verb refuses is codex's own limit (a server name that is not a bare
@@ -373,6 +353,7 @@ if [ -z "$RENDER_ONLY" ]; then
   export RENDER_RECORD_DIR
 fi
 
+aify_registry_render_pairs
 for _client in "${CLIENTS[@]}"; do
   install_one "$_client"
 done

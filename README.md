@@ -248,8 +248,8 @@ Evidence: `docs/evidence/2026-10-22-channel-plugin`.
 
 ## The contract
 
-Six inputs, read at launch. Every one falls back to the legacy `AIFY_*` name, so an existing fleet
-keeps working untouched.
+The current [launcher contract](docs/contracts/harness-wrapper.md) describes these six inputs, their
+runtime-specific usage and legacy fallbacks. The original comms design is linked there as history.
 
 | Input | Meaning | Required |
 |---|---|---|
@@ -257,7 +257,7 @@ keeps working untouched.
 | `HARNESS_MCP_COMMAND` | command that starts the MCP bridge the runtime should load | no |
 | `HARNESS_IDENTITY` | opaque id for this agent, exported to the runtime | no |
 | `HARNESS_ROLE` | opaque role string | no |
-| `HARNESS_CWD` | working directory the runtime starts in | no |
+| `HARNESS_CWD` | reported cwd hint; the host sets the actual process cwd, and the launcher does not chdir | no |
 | `HARNESS_EXTRA_ENV` | `KEY=VALUE` lines exported before launch, except names beginning `AIFY_` or `HARNESS_` in any letter case, which are skipped with a line on stderr | no |
 
 Precedence is **flag > `HARNESS_*` > legacy `AIFY_*` > the value baked in at install**. An explicit
