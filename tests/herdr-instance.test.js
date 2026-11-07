@@ -19,6 +19,7 @@ import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
+import { checkoutSource } from "./sibling-checkouts.mjs";
 import { pathToFileURL } from "node:url";
 
 import {
@@ -31,7 +32,7 @@ import {
   writeInstanceContext,
 } from "../lib/herdr-instance.mjs";
 
-const ENV_REPO = process.env.AIFY_ENV_REPO || path.join(os.homedir(), "projects", "aify-env");
+const { root: ENV_REPO, skip: sourceSkip } = checkoutSource({ variable: "AIFY_ENV_REPO", files: ["lib/instance-context.mjs"] });
 
 /** A fresh profile root per test, under the run's own temp root, with a prefix short enough for a Unix socket. */
 function profile() {
@@ -156,18 +157,18 @@ test("the daemon environment leaves advertising to the host, and the agent's own
 
 const envReader = await (async () => {
   const file = path.join(ENV_REPO, "lib", "instance-context.mjs");
-  if (!fs.existsSync(file)) return null;
+  if (sourceSkip) return null;
   return import(pathToFileURL(file).href);
 })();
 
-test("aify-env's REAL reader accepts the context this repo mints", { skip: envReader ? false : `no aify-env checkout at ${ENV_REPO}` }, () => {
+test("aify-env's REAL reader accepts the context this repo mints", { skip: sourceSkip }, () => {
   const { context, contextFile } = minted();
   writeInstanceContext(context);
   const read = envReader.readInstanceContext(contextFile);
   assert.deepEqual({ ...read }, { ...context }, "the daemon read back something other than what we wrote");
 });
 
-test("and refuses each thing it is supposed to be watching", { skip: envReader ? false : `no aify-env checkout at ${ENV_REPO}` }, () => {
+test("and refuses each thing it is supposed to be watching", { skip: sourceSkip }, () => {
   const refusals = {
     // Drive each control by breaking exactly what it guards.
     "an extra field": c => ({ ...c, extra: 1 }),
@@ -192,7 +193,7 @@ test("and refuses each thing it is supposed to be watching", { skip: envReader ?
   }
 });
 
-test("an invocation the daemon has already used cannot be handed back to it", { skip: envReader ? false : `no aify-env checkout at ${ENV_REPO}` }, () => {
+test("an invocation the daemon has already used cannot be handed back to it", { skip: sourceSkip }, () => {
   const { context, contextFile } = minted();
   writeInstanceContext(context);
   // Positive control first: this exact context is good right now.

@@ -3,9 +3,9 @@
 // copies of aify-env's rules, so each is driven against aify-env's own functions over the same inputs. A machine id that
 // differs places an agent in no project, silently; a key decoded differently is a key the service never issued.
 //
-// THE SIBLING CHECKOUT: `AIFY_ENV_REPO`, else beside this checkout, else ~/projects/aify-env. With none, this SKIPS
-// BY NAME: a cross-repo proof that ran nothing must not read as a pass. aify-env's modules are imported in a child,
-// as tests/the-definition-schema-is-aify-envs.test.js does; both are pure, so nothing runs a daemon.
+// The npm runner selects AIFY_ENV_REPO before sealing HOME; unavailable reader inputs report optional NOT_RUN.
+// There is no per-file rediscovery. aify-env's pure modules are imported in a child, as the schema agreement does;
+// nothing imports a daemon entrypoint.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -13,6 +13,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { checkoutSource } from "./sibling-checkouts.mjs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { writePrivateCredential } from "./private-credential.mjs";
@@ -22,9 +23,7 @@ import { hostIsWsl, machineIdFor } from "../lib/machine-id.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const NEEDED = ["lib/advertise.mjs", "lib/host-wsl.mjs", "lib/credential-store.mjs"];
-const CANDIDATES = [process.env.AIFY_ENV_REPO, path.join(ROOT, "..", "aify-env"), path.join(os.homedir(), "projects", "aify-env")].filter(Boolean);
-const ENV_REPO = CANDIDATES.find((dir) => NEEDED.every((file) => fs.existsSync(path.join(dir, file))));
-const skip = ENV_REPO ? false : `no aify-env checkout with ${NEEDED.join(", ")} (looked in ${CANDIDATES.join(", ")}): NOT verified`;
+const { root: ENV_REPO, skip } = checkoutSource({ variable: "AIFY_ENV_REPO", files: NEEDED });
 
 /** Run `body` in a child that has aify-env's module `name` imported as `env`; returns its JSON stdout. */
 function inEnv(name, body, input) {

@@ -22,6 +22,7 @@ import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
+import { checkoutSource } from "./sibling-checkouts.mjs";
 import { pathToFileURL } from "node:url";
 
 import { buildInstanceContext, writeInstanceContext } from "../lib/herdr-instance.mjs";
@@ -36,14 +37,14 @@ import {
   writeProfileOwner,
 } from "../lib/herdr-owner.mjs";
 
-const ENV_REPO = process.env.AIFY_ENV_REPO || path.join(os.homedir(), "projects", "aify-env");
+const { root: ENV_REPO, skip: sourceSkip } = checkoutSource({ variable: "AIFY_ENV_REPO", files: ["lib/instance-bootstrap.mjs"] });
 
 const envBootstrap = await (async () => {
   const file = path.join(ENV_REPO, "lib", "instance-bootstrap.mjs");
-  if (!fs.existsSync(file)) return null;
+  if (sourceSkip) return null;
   return import(pathToFileURL(file).href);
 })();
-const skipWithoutEnv = envBootstrap ? false : `no aify-env checkout at ${ENV_REPO}`;
+const skipWithoutEnv = sourceSkip;
 
 /** A minted, written invocation plus a live owner for it. The caller closes what it opens. */
 async function invocation({ open = true } = {}) {

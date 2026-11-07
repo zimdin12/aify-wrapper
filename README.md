@@ -476,6 +476,16 @@ npm test
 deletes it afterwards. `npm test -- tests/<file>.test.js ...` runs only those files, under the same root and
 with the terminal's agent session stripped the same way.
 
+Before sealing HOME, the runner resolves peer sources: explicit `AIFY_ENV_REPO`, `AIFY_COMMS_REPO` and
+`AIFY_DASHBOARD_REPO`, then an adjacent named checkout, then the original home's `projects/` directory.
+An invalid explicit path refuses instead of selecting another checkout. `AIFY_ENV_SCHEMA_REPO` is a
+separate, fail-closed contract-source override. `AIFY_TEST_CHECKOUTS` prints resolved paths/source kinds
+and Git HEADs, not credentials or proof that every listed peer was exercised. Source archives without
+their own Git root report a null revision. Required integration prerequisites refuse as `NOT_RUN` with
+a nonzero result; optional missing coverage is named separately. Unrelated selected unit tests do not
+require every peer. The mandatory comms key-parity gate remains until its candidate-sensitive replacement
+lands with the shared resolver; this change does not make the complete suite independent of comms.
+
 **The full run is on Linux.** Every process start costs 100-500 ms on Windows under load and 1-20 ms on Linux, so
 the same suite takes about a minute in a container and over ten on Windows:
 

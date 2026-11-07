@@ -23,6 +23,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { withoutAgentSession } from '../lib/inherited-session.mjs';
+import { SiblingCheckouts } from './sibling-checkouts.mjs';
 
 const PREFIX = 'aify-wrapper-testrun-';
 const PRUNE_AFTER_MS = 60 * 60 * 1000;
@@ -64,7 +65,7 @@ const inherited = withoutAgentSession(process.env);
 // AIFY_HERDR_* TOO: the launchers' own Herdr wiring (the ledger, the invocation, the isolated marker) leaked
 // through a HERDR_-only filter (found 2026-10-11 running files from an agent pane).
 for (const name of Object.keys(inherited)) if (/^(AIFY_)?HERDR_/i.test(name)) delete inherited[name];
-const env = { ...inherited };
+let env = { ...inherited };
 const sealed = { TMPDIR: root, TEMP: root, TMP: root };
 
 // AND NOT THE OPERATOR'S HOME. The launchers, the checker and the helpers default to ~/.aify (registry, definitions,
@@ -76,8 +77,15 @@ const sealed = { TMPDIR: root, TEMP: root, TMP: root };
 // herdr's visible bin are under LOCALAPPDATA, outside HOME.
 const home = path.join(root, 'home');
 fs.mkdirSync(home);
-const siblingEnv = path.join(os.homedir(), 'projects', 'aify-env');
-if (!env.AIFY_ENV_REPO && fs.existsSync(siblingEnv)) env.AIFY_ENV_REPO = siblingEnv;
+try {
+  const resolved = new SiblingCheckouts({ env, wrapperRoot: path.resolve(import.meta.dirname, '..'), home: os.homedir() }).resolve();
+  env = resolved.env;
+  console.error('AIFY_TEST_CHECKOUTS', JSON.stringify(resolved.checkouts));
+} catch (error) {
+  console.error(error.message);
+  fs.rmSync(root, { recursive: true, force: true });
+  process.exit(2);
+}
 Object.assign(sealed, {
   HOME: home, USERPROFILE: home, HERMES_HOME: path.join(home, '.hermes'),
   LOCALAPPDATA: path.join(home, 'AppData', 'Local'), APPDATA: path.join(home, 'AppData', 'Roaming'),

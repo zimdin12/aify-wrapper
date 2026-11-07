@@ -18,6 +18,7 @@ import { createHash } from "node:crypto";
 
 import { npmCliBeside } from "../lib/package-install.mjs";
 import { tupleDigest } from "../lib/service-spec.mjs";
+import { checkoutSource } from "./sibling-checkouts.mjs";
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const BIN = path.join(ROOT, "bin", "aify-wrapper-connect.mjs");
@@ -26,9 +27,10 @@ export const FAKE_NPM = path.join(ROOT, "tests", "fake-npm.mjs");
 //: The real npm the double delegates to, found the way connect finds it, before anything is sealed.
 export const REAL_NPM = npmCliBeside(process.execPath);
 export const KEY = "k3y-of-the-service-0123456789abcdef";
-//: aify-env's real credential command, when its checkout is here. Resolved BEFORE any HOME is sealed.
-export const ENV_REPO = [process.env.AIFY_ENV_REPO, path.join(ROOT, "..", "aify-env"), path.join(os.homedir(), "projects", "aify-env")]
-  .filter(Boolean).find((dir) => fs.existsSync(path.join(dir, "bin", "aify-env-credential.mjs"))) ?? "";
+//: The runner resolves the real source before sealing HOME. Missing source permits fixture-only doubles,
+//: never fallback from a broken explicit source or from explicitly requested real integration.
+export const { root: ENV_REPO } = checkoutSource({ variable: "AIFY_ENV_REPO", files: ["bin/aify-env-credential.mjs"],
+  required: process.env.AIFY_ENV_REPO !== undefined || process.env.AIFY_TEST_REAL_CREDENTIAL === "1" });
 
 const fwd = (p) => p.split(path.sep).join("/");
 

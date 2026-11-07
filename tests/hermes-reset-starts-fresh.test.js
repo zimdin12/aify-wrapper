@@ -5,6 +5,7 @@
 // (This file also held kill_prior's port-kill tests: `lsof -ti tcp:$port | xargs kill` once SIGTERMed aify-env.
 // kill_prior kills no gateway since 0.9.10, when aify-env took over ending an older lifetime's gateway.)
 import { test } from "node:test";
+import { checkoutSource } from "./sibling-checkouts.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -32,12 +33,10 @@ test("a fresh-context launch mints a new session id before the handle is exporte
 for (const [fresh, failure] of [[true, ""], [false, ""], [true, "import"], [true, "rm"]]) {
   test(failure ? `a ${failure} cleanup failure warns but the fresh launch continues` :
     `the launcher's reset block ${fresh ? "clears" : "preserves"} the lifetime markers only`, async (t) => {
-    const stdio = path.join(process.env.AIFY_COMMS_REPO || path.resolve(ROOT, "../aify-comms"), "mcp/stdio");
-    if (!fs.existsSync(path.join(stdio, "hermes-endpoint.js"))) {
-      assert.ok(!process.env.AIFY_COMMS_REPO, "explicit AIFY_COMMS_REPO must contain the marker writers");
-      t.skip("needs the aify-comms marker writers; set AIFY_COMMS_REPO");
-      return;
-    }
+    const source = checkoutSource({ variable: "AIFY_COMMS_REPO", files: ["mcp/stdio/hermes-endpoint.js", "mcp/stdio/hermes-loop-ready.js"],
+      required: process.env.AIFY_COMMS_REPO !== undefined });
+    if (source.skip) { t.skip(source.skip); return; }
+    const stdio = path.join(source.root, "mcp/stdio");
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fresh-markers-"));
     const temp = path.join(dir, "temp");
     const home = path.join(dir, "home");

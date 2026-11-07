@@ -16,6 +16,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { checkoutSource } from "./sibling-checkouts.mjs";
 
 const args = process.argv.slice(2);
 if (process.env.AIFY_TEST_SPY) fs.appendFileSync(process.env.AIFY_TEST_SPY, `${JSON.stringify(args)}\n`);
@@ -31,10 +32,11 @@ const refProblem = (ref) => (typeof ref !== "string" || !/^[A-Za-z0-9._-]{1,64}$
 
 if (args[0] === "credential") {
   // The test resolves the checkout before it seals HOME, and passes it here; a sealed HOME points nowhere useful.
-  const repo = [process.env.AIFY_ENV_REPO]
-    .filter(Boolean).map((dir) => path.join(dir, "bin", "aify-env-credential.mjs")).find((file) => fs.existsSync(file));
-  if (repo && process.env.AIFY_TEST_REAL_CREDENTIAL !== "0") {
-    const run = spawnSync(process.execPath, [repo, ...args.slice(1)], { input: fs.readFileSync(0), env: process.env });
+  const fakeOnly = process.env.AIFY_TEST_REAL_CREDENTIAL === "0";
+  const { root } = fakeOnly ? { root: "" } : checkoutSource({ variable: "AIFY_ENV_REPO", files: ["bin/aify-env-credential.mjs"],
+    required: process.env.AIFY_ENV_REPO !== undefined || process.env.AIFY_TEST_REAL_CREDENTIAL === "1" });
+  if (root) {
+    const run = spawnSync(process.execPath, [path.join(root, "bin", "aify-env-credential.mjs"), ...args.slice(1)], { input: fs.readFileSync(0), env: process.env });
     process.stdout.write(run.stdout);
     process.stderr.write(run.stderr);
     process.exit(run.status ?? 65);

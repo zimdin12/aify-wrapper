@@ -1,8 +1,9 @@
 // New contracts: exact foreign parser bytes and formatter transport/omission/provenance, not OS process probing.
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';import {fileURLToPath,pathToFileURL} from 'node:url';import {test} from 'node:test';
-const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),source=process.env.AIFY_ENV_SCHEMA_REPO??process.env.AIFY_ENV_REPO;
-assert.ok(source&&fs.existsSync(path.join(source,'lib/linux-process-token.mjs')),'NOT_RUN: explicit env contract source lacks linux-process-token.mjs; refusing stale fallback');
+import {checkoutSource} from './sibling-checkouts.mjs';
+const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const {root:source}=checkoutSource({variable:process.env.AIFY_ENV_SCHEMA_REPO!==undefined?'AIFY_ENV_SCHEMA_REPO':'AIFY_ENV_REPO',files:['lib/linux-process-token.mjs','tests/fixtures/process-identity-v1.json'],required:true});
 const shared=JSON.parse(fs.readFileSync(path.join(source,'tests/fixtures/process-identity-v1.json'),'utf8'));
 function write(t,{stat=shared.procStat,boot=shared.token.bootId,pid=shared.token.pid,capture='',harness='hermes',parserFailure}={}){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'resident-token-format-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import { checkoutSource } from './sibling-checkouts.mjs';
 
 const SOURCES = ['server/src/bridge/wsl-facts.ts', 'server/src/locations/wsl.ts', 'server/src/locations/normalize.ts',
   'server/src/routes/register.ts', 'server/src/routes/turn-start.ts', 'server/src/app.ts', 'server/src/config.ts',
@@ -17,8 +18,7 @@ export class DashboardWslContract {
     Object.assign(this, { repo, commit, files, before, collector, parser, appModules });
   }
   static async open({ testFile, withApp = false }) {
-    const repo = process.env.AIFY_DASHBOARD_REPO;
-    assert.ok(repo && fs.existsSync(path.join(repo, SOURCES[0])), 'NOT_RUN: mandatory AIFY_DASHBOARD_REPO source checkout missing/unreadable');
+    const { root: repo } = checkoutSource({ variable: 'AIFY_DASHBOARD_REPO', files: SOURCES, required: true });
     let commit, before, modules;
     const own = [fileURLToPath(import.meta.url), fileURLToPath(testFile), fileURLToPath(new URL('./fixtures/wsl-facts.json', import.meta.url))];
     const files = [...SOURCES.map(file => path.join(repo, file)), ...own];

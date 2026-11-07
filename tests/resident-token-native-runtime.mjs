@@ -1,5 +1,6 @@
 // Owned Linux/WSL producer rig. No native agent, env entry point, live profile or process outside this rig.
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import assert from 'node:assert/strict';import {spawnSync} from 'node:child_process';import {fileURLToPath} from 'node:url';
+import {checkoutSource} from './sibling-checkouts.mjs';
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 function linuxPath(value){
  const text=value.split(String.fromCharCode(92)).join('/');
@@ -36,8 +37,8 @@ const RUNTIME=`import fs from 'node:fs';const poll=setInterval(()=>{if(fs.exists
 export class ResidentTokenNativeRuntime {
  constructor(t){
   this.dir=fs.mkdtempSync(path.join(os.tmpdir(),'native-resident-token-'));t.after(()=>fs.rmSync(this.dir,{recursive:true,force:true}));
-  this.contract=process.env.AIFY_ENV_SCHEMA_REPO??process.env.AIFY_ENV_REPO;
-  assert.ok(this.contract&&fs.existsSync(path.join(this.contract,'lib/process-identity.mjs')),'NOT_RUN: mandatory env current verifier source missing');
+  const {root:contract}=checkoutSource({variable:process.env.AIFY_ENV_SCHEMA_REPO!==undefined?'AIFY_ENV_SCHEMA_REPO':'AIFY_ENV_REPO',files:['lib/process-identity.mjs','lib/resident-lifetimes.mjs'],required:true});
+  this.contract=contract;
   this.files={owner:path.join(this.dir,'owned-launcher.sh'),observer:path.join(this.dir,'runtime-observer.mjs'),runtime:path.join(this.dir,'runtime-child.mjs'),done:path.join(this.dir,'done')};
   fs.writeFileSync(this.files.owner,OWNER);fs.writeFileSync(this.files.observer,OBSERVER);fs.writeFileSync(this.files.runtime,RUNTIME);
  }

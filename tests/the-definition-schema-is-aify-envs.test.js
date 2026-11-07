@@ -10,8 +10,8 @@
 // and tested there; here the copy also runs aify-env's shared fixture, so a stale copy fails twice.
 //
 // PAIRED CANDIDATE: explicit AIFY_ENV_SCHEMA_REPO selects the unpublished schema/store source and fails
-// closed when missing, never falling back to frozen live bytes. Otherwise use AIFY_ENV_REPO, a sibling,
-// or ~/projects/aify-env. With none, this SKIPS BY NAME; a proof that ran nothing is not a pass.
+// closed when missing, never falling back to frozen live bytes. Otherwise use the runner's resolved AIFY_ENV_REPO.
+// Missing optional source reports NOT_RUN by name; no gate searches under its already-sealed HOME.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -20,18 +20,18 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { test } from "node:test";
+import { checkoutSource } from "./sibling-checkouts.mjs";
 
 import { definitionBytesProblems } from "../lib/agent-definition-schema.mjs";
 import { definitionsDir } from "../lib/agent-definition-defaults.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCHEMA = path.join("lib", "agent-definition-schema.mjs");
-const explicitSource = process.env.AIFY_ENV_SCHEMA_REPO;
-if (explicitSource !== undefined) assert.ok(explicitSource && fs.existsSync(path.join(explicitSource, SCHEMA)),
-  "NOT_RUN: explicit AIFY_ENV_SCHEMA_REPO has no readable schema source; refusing fallback");
-const CANDIDATES = [explicitSource, process.env.AIFY_ENV_REPO, path.join(ROOT, "..", "aify-env"), path.join(os.homedir(), "projects", "aify-env")].filter(Boolean);
-const ENV_REPO = CANDIDATES.find((dir) => fs.existsSync(path.join(dir, SCHEMA)));
-const skip = ENV_REPO ? false : `no aify-env checkout with ${SCHEMA} (looked in ${CANDIDATES.join(", ")}): NOT verified`;
+const explicitSource = process.env.AIFY_ENV_SCHEMA_REPO !== undefined;
+const { root: ENV_REPO, skip } = checkoutSource({
+  variable: explicitSource ? "AIFY_ENV_SCHEMA_REPO" : "AIFY_ENV_REPO",
+  files: [SCHEMA, "lib/agent-definitions.mjs", "tests/fixtures/agent-definitions/cases.json"], required: explicitSource,
+});
 
 test("THE COPY IS aify-env's BYTES", { skip }, () => {
   assert.ok(fs.readFileSync(path.join(ROOT, SCHEMA)).equals(fs.readFileSync(path.join(ENV_REPO, SCHEMA))),

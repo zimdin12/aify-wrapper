@@ -12,6 +12,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { checkoutSource } from "./sibling-checkouts.mjs";
 import { fileURLToPath } from "node:url";
 
 import { launch } from "./launch-to-a-stub-runtime.mjs";
@@ -126,15 +127,15 @@ for (const [client, [opening, closing]] of Object.entries(EXIT_FUNCTIONS)) {
   });
 }
 
-// THE CONTRACT WITH aify-env, read from its checkout: AIFY_ENV_REPO, else beside this one, else ~/projects/aify-env.
-// A checkout from before the variable (0.9.9 and older) SKIPS BY NAME, so a proof that read nothing is not a pass.
-const ENV_CANDIDATES = [process.env.AIFY_ENV_REPO, path.join(ROOT, "..", "aify-env"), path.join(os.homedir(), "projects", "aify-env")].filter(Boolean);
+// The runner resolves the checkout before sealing HOME. Older reporter capability stays named NOT_RUN.
 const OPENER = "lib/herdr-pane-opener.mjs", REPORTER = "lib/herdr-pane-reporter.mjs";
-const ENV_REPO = ENV_CANDIDATES.find((dir) => fs.existsSync(path.join(dir, OPENER))
-  && fs.readFileSync(path.join(dir, OPENER), "utf8").includes("AIFY_HERDR_PANE_REPORTER"));
+const source = checkoutSource({ variable: "AIFY_ENV_REPO", files: [OPENER, REPORTER] });
+const ENV_REPO = source.root;
+const reporterSkip = source.skip || (fs.readFileSync(path.join(ENV_REPO, OPENER), "utf8").includes("AIFY_HERDR_PANE_REPORTER")
+  ? false : `NOT_RUN: ${OPENER} does not set AIFY_HERDR_PANE_REPORTER; not verified`);
 
 test("aify-env sets AIFY_HERDR_PANE_REPORTER to its reporter's source, the value the launchers stand down for", {
-  skip: ENV_REPO ? false : `no aify-env checkout whose ${OPENER} sets AIFY_HERDR_PANE_REPORTER (looked in ${ENV_CANDIDATES.join(", ")}): NOT verified`,
+  skip: reporterSkip,
 }, () => {
   const opener = fs.readFileSync(path.join(ENV_REPO, OPENER), "utf8");
   const reporter = fs.readFileSync(path.join(ENV_REPO, REPORTER), "utf8");

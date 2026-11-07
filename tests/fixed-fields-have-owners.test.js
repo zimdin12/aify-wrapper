@@ -6,14 +6,14 @@
 // The refusal covers what a spec newly supplies. A field already in the published entry is the operator's, and a
 // reconnect keeps it byte for byte (connect-entry.mjs, RAW PRESERVATION).
 //
-// THE SIBLING CHECKOUT for the aify-env half: `AIFY_ENV_REPO`, else beside this checkout, else ~/projects/aify-env.
-// With none it SKIPS BY NAME: a cross-repo proof that ran nothing must not read as a pass.
+// The npm runner selects AIFY_ENV_REPO before sealing HOME. This optional source agreement reports NOT_RUN
+// when its required reader is unavailable; it never searches for a different checkout here.
 
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { checkoutSource } from "./sibling-checkouts.mjs";
 
 import { READ_FIELDS } from "../lib/registry.mjs";
 import { ENV_READ_FIELDS, validateSpec } from "../lib/service-spec.mjs";
@@ -90,9 +90,7 @@ test("READ_FIELDS is exactly the entry fields parseRegistry reads", () => {
 });
 
 const ENV_SOURCE = path.join("lib", "services.mjs");
-const CANDIDATES = [process.env.AIFY_ENV_REPO, path.join(ROOT, "..", "aify-env"), path.join(os.homedir(), "projects", "aify-env")].filter(Boolean);
-const ENV_REPO = CANDIDATES.find((dir) => fs.existsSync(path.join(dir, ENV_SOURCE)));
-const skip = ENV_REPO ? false : `no aify-env checkout with ${ENV_SOURCE} (looked in ${CANDIDATES.join(", ")}): NOT verified`;
+const { root: ENV_REPO, skip } = checkoutSource({ variable: "AIFY_ENV_REPO", files: [ENV_SOURCE] });
 
 test("ENV_READ_FIELDS: every field aify-env's readServices reads is owned, and every listed field is one it reads", { skip }, () => {
   const reads = readsIn(fs.readFileSync(path.join(ENV_REPO, ENV_SOURCE), "utf8"), "readServices", [

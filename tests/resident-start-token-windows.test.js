@@ -1,11 +1,13 @@
 // Native Windows omission plus a separately labeled owned-proc-fixture byte-transport control. No live proc file is edited.
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import assert from 'node:assert/strict';import {spawnSync} from 'node:child_process';import {fileURLToPath} from 'node:url';import {test} from 'node:test';
+import {checkoutSource} from './sibling-checkouts.mjs';
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),slash=p=>p.split(String.fromCharCode(92)).join('/');
 function capture(t,{linuxFixture=false}={}){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'resident-proc-carrier-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
  const wrapper=path.join(dir,'wrapper'),home=path.join(dir,'home');fs.mkdirSync(home);
  for(const file of ['bin/aify-lease.sh','bin/aify-lifetime.sh','bin/aify-resident-record.mjs','lib/linux-process-token.mjs']){const target=path.join(wrapper,file);fs.mkdirSync(path.dirname(target),{recursive:true});if(fs.existsSync(path.join(ROOT,file)))fs.copyFileSync(path.join(ROOT,file),target);}
- const source=process.env.AIFY_ENV_SCHEMA_REPO??process.env.AIFY_ENV_REPO,shared=JSON.parse(fs.readFileSync(path.join(source,'tests/fixtures/process-identity-v1.json'),'utf8'));
+ const {root:source}=checkoutSource({variable:process.env.AIFY_ENV_SCHEMA_REPO!==undefined?'AIFY_ENV_SCHEMA_REPO':'AIFY_ENV_REPO',files:['tests/fixtures/process-identity-v1.json'],required:true});
+ const shared=JSON.parse(fs.readFileSync(path.join(source,'tests/fixtures/process-identity-v1.json'),'utf8'));
  const stat=path.join(dir,'planted-stat'),boot=path.join(dir,'planted-boot');fs.writeFileSync(boot,shared.token.bootId+'\n');
  const lifetime=path.join(wrapper,'bin/aify-lifetime.sh'),body=fs.readFileSync(lifetime,'utf8');
  fs.writeFileSync(lifetime,body.replaceAll('/proc/$$/stat',slash(stat)).replaceAll('/proc/sys/kernel/random/boot_id',slash(boot)));
