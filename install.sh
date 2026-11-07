@@ -251,24 +251,25 @@ install_one() {
 }
 
 CLIENTS=()
-SKIPPED=()
 
 if [ "$ALL" = "1" ]; then
   if ! command -v node >/dev/null 2>&1; then
     echo "install.sh: --all needs node to detect which harnesses are present. Install node, or name one with --client." >&2
     exit "$EXIT_NO_RUNTIME"
   fi
-  while IFS=$'\t' read -r _client _state _path; do
+  while IFS= read -r _row; do
+    IFS=$'\t' read -r _client _state _rest <<< "$_row"
     [ -n "$_client" ] || continue
-    if [ "$_state" = "found" ]; then CLIENTS+=("$_client"); else SKIPPED+=("$_client"); fi
+    # read's tab IFS collapses an empty path. The command is always the final field instead.
+    _command="${_row##*$'\t'}"
+    if [ "$_state" = "found" ]; then
+      CLIENTS+=("$_client")
+    elif [ "$_state" = "invalid" ]; then
+      echo "skipped $_client: invalid or ambiguous runtime default in template"
+    else
+      echo "skipped $_client: no '$_command' runtime on PATH"
+    fi
   done < <(node "$(node_path "$HERE/lib/detect-cli.mjs")" "$(node_path "$HERE/wrappers")")
-
-  # Silence about a skip reads as "installed everything" when it did not. Name every one.
-  if [ "${#SKIPPED[@]}" -gt 0 ]; then
-    for _client in "${SKIPPED[@]}"; do
-      echo "skipped $_client: no '$_client' runtime on PATH"
-    done
-  fi
 
   if [ "${#CLIENTS[@]}" -eq 0 ]; then
     echo "install.sh: no harness runtime found on PATH, so no launcher would be usable." >&2

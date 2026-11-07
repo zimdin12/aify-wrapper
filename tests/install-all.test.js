@@ -53,10 +53,10 @@ test("SEAL CONTROL: the runtime names the seal keeps out are derived, including 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-function runInstall({ PATH: sealedPath, args }) {
+function runInstall({ PATH: sealedPath, args, overrides = {} }) {
   return spawnSync("bash", [INSTALL, "--registry", emptyRegistry(), ...args], {
     encoding: "utf8",
-    env: { PATH: sealedPath, HOME: os.tmpdir().replace(/\\/g, "/") },
+    env: { ...overrides, PATH: sealedPath, HOME: os.tmpdir().replace(/\\/g, "/") },
     // A budget above what the render costs under a full suite, not alone. Measured by dashboard-manager
     // on 2026-10-01: a two-runtime render takes 14-17 s alone and 97 s in a full run, and twice took
     // 121-122 s, so the 120 s it had ended it with status null and failed the run.
@@ -86,8 +86,51 @@ test("SEAL CONTROL: with a stub runtime, it IS found", () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+// Independent owned executable oracles: the extractor does not choose these stub names.
+for (const runtime of ["omp", "pi"]) {
+  test(`only ${runtime} present: detection neither starts it nor confuses Pi with OMP`, () => {
+    const { dir, stubs, PATH: p, out } = sealed([runtime]);
+    const marker = path.join(dir, "runtime-started");
+    // If presence probing starts the CLI, both its marker and nonzero status expose that defect.
+    fs.writeFileSync(path.join(stubs, runtime), `#!/bin/sh\nprintf started > '${marker.replace(/\\/g, "/")}'\nexit 91\n`);
+    const res = runInstall({ PATH: p, args: ["--all", "--endpoint", NOWHERE, "--render-only", out],
+      overrides: { AIFY_PI_COMMAND: "pi", PI_COMMAND: "pi" }, // installer overrides must not redefine omp's default
+    });
+    assert.equal(fs.existsSync(marker), false, "probing executed a runtime");
+    assert.equal(res.status, runtime === "omp" ? 0 : 127, `${res.stdout}\n${res.stderr}`);
+    assert.deepEqual(fs.readdirSync(out).sort(), runtime === "omp" ? ["omp-aify", "pi-aify"] : []);
+    if (runtime === "pi") assert.match(res.stdout, /skipped pi: no 'omp' runtime on PATH/);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+}
+
+// The real CLI/installer must transport INVALID through TSV, not turn it into ordinary pi presence.
+test("an underivable template reports invalid through the CLI and installer without writing", () => {
+  const { dir, PATH: p, out } = sealed(["pi"]);
+  const stage = path.join(dir, "package");
+  fs.mkdirSync(path.join(stage, "lib"), { recursive: true });
+  fs.mkdirSync(path.join(stage, "wrappers"));
+  for (const file of ["install.sh", "lib/detect-cli.mjs", "lib/detect-harnesses.mjs"]) {
+    fs.copyFileSync(path.join(ROOT, file), path.join(stage, file));
+  }
+  fs.writeFileSync(path.join(stage, "wrappers/pi-aify.sh.in"), 'PI_RUNTIME_COMMAND="$UNKNOWN"\n');
+  const rows = spawnSync(process.execPath, [path.join(stage, "lib/detect-cli.mjs"), path.join(stage, "wrappers")], {
+    encoding: "utf8", env: { PATH: p },
+  });
+  assert.equal(rows.status, 0, rows.stderr);
+  assert.equal(rows.stdout, "pi\tinvalid\t\t<invalid>\n");
+  const res = spawnSync("bash", [path.join(stage, "install.sh"), "--all", "--endpoint", NOWHERE,
+    "--registry", emptyRegistry(), "--render-only", out], {
+    encoding: "utf8", env: { PATH: p, HOME: dir.replace(/\\/g, "/") }, timeout: 30_000,
+  });
+  assert.equal(res.status, 127, `${res.stdout}\n${res.stderr}`);
+  assert.match(res.stdout, /skipped pi: invalid or ambiguous runtime default in template/);
+  assert.deepEqual(fs.readdirSync(out), []);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test("installs one launcher per runtime present, and names every runtime absent", () => {
-  const { dir, PATH: p, out } = sealed(["claude", "pi"]);
+  const { dir, PATH: p, out } = sealed(["claude", "omp"]);
   const res = runInstall({ PATH: p, args: ["--all", "--endpoint", NOWHERE, "--render-only", out] });
   assert.equal(res.status, 0, `${res.stdout}\n${res.stderr}`);
 
@@ -106,7 +149,7 @@ test("installs one launcher per runtime present, and names every runtime absent"
 test("every launcher --all writes is valid bash carrying no placeholder", () => {
   // --all renders through the same path as --client, and this is the assertion that would catch it
   // diverging: a per-client value leaking across clients shows up as an unsubstituted token.
-  const { dir, PATH: p, out } = sealed(["claude", "hermes", "pi"]);
+  const { dir, PATH: p, out } = sealed(["claude", "hermes", "omp"]);
   const res = runInstall({ PATH: p, args: ["--all", "--endpoint", NOWHERE, "--render-only", out] });
   assert.equal(res.status, 0, `${res.stdout}\n${res.stderr}`);
   for (const name of fs.readdirSync(out)) {
@@ -120,7 +163,7 @@ test("every launcher --all writes is valid bash carrying no placeholder", () => 
 test("hermes' computed extras do NOT leak into another client's launcher", () => {
   // Under --client each run was a fresh process, so per-client extras could not cross. Under --all
   // they share one, and hermes is the only client that appends any.
-  const { dir, PATH: p, out } = sealed(["hermes", "pi"]);
+  const { dir, PATH: p, out } = sealed(["hermes", "omp"]);
   runInstall({ PATH: p, args: ["--all", "--endpoint", NOWHERE, "--render-only", out] });
   const pi = fs.readFileSync(path.join(out, "pi-aify"), "utf8");
   assert.doesNotMatch(pi, /hermes-aify-plugin/, "a hermes-only value reached the pi launcher");

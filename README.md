@@ -22,6 +22,11 @@ reading the `HARNESS_WRAPPER_VERSION` marker out of the file — the same marker
 absent. That is the point of this package: one command on a new host, however many harnesses it happens
 to have. Use `--client <name>` instead when you want exactly one.
 
+Detection reads the template's static runtime default without starting it: Pi needs `omp`, not an
+unrelated `pi` executable. An unsupported or ambiguous runtime declaration is reported invalid and
+skipped. Installer-time `AIFY_PI_COMMAND`/`PI_COMMAND` overrides do not redefine the default being
+probed; those remain launcher-time choices.
+
 ```bash
 ./install.sh --client claude --endpoint http://127.0.0.1:8800
 ```

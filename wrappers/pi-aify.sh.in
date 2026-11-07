@@ -1,12 +1,12 @@
 #!/bin/bash
-#| pi-aify / omp-aify -- the wrapper aify-comms would install for Pi/OMP.
+#| pi-aify / omp-aify -- standalone Pi/OMP launchers rendered by aify-wrapper's install.sh.
 #|
 #| A TEMPLATE. At render time `@@TOKEN@@` placeholders are substituted and every `#|` line is REMOVED.
 #| See wrappers/claude-aify.sh.in for why these bodies are files rather than heredocs.
 #|
-#| INSTALLING this wrapper is deliberately disabled -- OMP is single-client, so omp-aify cannot provide
-#| resident wake into an open TUI, and managed Pi runs through the environment bridge instead. RENDERING
-#| it is a different act and stays possible, which is what lets it be tested and kept honest.
+#| Standalone aify-wrapper install.sh renders/installs this launcher. Normal aify-comms install.sh
+#| (--client pi without --emit-wrappers) and aify-env's guided install both refuse Pi. OMP is single-client,
+#| so this launcher cannot provide resident wake into an open TUI; managed Pi uses the environment bridge.
 #|
 #| Placeholders, written split so they are inert here:
 #|   @@ + ENDPOINT@@   coordinating service URL with the built-in fallback applied

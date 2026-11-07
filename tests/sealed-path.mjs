@@ -15,9 +15,9 @@
 // pass on the day it stopped being true.
 //
 // THE RUNTIME NAMES ARE DERIVED, not typed. Clients come from the wrapper templates, the way install.sh
-// derives them, and each template's own "runtime CLI '...' was not found" line names the command it
-// resolves -- which is how pi's `omp` is found without anybody remembering that pi's CLI has another
-// name. A list typed here would leak the first runtime added after it.
+// derives them, and the shared pure derivation reads each template's own runtime default -- which is
+// how pi's `omp` and Hermes' configurable default are found without another command-name manifest.
+// A list typed here would leak the first runtime added after it.
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -25,7 +25,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { harnessClientsFrom } from "../lib/detect-harnesses.mjs";
+import { harnessClientsFrom, runtimeCommandOf } from "../lib/detect-harnesses.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const WRAPPERS = path.join(ROOT, "wrappers");
@@ -38,31 +38,20 @@ export const HARNESS_CLIENTS = harnessClientsFrom(fs.readdirSync(WRAPPERS));
 /**
  * The clients `--all` is expected to render in this suite: every one except pi.
  *
- * pi is left unstubbed because `shared-hands-the-session-to-the-host` pins `pi-aify` as the template
- * that renders nothing. install.sh itself would render it given a `pi` on PATH -- detection probes the
- * CLIENT name, and pi's CLI is `omp` -- so this is the suite's premise, written down once, not a
- * property of the installer.
+ * pi's omp runtime is left unstubbed because `shared-hands-the-session-to-the-host` pins `pi-aify`
+ * as the template that renders nothing. Standalone install.sh would render it given omp on PATH;
+ * this is the suite's fixture population, not an installer policy exclusion.
  */
 export const CLIENTS_ALL_RENDERS = HARNESS_CLIENTS.filter((client) => client !== "pi");
-
-/** A template's runtime command, from its not-found line, with a `$VAR` resolved to its default. */
-function runtimeCommandOf(template) {
-  const named = /runtime CLI '([^']+)' was not found/.exec(template);
-  if (!named) return null;
-  if (!named[1].startsWith("$")) return named[1];
-  const variable = named[1].slice(1);
-  const assigned = new RegExp(`^${variable}="\\$\\{.*:-([A-Za-z0-9_-]+)\\}+"`, "m").exec(template);
-  // FAILS CLOSED. An unresolved name would silently leave that runtime in the mirror.
-  if (!assigned) throw new Error(`sealed-path: cannot resolve the runtime command ${named[1]}`);
-  return assigned[1];
-}
 
 /** Every command name a launcher or the detector resolves as a runtime. Kept out of every seal. */
 export const RUNTIME_COMMANDS = [...new Set([
   ...HARNESS_CLIENTS,
-  ...HARNESS_CLIENTS
-    .map((client) => runtimeCommandOf(fs.readFileSync(path.join(WRAPPERS, `${client}-aify.sh.in`), "utf8")))
-    .filter(Boolean),
+  ...HARNESS_CLIENTS.map((client) => {
+    const command = runtimeCommandOf(fs.readFileSync(path.join(WRAPPERS, `${client}-aify.sh.in`), "utf8"));
+    if (command === null) throw new Error(`sealed-path: invalid or ambiguous runtime default for ${client}`);
+    return command;
+  }),
 ])].sort();
 
 /** Where bash lives, as bash reports it. install.sh shells out to render.sh, so bash must be reachable. */
