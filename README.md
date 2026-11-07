@@ -404,6 +404,9 @@ half beside itself.
 taken over when its holder is gone or after 2 minutes. Reset by hand only when a refusal names a process
 that really is gone: delete `~/.aify/agents/<id>.json` and `<id>.json.lock`.
 
+Linux resident records identify the waiting launcher, not its runtime child; see
+[resident process identity and reader compatibility](docs/RESIDENT-START-TOKEN.md).
+
 ## Templates
 
 `wrappers/*.sh.in` are ordinary bash with two additions: `@@TOKEN@@` placeholders a host substitutes at

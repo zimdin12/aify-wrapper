@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import vm from "node:vm";
 import { fileURLToPath } from "node:url";
+import { linuxStartTokenFromStat } from "../lib/linux-process-token.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const HOST = "8ecc46f8-9e99-4703-9df9-e34cc50faaba";
@@ -63,10 +64,14 @@ function writer(args, uuid = OWN, collision = false) {
     assert.equal(source.split(line).length, 2, `writer import boundary: ${line}`);
     source = source.replace(line, "");
   }
-  assert.doesNotMatch(source, /^import /m, "unexpected writer import");
+  // Closed optional-load boundary, supplied with the real pure function; unknown imports still refuse.
+  const optionalLoad = 'const tokenModule = await import("../lib/linux-process-token.mjs");';
+  assert.equal(source.split(optionalLoad).length, 2, "writer optional import boundary");
+  source = source.replace(optionalLoad, "");
+  assert.doesNotMatch(source, /\bimport\s*(?:["'{*]|\()/m, "unexpected writer import");
   const result = { mkdir: [], writes: [], uuids: 0, stdout: "", exit: 0 }, stop = {};
   try {
-    new vm.Script(source).runInNewContext({ path, randomUUID: () => { result.uuids++; return uuid; },
+    new vm.Script(source).runInNewContext({ path, tokenModule: { linuxStartTokenFromStat }, randomUUID: () => { result.uuids++; return uuid; },
       fs: { mkdirSync: (...args) => result.mkdir.push(args), writeFileSync: (...args) => {
         result.writes.push(args);
         if (collision && args[2].flag === "wx") throw Object.assign(new Error("collision"), { code: "EEXIST" });
@@ -87,8 +92,10 @@ function assertRecord(args, uuid = OWN) {
   assert.equal(file, path.join(args[0], `${args[1]}.${uuid}.json`));
   assert.deepEqual({ ...options }, { flag: "wx", mode: 0o600 });
   assert.ok(bytes.endsWith("\n"));
-  assert.deepEqual(JSON.parse(bytes), { agentId: args[1], lifetime: uuid, instance: args[2], harness: args[3],
+  const { startToken, ...legacy } = JSON.parse(bytes); // token formatting has its dedicated real/synthetic controls
+  assert.deepEqual(legacy, { agentId: args[1], lifetime: uuid, instance: args[2], harness: args[3],
     pid: Number(args[4]), launcher: args[5], writtenAtUs: Number(args[6]), ...(args[7] ? { herdrPane: args[7] } : {}) });
+  if (startToken) assert.equal(startToken.pid, Number(args[4]));
 }
 
 test("the real record writer binds identity, exclusive ownership, PID, clock and optional pane", () => {
@@ -220,9 +227,11 @@ function checkRow(home, row, client, expected, agent, minted) {
     const app = environment(path.join(probe, "app.env"));
     for (const key of keys) assert.equal(app[key], expected[key], `${row} before app-server spawn ${key}`);
   }
-  const args = nul(path.join(probe, "writer.args")), residents = path.join(probe, ".aify/residents");
+  const argsFile = path.join(probe, "writer.args");
+  const args = fs.existsSync(argsFile) ? fs.readFileSync(argsFile, "utf8").split("\0").slice(0, -1) : [];
+  const residents = path.join(probe, ".aify/residents");
   if (minted) {
-    assert.equal(args.length, 9, "one writer invocation");
+    assert.equal(args.length, 12, "one writer invocation, including reserved capture and raw-stat/boot slots");
     assert.equal(args[2], agent); assert.equal(args[3], "residents", "B1: the role's instance, never the inherited one"); assert.equal(args[4], client);
     assert.equal(args[5], "43210", "native PID collaborator");
     assert.equal(args[6], `/fake/${client}-aify`, "literal launcher");

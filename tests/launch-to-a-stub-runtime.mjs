@@ -192,7 +192,7 @@ export function launch(client, args, { rewriting = true, reader = true, definiti
   const w = world(client, { reader, registry, bridgeFiles, fresh, runtime });
   const sealed = runtime ? null : sealedPath([]);
   if (lifetimes) {
-    for (const file of ["bin/aify-lease.sh", "bin/aify-inherited-session.sh", "bin/aify-lifetime.sh", "bin/aify-resident-record.mjs", "bin/aify-runtime-exited.sh"]) {
+    for (const file of ["bin/aify-lease.sh", "bin/aify-inherited-session.sh", "bin/aify-lifetime.sh", "bin/aify-resident-record.mjs", "bin/aify-runtime-exited.sh", "lib/linux-process-token.mjs"]) {
       const from = path.join(ROOT, file);
       if (!fs.existsSync(from)) continue; // RED runs before the new helpers exist.
       const to = path.join(w.dir, "wrapper", file);

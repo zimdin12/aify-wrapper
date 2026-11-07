@@ -40,8 +40,14 @@ aify_lifetime_start() {
     && command -v aify-env >/dev/null 2>&1; then
     _capture="$(aify-env agents resident-start-binding "$_agent" "$_harness" "$_producer" </dev/null 2>/dev/null)" || _capture=""
   fi
+  # The waiting launcher's identity, not its runtime child's. Whole stat preserves newlines in comm.
+  local _linux_stat="" _boot_id=""
+  case "${OSTYPE:-}" in linux*)
+    IFS= read -r -d '' _linux_stat 2>/dev/null < "/proc/$$/stat" || true
+    IFS= read -r _boot_id 2>/dev/null < /proc/sys/kernel/random/boot_id || true
+  esac
   local _status=0
-  AIFY_LIFETIME="$(MSYS_NO_PATHCONV=1 node "$_helper" "$_root" "$_agent" residents "$_harness" "$_pid" "$0" "${_clock/./}" "${AIFY_HERDR_PANE_ID:-${HERDR_PANE_ID:-}}" ${_capture:+"$_capture"})" || _status=$?
+  AIFY_LIFETIME="$(MSYS_NO_PATHCONV=1 node "$_helper" "$_root" "$_agent" residents "$_harness" "$_pid" "$0" "${_clock/./}" "${AIFY_HERDR_PANE_ID:-${HERDR_PANE_ID:-}}" "$_capture" "$_linux_stat" "$_boot_id")" || _status=$?
   if [ "$_status" -ne 0 ]; then
     echo "${0##*/}: cannot write the resident lifetime (aify-resident-record exited $_status); nothing was started." >&2
     return 78

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 
-const [root, agentId, instance, harness, pidText, launcher, clock, herdrPane, captureJson] = process.argv.slice(2);
+const [root, agentId, instance, harness, pidText, launcher, clock, herdrPane, captureJson, linuxStat, bootId] = process.argv.slice(2);
 const id = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const pid = Number(pidText), writtenAtUs = Number(clock);
 if (!root || !id.test(agentId ?? "") || !id.test(instance ?? "") || !["claude", "codex", "hermes"].includes(harness)
@@ -14,6 +14,15 @@ if (!root || !id.test(agentId ?? "") || !id.test(instance ?? "") || !["claude", 
 }
 const lifetime = randomUUID();
 const record = { agentId, lifetime, instance, harness, pid, launcher, writtenAtUs, ...(herdrPane ? { herdrPane } : {}) };
+// Only the owning shell's supplied capture; never backfill by looking up this PID from Node.
+let startToken = null;
+if (linuxStat && bootId) {
+  try {
+    const tokenModule = await import("../lib/linux-process-token.mjs");
+    startToken = tokenModule.linuxStartTokenFromStat(linuxStat, bootId, pid);
+  } catch { /* A partial/broken optional parser leaves a valid legacy record, never a launch failure. */ }
+}
+if (startToken) record.startToken = startToken;
 // Optional startup provenance never invalidates the process record or grants authority by itself.
 try {
   const captured = JSON.parse(captureJson);
