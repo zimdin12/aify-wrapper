@@ -138,6 +138,7 @@ HARNESS_CHECK=false
 # unattended agents never stall). omp's native flag is --auto-approve. Opt out
 # per-launch with --safe / --no-auto.
 PI_AUTO=true
+PI_PERMISSION_SOURCE=default
 PI_ARGS=()
 # --shared: let the HOST TIER own this session's terminal, so closing this window does not end it.
 # Recognised here, acted on at the very bottom; every path in between is unchanged, which is the
@@ -188,10 +189,12 @@ for ARG in "$@"; do
   fi
   if [ "$ARG" = "-auto" ] || [ "$ARG" = "--auto" ] || [ "$ARG" = "--yolo" ]; then
     PI_AUTO=true
+    PI_PERMISSION_SOURCE="$ARG"
     continue
   fi
   if [ "$ARG" = "--safe" ] || [ "$ARG" = "--no-auto" ]; then
     PI_AUTO=false
+    PI_PERMISSION_SOURCE="$ARG"
     continue
   fi
   # Consumed here, never forwarded.
@@ -364,9 +367,16 @@ if ! command -v "$PI_RUNTIME_COMMAND" >/dev/null 2>&1; then
   exit "$HARNESS_EXIT_NO_RUNTIME"
 fi
 
+PI_PERMISSION_FLAGS=()
+if [ "$PI_AUTO" = true ]; then
+  # omp global flag: auto-approve all tool calls (skip approval prompts).
+  PI_PERMISSION_FLAGS+=(--auto-approve)
+fi
+
 if [ "${HARNESS_CHECK:-false}" = true ]; then
   echo "pi-aify $HARNESS_WRAPPER_VERSION"
   echo "  runtime   : $HARNESS_WRAPPER_RUNTIME ($(command -v "$PI_RUNTIME_COMMAND"))"
+  echo "  wrapper-selected permissions: flag=${PI_PERMISSION_FLAGS[*]:-<none>}; source=$PI_PERMISSION_SOURCE; not final runtime permissions"
   echo "  endpoint  : $HARNESS_ENDPOINT"
   echo "  identity  : ${PI_AIFY_AGENT_ID:-<none — this session would be anonymous>}"
   _aify_managed_kept="${!AIFY_MANAGED_@}"
@@ -379,11 +389,6 @@ if [ "${HARNESS_CHECK:-false}" = true ]; then
   exit 0
 fi
 
-PI_PERMISSION_FLAGS=()
-if [ "$PI_AUTO" = true ]; then
-  # omp global flag: auto-approve all tool calls (skip approval prompts).
-  PI_PERMISSION_FLAGS+=(--auto-approve)
-fi
 # --shared: HAND THE SESSION TO THE HOST TIER instead of running it as a child of this shell.
 #
 # It asks aify-env to run THIS WRAPPER again, without the flag, and attaches to it. So what runs is

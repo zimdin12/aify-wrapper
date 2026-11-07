@@ -189,13 +189,9 @@ HERMES_INHERITED_SESSION_HANDLE="${HERMES_SESSION_ID:-${HERMES_SESSION:-${AIFY_S
 HERMES_SESSION_HANDLE=""
 HERMES_EXPLICIT_SESSION_HANDLE="false"
 HERMES_RUNTIME_COMMAND="${AIFY_HERMES_COMMAND:-${HERMES_COMMAND:-hermes}}"
-# Symmetric with claude-aify (--auto -> --dangerously-skip-permissions) and
-# codex-aify (CODEX_AUTO -> --dangerously-bypass-approvals-and-sandbox). For
-# hermes the bypass is --yolo (HERMES_YOLO_MODE=1, "bypass all dangerous
-# command approval prompts"). Default ON (2026-06-02 — every *-aify bypasses by
-# default so unattended agents never stall on approvals); opt out with
-# --safe / --no-auto.
+# Default bypass for unattended agents (2026-06-02); --safe / --no-auto omit the wrapper's flag.
 HERMES_AUTO=true
+HERMES_PERMISSION_SOURCE=default
 HERMES_ARGS=()
 # --shared: let the HOST TIER own this session's terminal, so closing this window does not end it.
 # Recognised here, acted on at the very bottom; every path in between is unchanged, which is the
@@ -239,10 +235,12 @@ for ARG in "$@"; do
   # (e.g. --resume) claims its next token first, consistent with --aify-agent.
   if [ "$ARG" = "-auto" ] || [ "$ARG" = "--auto" ] || [ "$ARG" = "--yolo" ]; then
     HERMES_AUTO=true
+    HERMES_PERMISSION_SOURCE="$ARG"
     continue
   fi
   if [ "$ARG" = "--safe" ] || [ "$ARG" = "--no-auto" ]; then
     HERMES_AUTO=false
+    HERMES_PERMISSION_SOURCE="$ARG"
     continue
   fi
   if [ "$ARG" = "--resident" ]; then
@@ -355,6 +353,12 @@ hermes_aify_defaults() {
   fi
 }
 
+# Default-TUI flags only; passthrough subcommands never consume this array.
+HERMES_PERMISSION_FLAGS=()
+if [ "$HERMES_AUTO" = true ]; then
+  HERMES_PERMISSION_FLAGS+=(--yolo)
+fi
+
 # --check: report and start NOTHING. It exits here, above every reap and every spawn, which is the
 # only place in this wrapper where "start nothing" is actually true. An id only a session handle would
 # name is not looked up, so it is not shown.
@@ -362,6 +366,7 @@ if [ "$HARNESS_CHECK" = true ]; then
   hermes_aify_defaults
   echo "hermes-aify $HARNESS_WRAPPER_VERSION"
   echo "  runtime   : $HARNESS_WRAPPER_RUNTIME ($(command -v hermes 2>/dev/null || echo '<not on PATH>'))"
+  echo "  wrapper-selected permissions: flag=${HERMES_PERMISSION_FLAGS[*]:-<none>}; source=$HERMES_PERMISSION_SOURCE; not final runtime permissions (default TUI only)"
   echo "  endpoint  : $HARNESS_ENDPOINT"
   echo "  identity  : ${HERMES_AIFY_AGENT_ID:-<none — this session would be anonymous>}"
   echo "  role      : $HERMES_AIFY_ROLE"
@@ -601,12 +606,6 @@ AIFY_NODE_22_SH="@@WRAPPER_DIR@@/bin/aify-node-22.sh"
 if [ -r "$AIFY_NODE_22_SH" ]; then
   . "$AIFY_NODE_22_SH"
   aify_ensure_node_ge_22
-fi
-
-# Bypass flags for the default TUI launch only, as claude-aify's CLAUDE_PERMISSION_FLAGS; never `hermes-aify model list`.
-HERMES_PERMISSION_FLAGS=()
-if [ "$HERMES_AUTO" = true ]; then
-  HERMES_PERMISSION_FLAGS+=(--yolo)
 fi
 
 # Per-agent daemon + channel-sidecar model (Plan 1.4, 2026-05-30). Replaces the

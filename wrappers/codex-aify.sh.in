@@ -214,13 +214,16 @@ wait_for_port() {
 }
 
 CODEX_AUTO=true
+CODEX_PERMISSION_SOURCE=default
 for ARG in "$@"; do
   case "$ARG" in
     -auto|--auto)
       CODEX_AUTO=true
+      CODEX_PERMISSION_SOURCE="$ARG"
       ;;
     --safe|--no-auto|--no-dangerous-permissions)
       CODEX_AUTO=false
+      CODEX_PERMISSION_SOURCE="$ARG"
       ;;
   esac
 done
@@ -412,6 +415,12 @@ if [ "$HARNESS_CHECK" = true ]; then
   codex_aify_defaults
   echo "codex-aify $HARNESS_WRAPPER_VERSION"
   echo "  runtime   : $HARNESS_WRAPPER_RUNTIME ($(command -v codex))"
+  if [ "$CODEX_AUTO" = true ]; then
+    _codex_permission_mode=bypass
+  else
+    _codex_permission_mode=omitted
+  fi
+  echo "  wrapper-selected permissions: mode=$_codex_permission_mode; source=$CODEX_PERMISSION_SOURCE; not final runtime permissions"
   echo "  endpoint  : $HARNESS_ENDPOINT"
   echo "  identity  : ${CODEX_AIFY_AGENT_ID:-<none — this session would be anonymous>}"
   echo "  role      : $CODEX_AIFY_ROLE"

@@ -219,6 +219,7 @@ CLAUDE_RESUME_ID="${CLAUDE_SESSION_ID:-}"
 # permissions, codex --dangerously-bypass-approvals-and-sandbox, hermes --yolo,
 # omp --auto-approve). Opt out per-launch with --safe / --no-auto.
 CLAUDE_AUTO=true
+CLAUDE_PERMISSION_SOURCE=default
 CLAUDE_AIFY_AGENT_ID="$HARNESS_IDENTITY"
 # The built-in default is applied after the argument loop, below the agent's definition (P0 C9).
 CLAUDE_AIFY_ROLE="${HARNESS_ROLE:-}"
@@ -273,10 +274,12 @@ for ARG in "$@"; do
   fi
   if [ "$ARG" = "-auto" ] || [ "$ARG" = "--auto" ] || [ "$ARG" = "--yolo" ]; then
     CLAUDE_AUTO=true
+    CLAUDE_PERMISSION_SOURCE="$ARG"
     continue
   fi
   if [ "$ARG" = "--safe" ] || [ "$ARG" = "--no-auto" ]; then
     CLAUDE_AUTO=false
+    CLAUDE_PERMISSION_SOURCE="$ARG"
     continue
   fi
   # Consumed here, never forwarded. `--check` answers "is this wrapper configured and can it find its
@@ -419,6 +422,12 @@ fi
 if [ "$HARNESS_CHECK" = true ]; then
   echo "claude-aify $HARNESS_WRAPPER_VERSION"
   echo "  runtime   : $HARNESS_WRAPPER_RUNTIME ($(command -v claude))"
+  if [ "$CLAUDE_AUTO" = true ]; then
+    _claude_permission_mode=bypass
+  else
+    _claude_permission_mode=omitted
+  fi
+  echo "  wrapper-selected permissions: mode=$_claude_permission_mode; source=$CLAUDE_PERMISSION_SOURCE; not final runtime permissions"
   echo "  endpoint  : $HARNESS_ENDPOINT"
   echo "  identity  : ${CLAUDE_AIFY_AGENT_ID:-<none — this session would be anonymous>}"
   echo "  role      : $CLAUDE_AIFY_ROLE"

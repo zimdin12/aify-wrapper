@@ -72,6 +72,12 @@ The rule behind it was learned the expensive way: running a launcher to see whet
 superseded a live environment bridge and reaped every managed worker under it. A launcher needs a way
 to be asked without being run.
 
+The report names the **wrapper-selected permissions** and winning source: the unattended bypass
+default, or the last permission switch that the existing parser recognized. Claude/Codex report
+bypass/omitted; Hermes/Pi name the selected flag (Hermes' default TUI path only). `--safe`/`--no-auto`
+omit the wrapper's bypass flag; passthrough arguments, runtime settings and external policy may still
+bypass approvals. This is not a claim about final runtime permissions.
+
 | Option | Meaning |
 |---|---|
 | `--client` | `claude`, `codex`, `hermes` or `pi` |
