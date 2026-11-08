@@ -610,6 +610,7 @@ LOG_FILE="$LOG_ROOT/codex-aify-app-server-$PORT.log"
 # Claimed before the app-server starts, so a refused start leaves nothing running. A `--shared` launch
 # hands the session to the host, whose run of this launcher is the one that claims.
 if [ "$CODEX_AIFY_SHARED" != true ]; then
+  AIFY_LEASE_AGENT="" # An inherited marker is not this attempt's claim, even with a missing shell helper.
   aify_lease_claim "${CODEX_AIFY_AGENT_ID:-}" codex "${AIFY_SESSION_MODE:-}" || exit $?
 fi
 CODEX_HERDR_HOOKS=()
@@ -670,6 +671,27 @@ if [ "$CODEX_AIFY_SHARED" != true ]; then
   aify_lifetime_start "${CODEX_AIFY_AGENT_ID:-}" codex "$AIFY_SESSION_MODE" || exit $?
   trap 'aify_lifetime_release; aify_lease_release' EXIT
 fi
+# Only this attempt's named holder rotates its own log pair. Any failure keeps the per-port log and still starts.
+if [ "$CODEX_AIFY_SHARED" != true ] && [ -n "${CODEX_AIFY_AGENT_ID:-}" ] && [ "${AIFY_LEASE_AGENT:-}" = "$CODEX_AIFY_AGENT_ID" ]; then
+  _aify_named_log="$(node --input-type=module -e '
+    import fs from "node:fs";
+    import path from "node:path";
+    import { pathToFileURL } from "node:url";
+    const { sessionFolder, writeSessionFile } = await import(pathToFileURL(process.argv[1]).href);
+    const folder = await sessionFolder({ agentId: process.argv[2] });
+    if (!folder.ok) process.exit(1);
+    const file = path.join(folder.dir, "codex-app-server.log");
+    if (fs.existsSync(file)) fs.renameSync(file, file + ".1");
+    process.stdout.write(await writeSessionFile(folder.dir, "codex-app-server.log", ""));
+  ' "$AIFY_WRAPPER_DIR_FWD/lib/session-folder.mjs" "$CODEX_AIFY_AGENT_ID" 2>/dev/null)" || _aify_named_log=""
+  if [ -n "$_aify_named_log" ]; then
+    LOG_FILE="$_aify_named_log"
+  else
+    echo "codex-aify: named app-server log unavailable; using per-port log." >&2
+  fi
+  unset _aify_named_log
+fi
+
 if command -v setsid >/dev/null 2>&1; then
   setsid codex "${CODEX_PERMISSION_FLAGS[@]}" "${CODEX_HERDR_HOOKS[@]}" "${CODEX_APP_SERVER_CONFIG[@]}" app-server --listen "$APP_SERVER_URL" "${CODEX_APP_SERVER_AUTH[@]}" </dev/null >>"$LOG_FILE" 2>&1 &
 else
