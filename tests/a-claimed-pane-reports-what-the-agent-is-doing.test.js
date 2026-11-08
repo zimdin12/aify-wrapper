@@ -93,7 +93,8 @@ function launch({ env = {}, listFails = false } = {}) {
   const fire = (event) => {
     for (const group of config.hooks[event] || []) {
       for (const hook of group.hooks) {
-        if (!hook.command.includes("aify-herdr-state.sh")) continue;
+        // With file activity on, the tool hooks' working report comes from aify-tool-event.mjs (herdr-tool-parity.test.js).
+        if (!/aify-herdr-state\.sh|aify-tool-event\.mjs/.test(hook.command)) continue;
         const result = spawnSync("sh", ["-c", hook.command], { input: "{}", encoding: "utf8", env: hookEnv });
         assert.equal(result.status, 0, `${event} hook failed: ${result.stderr}`);
         assert.equal(result.stdout, "", `${event} hook printed into the agent's hook output`);

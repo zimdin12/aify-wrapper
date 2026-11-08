@@ -190,9 +190,15 @@ test("the callback hands one line to the spool end to end", { skip: NO_PYTHON },
     assert.equal(validActivityRecord(record), true);
     assert.deepEqual([record.source.runtime, record.source.agentId, record.event.tool, record.event.path.canonical],
       ["hermes", "hermes-lead", "read_file", "C:/work/repo/docs/a.md"]);
-    const off = { ...env, AIFY_FILE_ACTIVITY: "0", AIFY_AGENT_ID: "hermes-off" };
-    drive({ calls: [call()], realHandOff: true }, off);
-    assert.equal(fs.existsSync(path.join(lease, "hermes-off")), false, "with the switch off, nothing is written");
+    // The module was loaded, as when a parent exported its path: the writer's own switch still decides.
+    for (const [value, agent] of [["0", "hermes-off"], ["", "hermes-empty"]]) {
+      drive({ calls: [call()], realHandOff: true }, { ...env, AIFY_FILE_ACTIVITY: value, AIFY_AGENT_ID: agent, AIFY_FILE_ACTIVITY_HERMES_PLUGIN: MODULE });
+      assert.equal(fs.existsSync(path.join(lease, agent)), false, `with the switch ${JSON.stringify(value)}, something was written`);
+    }
+    const unset = { ...env, AIFY_AGENT_ID: "hermes-unset" };
+    delete unset.AIFY_FILE_ACTIVITY;
+    drive({ calls: [call()], realHandOff: true }, unset);
+    assert.equal(fs.readdirSync(path.join(lease, "hermes-unset", "activity-v2")).length, 1, "an unset switch wrote nothing");
   } finally {
     fs.rmSync(lease, { recursive: true, force: true });
   }
@@ -225,11 +231,13 @@ function launcherNames(t, env) {
   return JSON.parse(fs.readFileSync(seen, "utf8")).plugin;
 }
 
-test("hermes-aify names the module only for an agent whose switch is on", (t) => {
-  const named = launcherNames(t, { AIFY_AGENT_ID: "probe-agent", AIFY_FILE_ACTIVITY: "1" });
-  assert.ok(named, "an agent with the switch on was not told where the module is");
-  assert.equal(fs.realpathSync(named), fs.realpathSync(MODULE));
-  assert.equal(launcherNames(t, { AIFY_AGENT_ID: "probe-agent" }), null, "the switch off still named the module");
-  assert.equal(launcherNames(t, { AIFY_AGENT_ID: "probe-agent", AIFY_FILE_ACTIVITY: "0" }), null);
+test("hermes-aify names the module for an agent unless its switch is off", (t) => {
+  for (const env of [{ AIFY_FILE_ACTIVITY: "1" }, {}]) {
+    const named = launcherNames(t, { AIFY_AGENT_ID: "probe-agent", ...env });
+    assert.ok(named, `an agent with the switch ${JSON.stringify(env)} was not told where the module is`);
+    assert.equal(fs.realpathSync(named), fs.realpathSync(MODULE));
+  }
+  assert.equal(launcherNames(t, { AIFY_AGENT_ID: "probe-agent", AIFY_FILE_ACTIVITY: "0" }), null, "the switch off still named the module");
+  assert.equal(launcherNames(t, { AIFY_AGENT_ID: "probe-agent", AIFY_FILE_ACTIVITY: "" }), null, "an empty switch named the module");
   assert.equal(launcherNames(t, { AIFY_FILE_ACTIVITY: "1" }), null, "a hermes with no agent was named the module");
 });

@@ -30,6 +30,7 @@ function fixture({ enabled = '1', managed = false, claimed = false, rewrite = fa
   fs.writeFileSync(path.join(stubs, 'claude'), `#!/bin/bash\nenv > "${native(settings)}.env"\nwhile [ $# -gt 0 ]; do if [ "$1" = --settings ]; then cp "$2" "${native(settings)}"; fi; shift; done\n`, { mode: 0o755 });
   env.PATH = [stubs, path.dirname(process.execPath), path.dirname(bash)].join(path.delimiter);
   Object.assign(env, { AIFY_FILE_ACTIVITY: enabled, AIFY_ENV_INSTANCE: 'fixture-instance', AIFY_AGENT_LEASE_DIR: path.join(dir, 'state'), MSYS_NO_PATHCONV: '1', MSYS2_ARG_CONV_EXCL: '*' });
+  if (enabled === null) delete env.AIFY_FILE_ACTIVITY;
   if (rewrite) { delete env.MSYS_NO_PATHCONV; delete env.MSYS2_ARG_CONV_EXCL; }
   if (managed) env.AIFY_HERDR_PANE_FILE = path.join(dir, 'pane');
   const trace = path.join(dir, 'trace'), preload = path.join(dir, 'private-native-sink.mjs');
@@ -76,8 +77,19 @@ for (const rewrite of [false, true]) test(`activity enabled without Herdr execut
   const calls = f.calls(); assert.equal(calls.length, 2, 'second parser process started');
   for (const c of calls) { assert.equal(c.exe.toLowerCase(), process.execPath.toLowerCase()); assert.equal(c.version, process.version, 'hook selected a different runtime'); }
 });
+for (const managed of [false, true]) test(`an unset switch installs the activity hook and records each outcome, Herdr ${managed}`, () => {
+  const f = fixture({ enabled: null, managed });
+  assert.equal(Object.hasOwn(f.env, 'AIFY_FILE_ACTIVITY'), false, 'control: the switch is unset');
+  if (managed) fs.writeFileSync(f.env.AIFY_HERDR_PANE_FILE, 'wA:pB\n');
+  for (const event of ['PostToolUse', 'PostToolUseFailure']) {
+    const hooks = f.fire(event);
+    assert.equal(hooks.length, 1);
+    assert.match(hooks[0].command, /aify-tool-event\.mjs/);
+  }
+  assert.deepEqual(f.spool().records.map(e => e.record.event.outcome), ['success', 'failure']);
+});
 test('cap off retains no outside-Herdr tool hooks and managed legacy working reports', () => {
-  assert.equal(fixture({ enabled: '0' }).config.hooks.PostToolUse, undefined);
+  for (const enabled of ['0', '']) assert.equal(fixture({ enabled }).config.hooks.PostToolUse, undefined, `switch ${JSON.stringify(enabled)} installed a tool hook`);
   const f = fixture({ enabled: '0', managed: true }); fs.writeFileSync(f.env.AIFY_HERDR_PANE_FILE, 'wA:pB\n');
   assert.equal(f.fire('PostToolUse', '{}').length, 1);
   assert.equal(f.calls().filter(c => path.basename(c.args[0]) === 'pane').length, 1);

@@ -833,17 +833,17 @@ if aify_herdr_hooks_report 2>/dev/null; then
   }
   AIFY_HERDR_WORKING=", $(_aify_state_hook working)"
   AIFY_HERDR_EVENTS=",
-    \"PostToolUse\": [ { \"hooks\": [ $(_aify_tool_hook "${AIFY_FILE_ACTIVITY:-0}" "$AIFY_WRAPPER_DIR_FWD" success) ] } ],
-    \"PostToolUseFailure\": [ { \"hooks\": [ $(_aify_tool_hook "${AIFY_FILE_ACTIVITY:-0}" "$AIFY_WRAPPER_DIR_FWD" failure) ] } ],
+    \"PostToolUse\": [ { \"hooks\": [ $(_aify_tool_hook "${AIFY_FILE_ACTIVITY-1}" "$AIFY_WRAPPER_DIR_FWD" success) ] } ],
+    \"PostToolUseFailure\": [ { \"hooks\": [ $(_aify_tool_hook "${AIFY_FILE_ACTIVITY-1}" "$AIFY_WRAPPER_DIR_FWD" failure) ] } ],
     \"Notification\": [ { \"matcher\": \"permission_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input\", \"hooks\": [ $(_aify_state_hook blocked) ] } ],
     \"PermissionRequest\": [ { \"hooks\": [ $(_aify_state_hook blocked) ] } ],
     \"Stop\": [ { \"hooks\": [ $(_aify_state_hook idle)${AIFY_MODEL_HOOK} ] } ],
     \"StopFailure\": [ { \"hooks\": [ $(_aify_state_hook idle) ] } ]"
   AIFY_MODEL_STOP="" # The Herdr Stop entry above already carries the scan; never duplicate a JSON key.
-elif [ "${AIFY_FILE_ACTIVITY:-0}" = 1 ]; then
+elif [ "${AIFY_FILE_ACTIVITY-1}" = 1 ]; then
   AIFY_HERDR_EVENTS=",
-    \"PostToolUse\": [ { \"hooks\": [ $(_aify_tool_hook "${AIFY_FILE_ACTIVITY:-0}" "$AIFY_WRAPPER_DIR_FWD" success) ] } ],
-    \"PostToolUseFailure\": [ { \"hooks\": [ $(_aify_tool_hook "${AIFY_FILE_ACTIVITY:-0}" "$AIFY_WRAPPER_DIR_FWD" failure) ] } ]"
+    \"PostToolUse\": [ { \"hooks\": [ $(_aify_tool_hook "${AIFY_FILE_ACTIVITY-1}" "$AIFY_WRAPPER_DIR_FWD" success) ] } ],
+    \"PostToolUseFailure\": [ { \"hooks\": [ $(_aify_tool_hook "${AIFY_FILE_ACTIVITY-1}" "$AIFY_WRAPPER_DIR_FWD" failure) ] } ]"
 fi
 AIFY_HOOK_SETTINGS="$(mktemp -t aify-hooks.XXXXXX.json 2>/dev/null || mktemp -t aify-hooks)"
 cat > "$AIFY_HOOK_SETTINGS" <<JSON

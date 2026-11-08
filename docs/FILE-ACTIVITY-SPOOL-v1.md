@@ -7,8 +7,8 @@ retention, in its own bounded state file written per shipped batch. The dashboar
 
 ## Hook and root
 
-`AIFY_FILE_ACTIVITY=1` independently opts in. Absence or `0` is off; other values
-are invalid. Each `PostToolUse` or `PostToolUseFailure` has one combined command,
+`AIFY_FILE_ACTIVITY` is on when unset or `1`; `0` turns it off; empty and other
+values are invalid and record nothing. Each `PostToolUse` or `PostToolUseFailure` has one combined command,
 `node "<wrapper>/bin/aify-tool-event.mjs" success` or `failure`. It reports existing
 working state independently, then parses stdin and appends locally. There is no
 network client, transcript reader or second JSON-parser child. Activity-off hooks

@@ -3,7 +3,7 @@
 WHERE. Hermes (d923a5eb487) fires post_tool_call after every tool with tool_name, args, task_id, session_id,
 tool_call_id and status (model_tools.py). Hermes runs hooks only for plugins listed in `plugins.enabled`, so this rides
 on the aify-comms plugin hermes-aify already enables: hermes-aify names this file in AIFY_FILE_ACTIVITY_HERMES_PLUGIN
-only when AIFY_FILE_ACTIVITY=1, and that plugin's loader hands it the PluginContext.
+unless AIFY_FILE_ACTIVITY is set and not 1, and that plugin's loader hands it the PluginContext.
 
 WHAT. Only read_file, write_file and patch, and only the file their own `path` argument names: never a shell command,
 never search_files, never a patch with no path. The path is the one hermes' own resolver gives the task

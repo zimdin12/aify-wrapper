@@ -69,15 +69,28 @@ test('Bash with a file-looking command produces no spool line; Read positive con
   assert.equal(line.record.event.tool, 'Read');
 });
 
-test('disabled and malformed configuration never append', () => {
-  assert.equal(activityConfiguration({}).enabled, false);
-  assert.throws(() => activityConfiguration({ AIFY_FILE_ACTIVITY: 'yes' }));
+test('malformed limits refuse', () => {
   for (const [key, value] of [['AIFY_ACTIVITY_SESSION_BYTES', '0'], ['AIFY_ACTIVITY_MAX_SESSIONS', '17'], ['AIFY_ACTIVITY_MAX_AGE_MS', '86400001']]) {
     assert.throws(() => activityConfiguration({ AIFY_FILE_ACTIVITY: '1', [key]: value }));
   }
-  const { run, dir } = fixture({ AIFY_FILE_ACTIVITY: '0' });
-  assert.equal(run(input).status, 0);
-  assert.equal(fs.existsSync(path.join(dir, 'probe', 'activity-v2')), false);
+});
+
+test('an unset switch is on, 0 is off, and an empty or any other value refuses and writes nothing', () => {
+  assert.equal(activityConfiguration({}).enabled, true);
+  assert.equal(activityConfiguration({ AIFY_FILE_ACTIVITY: '1' }).enabled, true);
+  assert.equal(activityConfiguration({ AIFY_FILE_ACTIVITY: '0' }).enabled, false);
+  for (const value of ['', 'yes', ' 1', 'true']) {
+    assert.throws(() => activityConfiguration({ AIFY_FILE_ACTIVITY: value }), /invalid activity enablement/, JSON.stringify(value));
+  }
+  const on = fixture({ AIFY_FILE_ACTIVITY: undefined });
+  assert.equal(on.env.AIFY_FILE_ACTIVITY, undefined, 'control: the switch is unset');
+  assert.equal(on.run(input).status, 0);
+  assert.equal(fs.readdirSync(path.join(on.dir, 'probe', 'activity-v2')).filter(n => n.endsWith('.jsonl')).length, 1, 'an unset switch wrote nothing');
+  for (const value of ['0', '']) {
+    const off = fixture({ AIFY_FILE_ACTIVITY: value });
+    assert.equal(off.run(input).status, 0);
+    assert.equal(fs.existsSync(path.join(off.dir, 'probe', 'activity-v2')), false, `switch ${JSON.stringify(value)} wrote an event`);
+  }
 });
 
 export { input, identity, fixture };
