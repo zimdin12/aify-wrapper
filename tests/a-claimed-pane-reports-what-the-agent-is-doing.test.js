@@ -105,6 +105,8 @@ function launch({ env = {}, listFails = false } = {}) {
 }
 
 const IN_A_PANE = { HERDR_ENV: "1", HERDR_PANE_ID: "w1:p2", HERDR_WORKSPACE_ID: "w1" };
+// Without a claimed pane: the session, model-selection and file-activity hooks, and none of the Herdr-only events.
+const OUTSIDE_HERDR_KEYS = ["PostModelSwitch", "PostToolUse", "PostToolUseFailure", "SessionEnd", "SessionStart", "Stop", "UserPromptSubmit"];
 
 test("A CLAIMED PANE FOLLOWS THE AGENT: working, blocked, working again, idle", { skip: WIN }, () => {
   const { config, fire, reports } = launch({ env: IN_A_PANE });
@@ -144,7 +146,7 @@ test("A CLAIMED PANE FOLLOWS THE AGENT: working, blocked, working again, idle", 
 
 test("OUTSIDE HERDR the settings are exactly what they were", { skip: WIN }, () => {
   const { config, reports } = launch();
-  assert.deepEqual(Object.keys(config.hooks).sort(), ["SessionStart", "UserPromptSubmit"]);
+  assert.deepEqual(Object.keys(config.hooks).sort(), OUTSIDE_HERDR_KEYS);
   // Counted once, and broken when the turn-start runner joined UserPromptSubmit; what Herdr adds is what is measured.
   const commands = config.hooks.UserPromptSubmit.flatMap((group) => group.hooks.map((hook) => hook.command));
   assert.deepEqual(commands.filter((command) => /aify-herdr-state/.test(command)), [], commands.join("\n"));
@@ -156,7 +158,7 @@ test("a pane the claim did NOT take gets no state hooks", { skip: WIN }, () => {
   // Reporting under the aify source on a pane nobody recorded would take it from Herdr's own resume
   // with nothing to put back, which is the failure the claim is careful to avoid.
   const { config, reports } = launch({ env: IN_A_PANE, listFails: true });
-  assert.deepEqual(Object.keys(config.hooks).sort(), ["SessionStart", "UserPromptSubmit"]);
+  assert.deepEqual(Object.keys(config.hooks).sort(), OUTSIDE_HERDR_KEYS);
   assert.deepEqual(reports(), []);
 });
 
