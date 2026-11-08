@@ -885,6 +885,7 @@ trap 'aify_model_selection_finish; rm -f "$AIFY_MCP_CONFIG" "$AIFY_HOOK_SETTINGS
 # reap kills this agent's previous managed claude, so running it first let an automatic start end a live
 # instance the claim would then have refused.
 if [ "$CLAUDE_AIFY_SHARED" != true ]; then
+  AIFY_LEASE_AGENT="" # An inherited marker is not this attempt's claim, even with a missing shell helper.
   aify_lease_claim "${CLAUDE_AIFY_AGENT_ID:-}" claude-code "${AIFY_SESSION_MODE:-}" || exit $?
 fi
 
@@ -910,6 +911,30 @@ if [ "$CLAUDE_AIFY_SHARED" != true ] && [ -n "@@SESSION_MCP_B64@@@@SESSION_HTTP_
     exit "$HARNESS_EXIT_CONFIG"
   fi
   if [ -n "$AIFY_SESSION_CONFIG" ]; then CLAUDE_MCP_FLAGS+=("--mcp-config=$AIFY_SESSION_CONFIG"); fi
+fi
+
+# This attempt's named holder keeps its hook settings as the agent's one session file, which the next launch
+# replaces: a stopped launcher skips its trap. Any failure keeps the temp file and still starts.
+AIFY_HOOK_NAMED=""
+if [ "$CLAUDE_AIFY_SHARED" != true ] && [ -n "${CLAUDE_AIFY_AGENT_ID:-}" ] && [ "${AIFY_LEASE_AGENT:-}" = "$CLAUDE_AIFY_AGENT_ID" ]; then
+  _aify_hook_source="$AIFY_HOOK_SETTINGS" # As native node opens it, for the MSYS_NO_PATHCONV reason above.
+  if command -v cygpath >/dev/null 2>&1; then _aify_hook_source="$(cygpath -m "$AIFY_HOOK_SETTINGS" 2>/dev/null || printf '%s' "$AIFY_HOOK_SETTINGS")"; fi
+  AIFY_HOOK_NAMED="$(node --input-type=module -e '
+    import fs from "node:fs";
+    import { pathToFileURL } from "node:url";
+    const { sessionFolder, writeSessionFile } = await import(pathToFileURL(process.argv[1]).href);
+    const folder = await sessionFolder({ agentId: process.argv[2] });
+    if (!folder.ok) process.exit(1);
+    process.stdout.write(await writeSessionFile(folder.dir, "hooks.json", fs.readFileSync(process.argv[3], "utf8")));
+  ' "$AIFY_WRAPPER_DIR_FWD/lib/session-folder.mjs" "$CLAUDE_AIFY_AGENT_ID" "$_aify_hook_source" 2>/dev/null)" || AIFY_HOOK_NAMED=""
+  if [ -n "$AIFY_HOOK_NAMED" ]; then
+    for _aify_i in "${!CLAUDE_MCP_FLAGS[@]}"; do
+      [ "${CLAUDE_MCP_FLAGS[$_aify_i]}" != "$AIFY_HOOK_SETTINGS" ] || CLAUDE_MCP_FLAGS[$_aify_i]="$AIFY_HOOK_NAMED"
+    done
+    rm -f "$AIFY_HOOK_SETTINGS"
+  else
+    echo "[claude-aify] named hook settings unavailable; using a temp file." >&2
+  fi
 fi
 
 # Managed kill-prior (2026-05-31): exactly one managed claude per agent. Reap
@@ -957,7 +982,7 @@ fi
 aify_place_instructions "${CLAUDE_AIFY_AGENT_ID:-}"
 
 aify_lifetime_start "${CLAUDE_AIFY_AGENT_ID:-}" claude "$AIFY_SESSION_MODE" SessionStart || exit $?
-aify_model_selection_start "${CLAUDE_AIFY_AGENT_ID:-}" "${CLAUDE_RESUME_ID:-}" "$AIFY_HOOK_SETTINGS" "${CLAUDE_AIFY_PASSTHRU[@]}"
+aify_model_selection_start "${CLAUDE_AIFY_AGENT_ID:-}" "${CLAUDE_RESUME_ID:-}" "${AIFY_HOOK_NAMED:-$AIFY_HOOK_SETTINGS}" "${CLAUDE_AIFY_PASSTHRU[@]}"
 AIFY_RUNTIME_RUNNING=1
 claude "${AIFY_CHANNEL_FLAGS[@]}" "${CLAUDE_MCP_FLAGS[@]}" "${CLAUDE_PERMISSION_FLAGS[@]}" "${CLAUDE_INSTRUCTION_FLAGS[@]}" "${CLAUDE_ARGS[@]}"
 STATUS=$?
