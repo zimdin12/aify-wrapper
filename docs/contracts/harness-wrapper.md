@@ -95,6 +95,8 @@ fallback. Both strict category readers validate the same marked block. CLI outpu
 compatible. Existing public `registry-cli.mjs` verbs are not private just because this installer's path uses fewer
 of them; comms' pinned installer also consumes fragments/fingerprint.
 
+Connect's `--report-file` always carries `pending: [{name, reason}]`, or `[]` when none; `name` is the MCP identity, not an artifact id, and pending rows do not change `result`.
+
 Template/registry provenance and strict stale/unknown behavior are specified by
 [launcher staleness](launcher-staleness.md), not by version equality alone. Version/provenance is not native
 capability proof. Registry-derived strict/session fragments do not bake live `keyEnv` values through the guarded

@@ -66,7 +66,7 @@ test("REPORT FILE: --report-file records what connect installed as data, which a
   const spec = packageSpec();
   // A pending artifact whose reason, which the spec writes, spells another "installed" line in the printed report.
   spec.artifacts.push({ id: "later", kind: "package", source: { pending: "deferred\n  bridge-b: installed at /forged/b" }, entries: ["later-bridge"] });
-  spec.mcp.push({ name: "later", artifact: "later", entry: "later-bridge" });
+  spec.mcp.push({ name: "later-mcp", artifact: "later", entry: "later-bridge" });
   const host = makeHost();
   const service = await startService({ spec });
   let run;
@@ -81,6 +81,7 @@ test("REPORT FILE: --report-file records what connect installed as data, which a
   const at = path.join(host.home, ".aify", "packages", "aify-dashboard", "dashboard-bridge", revisions[0], "node_modules", "fixture-bridge").split(path.sep).join("/");
   assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")), {
     result: "committed", service: "aify-dashboard", installed: [{ id: "dashboard-bridge", at, reused: false }],
+    pending: [{ name: "later-mcp", reason: "deferred\n  bridge-b: installed at /forged/b" }],
   });
 });
 
@@ -145,10 +146,14 @@ test("REPORT FILE: the record's own checks (reportFileProblem, deliverConnectRec
     const failing = () => { throw Object.assign(new Error("no space"), { code: "ENOSPC" }); };
     assert.match(deliverConnectRecord(file, report, failing), /was not written \(ENOSPC\); connect committed regardless/);
     assert.equal(fs.existsSync(file), false);
-    assert.deepEqual(connectRecord({ ...report, pending: [{ reason: "x" }] }), { result: "committed", service: "svc", installed: [{ id: "a", at: "/p/a", reused: false }] }, "the record holds only the outcome, the service and what was installed");
+    const pending = [{ name: "mcp-a", reason: "x", id: "artifact-a", extra: "not in the DTO" }];
+    const record = connectRecord({ ...report, pending });
+    assert.deepEqual(record, { result: "committed", service: "svc", installed: [{ id: "a", at: "/p/a", reused: false }], pending: [{ name: "mcp-a", reason: "x" }] }, "pending keeps MCP identities/reasons, not artifact ids or arbitrary fields");
+    pending[0].reason = "changed later";
+    assert.equal(record.pending[0].reason, "x", "the record must snapshot rows rather than retain mutable input objects");
     assert.equal(deliverConnectRecord(file, report), "");
     assert.throws(() => writeConnectRecord(file, report), { code: "EEXIST" }, "writeConnectRecord never overwrites");
-    assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")).installed, [{ id: "a", at: "/p/a", reused: false }]);
+    assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")), { result: "committed", service: "svc", installed: [{ id: "a", at: "/p/a", reused: false }], pending: [] }, "absent pending is serialized as an explicit empty list");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
