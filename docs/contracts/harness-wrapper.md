@@ -104,6 +104,23 @@ responsible for their supplied values, and the renderer retains conservative con
 Herdr's plugin manifest has a separately reported version. Its external loader/version-ordering contract has not
 been verified here, so the manifest value is retained rather than silently rewritten to the npm package version.
 
+## Channel policy readiness before connect
+
+`channelPolicyReadiness({clients, platform, uid, env, read})` is exported from `lib/channel-install.mjs`.
+Pass the selected client names and the original install user's environment, including HOME/USERPROFILE; omitted
+platform/uid/env use the current process. It uses the existing policy planner, writes nothing, installs no plugin,
+invokes no Claude command and performs no elevation. It is a synchronous policy preflight, not the CLI's route `check`.
+The result is `{state, command, reason}`. `ready` has `command: null`; selecting no Claude requires no policy read.
+`needs-action` is only an absent POSIX policy and supplies one structured command:
+`{file: <absolute node>, args: [<absolute channel-install.mjs>, "prepare-policy", "--path", <canonical policy file>], elevate: <uid !== 0>}`.
+Only explicit operator consent permits preparation, and only that policy operation may be elevated; never evaluate
+an untrusted shell fragment or elevate the whole installer. Preparation must be followed by a fresh readiness read.
+`refused` has no command and covers unknown POSIX uid and an existing malformed, unreadable or forbidding policy.
+On Windows, a planned per-user merge remains `ready`: the existing install writes it and verifies admission.
+That preserves the current Windows success path; readiness does not prove write permission, so the existing
+same-account elevated-command refusal may still occur if the later write is denied. Callers must not present this
+as a completed install, plugin admission or general root-launch support, and must retain the original user's HOME.
+
 ## Changes to this contract
 
 Keep tests at the actual boundary: rendered behavior, both category readers, installer refusal/nonmutation,
