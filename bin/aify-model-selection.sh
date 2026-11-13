@@ -11,6 +11,12 @@ aify_model_selection_hooks() {
 }
 
 aify_model_selection_start() {
+  local arg
+  for arg in "${CLAUDE_ARGS[@]-}"; do
+    case "$arg" in --settings|--settings=*)
+      echo "[claude-aify] forwarded --settings may replace the wrapper's hooks (status, file activity); operator settings are unchanged." >&2; break ;;
+    esac
+  done
   [ -n "${AIFY_LEASE_AGENT:-}" ] && [ "$1" = "$AIFY_LEASE_AGENT" ] && [ -n "${AIFY_LIFETIME:-}" ] || return 0
   [ -f "$AIFY_WRAPPER_DIR_FWD/bin/aify-model-selection.mjs" ] || return 0
   local agent="$1" resume="$2" settings="$3"

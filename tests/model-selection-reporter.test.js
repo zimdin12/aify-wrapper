@@ -103,10 +103,12 @@ test("unresolved advances a later no-write position; explicit Default is not lau
 });
 
 for (const argv of [["--settings", "operator.json"], ["--settings={}"], ["--fork-session"]]) {
-  test(`${argv[0]} disables command reports visibly but retains explicit launch report`, async (t) => {
+  test(`${argv[0]} retains explicit launch reporting; settings warning belongs to the shell helper`, async (t) => {
     const w = await world(t); await w.reporter.initialize({ claimedAgent: "test-agent", ownSettings: w.own, argv: [...argv, "--model=provider/a"] });
     await w.reporter.hook(w.payload("SessionStart")); append(w.file); await w.reporter.hook(w.payload("SessionEnd")); await w.reporter.finish();
-    assert.equal(w.posted.length, 1); assert.equal(w.posted[0].body.value, "provider/a"); assert.equal(w.logs.length, 1); assert.match(w.logs[0], /disabled/);
+    assert.equal(w.posted.length, 1); assert.equal(w.posted[0].body.value, "provider/a");
+    if (argv[0] === "--fork-session") { assert.equal(w.logs.length, 1); assert.match(w.logs[0], /disabled/); }
+    else assert.deepEqual(w.logs, [], 'the general settings warning must not be duplicated by the reporter');
   });
 }
 

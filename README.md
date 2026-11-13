@@ -83,6 +83,11 @@ bypass approvals. This is not a claim about final runtime permissions.
 allows the root bypass path and exports native `IS_SANDBOX=1`. Inherited `IS_SANDBOX` alone does not
 permit it, and root/container detection never enables the exemption automatically.
 
+Forwarding native `--settings` to `claude-aify` may replace the wrapper's hooks, including status and
+file activity. The wrapper warns once and leaves the operator's settings unchanged; it does not merge
+or reorder them. Last-settings-wins is modeled by the regression fixture, not newly qualified against
+the native CLI by this warning change.
+
 | Option | Meaning |
 |---|---|
 | `--client` | `claude`, `codex`, `hermes` or `pi` |

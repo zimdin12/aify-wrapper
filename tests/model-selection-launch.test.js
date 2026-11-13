@@ -67,10 +67,11 @@ for (const [herdr, fresh] of [[false, false], [true, false], [false, true]]) tes
   for (let i = 1; i < sent.length; i++) { assert.equal(sent[i].session, KNOWN); assert.equal(sent[i].source, "model-command"); if (i > 1) assert.ok(sent[i].endOffset > sent[i - 1].endOffset); }
 });
 
-test("forwarded native settings stay effective; one visible disable line and explicit launch report survive", () => {
+test("forwarded native settings stay effective; one general warning and explicit launch report survive", () => {
   const result = runCase(true); assert.equal(result.run.status, 17, result.run.stderr);
   const proof = JSON.parse(result.sessionFiles["test-agent/runtime-proof.json"]);
   assert.deepEqual(proof.fired, [], "operator's effective empty hooks were overridden");
   const sent = posts(result); assert.equal(sent.length, 1); assert.equal(sent[0].source, "launch"); assert.equal(sent[0].value, "provider/a");
-  assert.equal((result.run.stderr.match(/model-command reporting disabled/g) || []).length, 1, result.run.stderr);
+  assert.equal((result.run.stderr.match(/forwarded --settings may replace the wrapper's hooks/g) || []).length, 1, result.run.stderr);
+  assert.doesNotMatch(result.run.stderr, /model-command reporting disabled|model-command values unresolved/, 'duplicate reporting-only warning');
 });
