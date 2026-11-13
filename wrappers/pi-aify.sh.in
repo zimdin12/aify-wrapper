@@ -62,7 +62,6 @@ AIFY_HERDR_LAUNCH_SH="@@WRAPPER_DIR@@/bin/aify-herdr-launch.sh"
 if [ -r "$AIFY_HERDR_LAUNCH_SH" ]; then
   . "$AIFY_HERDR_LAUNCH_SH"
   aify_herdr_restore_profile
-  aify_herdr_claim_pane
 fi
 
 # ── The harness wrapper contract ────────────────────────────────────────────
@@ -384,6 +383,7 @@ if [ "${HARNESS_CHECK:-false}" = true ]; then
   exit 0
 fi
 
+if [ -r "$AIFY_HERDR_LAUNCH_SH" ]; then aify_herdr_claim_pane; fi
 # --shared: HAND THE SESSION TO THE HOST TIER instead of running it as a child of this shell.
 #
 # It asks aify-env to run THIS WRAPPER again, without the flag, and attaches to it. So what runs is

@@ -78,7 +78,6 @@ AIFY_HERDR_LAUNCH_SH="@@WRAPPER_DIR@@/bin/aify-herdr-launch.sh"
 if [ -r "$AIFY_HERDR_LAUNCH_SH" ]; then
   . "$AIFY_HERDR_LAUNCH_SH"
   aify_herdr_restore_profile
-  aify_herdr_claim_pane
   aify_herdr_leave_to_reporter
 fi
 
@@ -377,6 +376,7 @@ if [ "$HARNESS_CHECK" = true ]; then
   exit 0
 fi
 
+if [ -r "$AIFY_HERDR_LAUNCH_SH" ]; then aify_herdr_claim_pane; fi
 export AIFY_RUNTIME="hermes"
 export AIFY_SERVER_URL="$HARNESS_ENDPOINT"
 # The launcher's one endpoint: the delivery loop reads this before AIFY_SERVER_URL, and an inherited value aimed

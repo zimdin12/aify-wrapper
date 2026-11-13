@@ -88,7 +88,6 @@ AIFY_HERDR_LAUNCH_SH="@@WRAPPER_DIR@@/bin/aify-herdr-launch.sh"
 if [ -r "$AIFY_HERDR_LAUNCH_SH" ]; then
   . "$AIFY_HERDR_LAUNCH_SH"
   aify_herdr_restore_profile
-  aify_herdr_claim_pane
   aify_herdr_leave_to_reporter
 fi
 
@@ -462,6 +461,7 @@ if [ "${EUID:-}" = 0 ] && [ "$CLAUDE_AUTO" = true ]; then
   export IS_SANDBOX=1
 fi
 
+if [ -r "$AIFY_HERDR_LAUNCH_SH" ]; then aify_herdr_claim_pane; fi
 # Only the actual launch resolves an operator pin; the helper owns policy and the service bridge owns auth.
 CLAUDE_PIN_SELECTED=false
 if [ "$CLAUDE_NEW_SESSION" = true ]; then CLAUDE_RESUME_ID=""; unset CLAUDE_SESSION_ID AIFY_SESSION_HANDLE; fi

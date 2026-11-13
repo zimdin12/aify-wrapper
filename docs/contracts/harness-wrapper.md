@@ -53,9 +53,9 @@ Native TUI attach, resident delivery and installed adoption remain separate from
 
 The `--check` block reports and exits before runtime/gateway/shared-host startup, service-resume lookups, the
 agent lease and session-configuration publication. It is not an operating-system effects sandbox. A **read-only Node helper**
-can read a named definition. Earlier launcher preludes have already run: when `HERDR_ENV=1`, the Herdr claim
-helper can create its claim directory/log and attempt a pane claim before check is parsed. This existing behavior
-is not changed here; “nothing started” must not be read as a universal no-process/no-write/no-IPC guarantee.
+can read a named definition. Prelude environment restoration still runs, but pane claims and their directory/log
+creation are deferred until after the parser's check exit, including Codex's pane-file mode. No second argument
+parser decides this boundary; “nothing started” is not a promise that no read-only helper process ran.
 Missing runtime/config/helper conditions keep their existing precedence; Codex's pre-parser missing-runtime127
 can precede a later missing-helper78. A missing common helper is reported by check and refuses a real launch
 only when extra-env/shared functionality is needed.
