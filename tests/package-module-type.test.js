@@ -33,15 +33,17 @@ test('a real .js test fixture imports without MODULE_TYPELESS detection warnings
  const run=spawnSync(process.execPath,['--input-type=module','-e',`const {moduleTypeProbe}=await import(${JSON.stringify(url)});console.log(moduleTypeProbe);`],{cwd:ROOT,env,encoding:'utf8',timeout:10000});
  assert.equal(run.status,0,run.stderr);assert.equal(run.stdout.trim(),'owned-module-fixture');assert.doesNotMatch(run.stderr,/MODULE_TYPELESS_PACKAGE_JSON/);
 });
-test('actual npm pack inventory distinguishes ESM entrypoints from the historical .js evidence witness',t=>{
+test('actual npm pack retains runtime and contract files but excludes historical evidence',t=>{
  const {env}=owned(t),run=spawnSync(process.execPath,[NPM,'pack','--dry-run','--json','--ignore-scripts'],{cwd:ROOT,env,encoding:'utf8',timeout:30000});
  assert.equal(run.status,0,run.stdout+run.stderr);
  const [packed]=JSON.parse(run.stdout),files=packed.files.map(file=>file.path);
  assert.ok(files.includes('lib/session-http.mjs'),'inventory missed a known consumer import');
  assert.ok(files.includes('bin/aify-wrapper-check.mjs'),'inventory missed a known bin');
  assert.ok(!files.includes('tests/fixtures/module-type-probe.js'),'test fixture leaked into the package');
+ assert.ok(files.includes('docs/contracts/harness-wrapper.md'),'implementation contract must remain packaged');
+ assert.deepEqual(files.filter(file=>file.startsWith('docs/evidence/')),[],'historical evidence leaked into the package');
  const loaders=files.filter(file=>/\.(?:js|cjs)$/.test(file));
  console.log('PACKAGED_JS_CJS',JSON.stringify(loaders));
- assert.deepEqual(loaders.filter(file=>!file.startsWith('docs/evidence/')||file.endsWith('.cjs')),[],'new consumer JavaScript loader requires explicit module compatibility coverage');
+ assert.deepEqual(loaders,[],'new consumer JavaScript loader requires explicit module compatibility coverage');
  for(const entry of Object.values(pkg.bin))assert.match(entry,/\.(?:mjs|sh)$/);
 });

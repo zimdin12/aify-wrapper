@@ -15,7 +15,12 @@ function filesAt(file) {
 }
 function violations() {
   const packaged=JSON.parse(fs.readFileSync(path.join(ROOT,'package.json'),'utf8')).files;
-  const files=[...new Set([...packaged,'tests/','HERDR.md'].flatMap(name=>filesAt(path.join(ROOT,name))))];
+  const roots=[...packaged,'tests/','HERDR.md'].flatMap(pattern=>{
+    const found=fs.globSync(pattern,{cwd:ROOT});
+    assert.ok(found.length,`source pattern matched nothing: ${pattern}`);
+    return found.flatMap(name=>filesAt(path.join(ROOT,name)));
+  });
+  const files=[...new Set(roots)];
   // Historical .txt/.out/.log captures keep their original bytes; source drivers beside them are checked.
   return files.filter(file=>/\.(?:[cm]?js|sh|in|py|ps1|json|toml|ya?ml|md|html|css)$/i.test(file)).flatMap(file=>{
     const bytes=fs.readFileSync(file);
