@@ -454,6 +454,14 @@ if [ "$HARNESS_CHECK" = true ]; then
   exit 0
 fi
 
+if [ "${EUID:-}" = 0 ] && [ "$CLAUDE_AUTO" = true ]; then
+  if [ "${AIFY_ROOT_SANDBOX:-0}" != 1 ]; then
+    echo "[claude-aify] root bypass refused; non-root use is recommended, or explicitly set AIFY_ROOT_SANDBOX=1 only in a real sandbox." >&2
+    exit "$HARNESS_EXIT_CONFIG"
+  fi
+  export IS_SANDBOX=1
+fi
+
 # Only the actual launch resolves an operator pin; the helper owns policy and the service bridge owns auth.
 CLAUDE_PIN_SELECTED=false
 if [ "$CLAUDE_NEW_SESSION" = true ]; then CLAUDE_RESUME_ID=""; unset CLAUDE_SESSION_ID AIFY_SESSION_HANDLE; fi

@@ -127,14 +127,47 @@ for (const platform of ["linux", "darwin"]) test(`${platform}: missing policy pr
   assert.deepEqual(m.state.calls, [], "no policy mutation, plugin render or Claude operation before policy preparation");
 });
 
-for (const uid of [0, null]) test(`POSIX plugin install refuses root or unknown uid ${uid}`, () => {
+for (const uid of [null, -1, 1.5]) test(`POSIX plugin install refuses unknown uid ${uid}`, () => {
   const m = machine();
   const read = source => source.kind === "file" ? withOurChannel("").text : null;
   const out = installChannel({ ...m, platform: "linux", uid, read });
-  assert.equal(out.ok, false, "a root or unknown-identity process must never install the user's plugin");
-  assert.match(out.reason, /non-root/);
-  assert.deepEqual(m.state.calls, [], "the root guard ran after a plugin side effect");
+  assert.equal(out.ok, false, "an unknown-identity process must never install the user's plugin");
+  assert.match(out.reason, /known/);
+  assert.deepEqual(m.state.calls, [], "the identity guard ran after a plugin side effect");
 });
+
+for (const platform of ["linux", "darwin"]) {
+  for (const ready of [false, true]) test(`${platform}: root installs into its own HOME in one call, policy ready ${ready}`, () => {
+    const m = machine({ policy: ready ? withOurChannel("").text : null });
+    const home = "/root-fixture-home";
+    const read = source => source.kind === "file" ? m.state.policy : null;
+    const out = installChannel({ ...m, platform, uid: 0, home, read, preparePolicy: options => {
+      m.state.calls.push(`prepare ${options.path}`); m.state.policy = withOurChannel("").text;
+      return { ok: true, steps: ["policy prepared"] };
+    } });
+    assert.equal(out.ok, true, out.reason);
+    assert.equal(m.state.calls.filter(call => call.startsWith("prepare ")).length, ready ? 0 : 1);
+    assert.ok(m.state.calls.includes(`render ${marketplaceDir(home)}`), "plugin did not retain root's selected HOME");
+    assert.ok(m.state.calls.includes("claude plugin install aify-channel@aify-local"));
+    assert.equal(out.steps.filter(step => step.startsWith("warning:")).length, 1, "root warning must appear once");
+  });
+  for (const policy of ["{", "{}", "", { unreadable: "denied" }]) test(`${platform}: root cannot replace existing policy ${JSON.stringify(policy)}`, () => {
+    const m = machine();
+    const out = installChannel({ ...m, platform, uid: 0, read: source => source.kind === "file" ? policy : null,
+      preparePolicy: () => assert.fail("existing policy was passed to preparation") });
+    assert.equal(out.ok, false); assert.match(out.reason, /policy/); assert.deepEqual(m.state.calls, []);
+  });
+  test(`${platform}: a raced root preparation refuses before plugin work`, () => {
+    const m = machine(); let prepared = 0;
+    const out = installChannel({ ...m, platform, uid: 0, preparePolicy: () => { prepared++; return { ok: false, steps: [], reason: "raced creation refused" }; } });
+    assert.equal(prepared, 1); assert.equal(out.ok, false); assert.match(out.reason, /raced creation/); assert.deepEqual(m.state.calls, []);
+  });
+  test(`${platform}: root preparation success without admission readback refuses`, () => {
+    const m = machine(); let prepared = 0;
+    const out = installChannel({ ...m, platform, uid: 0, preparePolicy: () => { prepared++; return { ok: true, steps: [] }; } });
+    assert.equal(prepared, 1); assert.equal(out.ok, false); assert.match(out.reason, /admit|read back/); assert.deepEqual(m.state.calls, []);
+  });
+}
 
 test("POSIX non-root install with admitted managed policy keeps the existing plugin path", () => {
   const m = machine();

@@ -78,6 +78,11 @@ bypass/omitted; Hermes/Pi name the selected flag (Hermes' default TUI path only)
 omit the wrapper's bypass flag; passthrough arguments, runtime settings and external policy may still
 bypass approvals. This is not a claim about final runtime permissions.
 
+`claude-aify` refuses its bypass default when the actual POSIX uid is 0. Non-root use is recommended;
+`--safe` omits wrapper bypass. In a deliberately isolated sandbox only, explicit `AIFY_ROOT_SANDBOX=1`
+allows the root bypass path and exports native `IS_SANDBOX=1`. Inherited `IS_SANDBOX` alone does not
+permit it, and root/container detection never enables the exemption automatically.
+
 | Option | Meaning |
 |---|---|
 | `--client` | `claude`, `codex`, `hermes` or `pi` |
@@ -228,11 +233,14 @@ afterward. Do not change the Policies ACLs or run the coding-agent runtime eleva
 
 The install **merges** into the value, because it is the user's whole per-user policy
 and `allowedChannelPlugins` replaces Anthropic's default channel list. When an admin policy is in charge,
-the install reports that and writes nothing. On Linux and macOS, a genuinely absent managed policy causes
-exit 78 with one policy-only `sudo` command. The installer never runs sudo itself. Paste that exact command,
-then rerun the installer as the normal non-root user; plugins are never installed as root. The helper creates
-only the absent canonical `managed-settings.json`, rereads admission and leaves existing admin files and
-drop-ins untouched, including empty, malformed or unreadable input. Existing policy needs its administrator.
+the install reports that and writes nothing. On Linux and macOS, a known root invocation prepares a genuinely
+absent managed policy through the existing policy-only owner, rereads admission and installs the plugin in
+root's selected HOME in the same call, with one warning recommending non-root use. A non-root invocation
+still exits 78 with one policy-only `sudo` command when preparation is needed; the installer never runs sudo
+itself. Paste that command and rerun as the same non-root user, or let a consenting install chain invoke the
+policy action before connect and continue as that user. The helper creates only the absent canonical
+`managed-settings.json` and leaves existing admin files and drop-ins untouched, including empty, malformed
+or unreadable input. Existing policy needs its administrator.
 
 Claude starts every configured channel server, so a session runs both the user-scope `aify-comms-channel`
 server and the plugin's. The launcher exports `AIFY_CHANNEL_ROUTE`, and each server reads it to decide
