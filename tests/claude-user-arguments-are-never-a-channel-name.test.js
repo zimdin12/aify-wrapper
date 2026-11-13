@@ -2,7 +2,7 @@
 // claude-aify's user arguments are never read as more channel names.
 //
 // `--dangerously-load-development-channels <servers...>` takes every word after it until the next flag:
-// measured on Claude Code 2.1.286 (dashboard-manager, 2026-10-01), `--dangerously-load-development-channels
+// measured on Claude Code 2.1.286 (the dashboard maintainer, 2026-10-01), `--dangerously-load-development-channels
 // server:x PROMPT` swallows the prompt. The launcher puts `--settings <file>`, which takes one value,
 // straight after the channel, and that is what keeps a bare prompt with `--safe` (no permission flag) out
 // of it. Nothing else holds that order, so this does. Executed to a stub claude that records its argv.

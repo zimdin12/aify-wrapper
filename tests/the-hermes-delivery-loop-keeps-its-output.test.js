@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The hermes delivery loop's output is kept, in a file per agent, instead of thrown away.
 //
-// 2026-09-28: pc-manager's loop was found beside a gateway with no TUI (started 2026-09-25), the agent
+// 2026-09-28: pc-other-agent's loop was found beside a gateway with no TUI (started 2026-09-25), the agent
 // still reading `online`, and its output had gone to /dev/null, so nothing could say which path it was
 // on. A reject-forever path was found in the code afterwards; whether this loop was on it is not known. This
 // reads the launcher line that starts the loop; the template is the artifact install.sh renders.

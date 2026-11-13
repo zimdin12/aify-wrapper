@@ -290,7 +290,7 @@ export AIFY_SESSION_MODE="$PI_AIFY_SESSION_MODE"
 # watchdog in that case lets the wrapper-managed PTY actually start —
 # without this, the dashboard-spawned pi-aify exits within ~1s and the
 # operator sees a Console widget that never attaches. (Observed
-# 2026-05-26 with graph-tester-pi: 4 spawn attempts in 3 minutes, each
+# 2026-05-26 with a Pi agent: 4 spawn attempts in 3 minutes, each
 # stopped after 1s.) Rediscover still runs so the bridge's stored session
 # id stays truthful.
 if [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ]; then
@@ -329,7 +329,7 @@ if [ "${HARNESS_CHECK:-false}" != true ] \
     # dashboard-spawned managed wrapper) — grep returns 1, and `set -euo
     # pipefail` then kills the whole wrapper SILENTLY before exec'ing omp.
     # That's the "pi-aify exits in 2s with no output" bug operators observed
-    # 2026-05-26 with graph-tester-pi. Disable pipefail JUST around this
+    # 2026-05-26 with a Pi agent. Disable pipefail JUST around this
     # capture so a missing sessionId is empty (the intended behavior).
     set +o pipefail
     PI_REDISCOVERED_SESSION_ID="$(printf '%s' "$AIFY_WATCHDOG_BODY" \

@@ -78,12 +78,12 @@ test("inherited Herdr wiring is cleared before the new wiring is set", () => {
 });
 
 test("no agent session reaches a pane: a server started inside one does not hand it to every terminal", () => {
-  // 2026-09-15: a server started inside comms-tech-lead's Claude Code session gave every pane that agent's
-  // id and conversation, and a bare `claude-aify` in one replaced the live comms-tech-lead.
+  // 2026-09-15: a server started inside source-agent's Claude Code session gave every pane that agent's
+  // id and conversation, and a bare `claude-aify` in one replaced the live source-agent.
   const inside = {
     PATH: "/usr/bin",
     AIFY_COMMS_URL: "http://127.0.0.1:8800",
-    AIFY_AGENT_ID: "comms-tech-lead",
+    AIFY_AGENT_ID: "source-agent",
     AIFY_SESSION_MODE: "resident",
     CLAUDE_SESSION_ID: "651b895f-a564-4d3a-8e0b-27f8429b1dd0",
     CLAUDECODE: "1",

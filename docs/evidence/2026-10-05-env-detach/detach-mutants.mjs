@@ -69,7 +69,7 @@ const MUTANTS = [
   [BIN, "D5 a start that throws skips the teardown",
     once('  }).catch(err => ({ ok: false, phase: "start", error: err?.message || String(err) }));', "  });"),
     "A START THAT THROWS"],
-  // comms-senior-dev's review of e51b83e.
+  // Review of e51b83e.
   [OWNER, "R1 a reclaim acts on its cached verdict", once('    if (now !== deadClaim) return "changed";\n', ""),
     "TWO LAUNCHES RECLAIMING ONE DEAD LOCK"],
   [OWNER, "R1-ABA a reclaim matches the claim by its pid alone",
@@ -85,7 +85,7 @@ const MUTANTS = [
     "CONTROL: a teardown that confirms the server gone forgets it"],
   [STOP, "R3 each question may take the CLI's full timeout", once("    answer = ask(left);", "    answer = ask(15000);"),
     "THE STOP'S WAIT IS FIVE SECONDS OF WALL TIME"],
-  // The gateway token in a managed hermes console (graph-tech-lead's spawn test, 2026-10-05).
+  // The gateway token in a managed hermes console (a managed agent's spawn test, 2026-10-05).
   [HERMES, "T1 the success line prints the host's whole answer",
     once('  echo "[hermes-aify] managed gateway host ready on port ${_hermes_host_port:-unknown}" >&2',
       '  echo "[hermes-aify] managed gateway host ready on port ${_hermes_host_port:-unknown}: $HERMES_HOST_JSON" >&2'),

@@ -25,7 +25,7 @@ const freshHome = (t) => {
 const widen = (dir) => (WIN ? execFileSync("icacls", [dir, "/grant", "*S-1-1-0:(OI)(CI)R"], { stdio: "ignore", windowsHide: true }) : fs.chmodSync(dir, 0o755));
 
 test("a launch's folder is its agent's id, or _pid-<launcher pid> for a launch nobody named, and nothing that could climb out", () => {
-  assert.equal(sessionFolderName("wrapper-senior-dev", 7), "wrapper-senior-dev");
+  assert.equal(sessionFolderName("probe-agent", 7), "probe-agent");
   assert.equal(sessionFolderName("", 4242), "_pid-4242");
   for (const bad of ["..", "../x", "a/b", "a\\b", ".hidden", "-flag", "x".repeat(129), "CON", "nul.txt", "_pid-5"]) assert.equal(sessionFolderName(bad, 7), null, bad);
   assert.equal(sessionFolderName("", 0), null, "an unnamed launch with no pid got a folder");

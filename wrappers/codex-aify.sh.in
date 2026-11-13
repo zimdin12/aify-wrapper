@@ -466,7 +466,7 @@ export AIFY_RUNTIME="codex"
 # Every turn-state path is gated on AIFY_AGENT_ID. With no id, this session cannot report
 # turn-start/turn-end, so the agent's status LATCHES: nothing alive can ever clear it, and it looks
 # healthy from every other angle. claude-aify's comment records what that costs ("days of
-# general-manager is always working").
+# target-agent is always working").
 #
 # claude-aify has recovered the agent from a bare `--resume <id>` since 2026-07-14, and hermes-aify
 # since 2026-06-03. hermes-aify's own comment admitted the gap verbatim: "codex still has no such
@@ -770,7 +770,7 @@ fi
 # blocks startup until "Trust all hooks and continue" is selected manually,
 # which leaves the wrapper PTY visible+attached but never loads the inner
 # aify-comms MCP server — every dispatch sits queued forever (observed
-# 2026-05-26 with graph-senior-dev). Bypass hook-trust on managed wrappers
+# 2026-05-26 with a managed agent). Bypass hook-trust on managed wrappers
 # only. Operator-launched resident codex-aify keeps its normal trust UX.
 if [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ]; then
   CODEX_PERMISSION_FLAGS+=(--dangerously-bypass-hook-trust)

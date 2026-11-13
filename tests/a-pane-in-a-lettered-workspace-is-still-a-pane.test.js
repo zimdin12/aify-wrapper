@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Herdr numbers its tenth workspace `wA`, and the ones after with letters too (live 2026-10-03: wA, wC-wF,
 // wJ). Both of our pane checks took digits only. The claim refused such a pane as "not running in a herdr
-// pane", so the agent was never claimed and Herdr later resumed it bare (golf-manager in `wA:p1`), and the
+// pane", so the agent was never claimed and Herdr later resumed it bare (an agent in `wA:p1`), and the
 // state hook dropped every report, so managed panes from `wA` on showed no status dot.
 
 import assert from "node:assert/strict";

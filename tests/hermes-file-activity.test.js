@@ -23,7 +23,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const MODULE = path.join(ROOT, "lib", "hermes-file-activity.py");
 const PYTHON = ["python3", "python"].find((name) => spawnSync(name, ["--version"], { encoding: "utf8" }).status === 0);
 const NO_PYTHON = !PYTHON && "neither python3 nor python runs here";
-const identity = { agentId: "hermes-lead", instanceId: "residents", machineId: "win32:host", incarnation: "inc-1" };
+const identity = { agentId: "hermes-agent", instanceId: "residents", machineId: "win32:host", incarnation: "inc-1" };
 const input = (over = {}) => ({ tool_name: "read_file", raw: "docs/a.md", canonical: "C:/work/repo/docs/a.md", session_id: "s1", tool_call_id: "c1", ...over });
 
 test("the three file tools become read and write records of the hermes adapter", () => {
@@ -180,16 +180,16 @@ test("a hermes resolver that fails is reported once, in hermes' log", { skip: NO
 test("the callback hands one line to the spool end to end", { skip: NO_PYTHON }, () => {
   const lease = fs.mkdtempSync(path.join(os.homedir(), "aify-hermes-activity-"));
   try {
-    const env = { ...process.env, AIFY_FILE_ACTIVITY: "1", AIFY_AGENT_ID: "hermes-lead", AIFY_ENV_INSTANCE: "residents", AIFY_LIFETIME: "inc-1",
+    const env = { ...process.env, AIFY_FILE_ACTIVITY: "1", AIFY_AGENT_ID: "hermes-agent", AIFY_ENV_INSTANCE: "residents", AIFY_LIFETIME: "inc-1",
       AIFY_AGENT_LEASE_DIR: lease };
     drive({ calls: [call()], realHandOff: true }, env);
-    const spool = path.join(lease, "hermes-lead", "activity-v2");
+    const spool = path.join(lease, "hermes-agent", "activity-v2");
     const lines = fs.readdirSync(spool).flatMap((name) => fs.readFileSync(path.join(spool, name), "utf8").trim().split("\n"));
     assert.equal(lines.length, 1);
     const record = JSON.parse(lines[0]).record;
     assert.equal(validActivityRecord(record), true);
     assert.deepEqual([record.source.runtime, record.source.agentId, record.event.tool, record.event.path.canonical],
-      ["hermes", "hermes-lead", "read_file", "C:/work/repo/docs/a.md"]);
+      ["hermes", "hermes-agent", "read_file", "C:/work/repo/docs/a.md"]);
     // The module was loaded, as when a parent exported its path: the writer's own switch still decides.
     for (const [value, agent] of [["0", "hermes-off"], ["", "hermes-empty"]]) {
       drive({ calls: [call()], realHandOff: true }, { ...env, AIFY_FILE_ACTIVITY: value, AIFY_AGENT_ID: agent, AIFY_FILE_ACTIVITY_HERMES_PLUGIN: MODULE });

@@ -81,7 +81,7 @@ test("with no time passed in, the shell's own clock stamps the report to the mic
   assert.ok(Math.abs(Number(seq) - before) < 60_000_000, `${seq} is not this host's clock in microseconds`);
 });
 
-// REVIEW of 82b8331 (comms-senior-dev, 2026-09-28): on a shell with neither EPOCHREALTIME nor GNU
+// REVIEW of 82b8331 (the reviewer, 2026-09-28): on a shell with neither EPOCHREALTIME nor GNU
 // `date +%N` (macOS /bin/sh), whole seconds ranked a hook BELOW the claim's millisecond seq made earlier
 // in the same second, and Herdr drops the lower one. Driven here by sourcing the script with
 // EPOCHREALTIME unset (bash drops its special meaning) and a BSD-style `date` first on PATH.

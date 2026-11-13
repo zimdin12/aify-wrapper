@@ -267,7 +267,7 @@ test("END TO END, CODEX'S INPUT: the same request, and the output codex parses",
 
 test("END TO END, A CODEX SUBAGENT'S TURN ASKS NOTHING AND ADDS NOTHING: its parent's turn already carried the rules", async (t) => {
   // codex-cli 0.160.0 fires UserPromptSubmit for a subagent's turn too, with agent_id and agent_type added
-  // (codex-rs core/src/hook_runtime.rs inspect_pending_input; comms-tech-lead, 2026-10-20). Hermes' callback skips the
+  // (codex-rs core/src/hook_runtime.rs inspect_pending_input; source-agent, 2026-10-20). Hermes' callback skips the
   // same turns (lib/hermes-turn-start.py).
   const turn = { session_id: "019a2b3c-codex-thread", turn_id: "turn-4", transcript_path: null, cwd: "C:\\Docker\\aify-dashboard",
     hook_event_name: "UserPromptSubmit", model: "gpt-5.5", permission_mode: "bypassPermissions", prompt: "explore" };
@@ -285,7 +285,7 @@ test("END TO END, A CODEX SUBAGENT'S TURN ASKS NOTHING AND ADDS NOTHING: its par
 
 test("END TO END, THE PER-TURN READ CHECKS NO CUSTODY: a credential others can read still sends its key", async (t) => {
   // Bug this catches: custody (an icacls spawn, up to 384 ms measured) put back on every prompt, inside this 1500 ms
-  // deadline, where a miss drops the turn's text silently. It is checked at launch instead (comms-tech-lead, 2026-10-28).
+  // deadline, where a miss drops the turn's text silently. It is checked at launch instead (source-agent, 2026-10-28).
   const svc = await service(t, answer("OPERATOR RULE"));
   const env = host(t, { endpoint: svc.endpoint });
   const file = path.join(env.HOME, ".aify", "credentials", "dash.key");

@@ -75,9 +75,9 @@ const HERMES = [
 ];
 // What runs beside hermes, or only names it, and is not hermes; and another program whose command line is unreadable.
 const NOT_HERMES = [
-  win('"C:\\Program Files\\Git\\usr\\bin\\bash.EXE" C:/Users/u/.local/bin/hermes-aify --aify-agent pc-manager --resume 20260907_192520_2d35dd'),
-  win("C:\\nvm4w\\nodejs\\node.exe C:/Users/u/.aify-comms/mcp/stdio/hermes-managed-host.js run pc-manager"),
-  win('"C:\\Program Files\\Git\\usr\\bin\\nohup.exe" node /c/Users/u/.aify-comms/mcp/stdio/hermes-managed-host.js run pc-manager'),
+  win('"C:\\Program Files\\Git\\usr\\bin\\bash.EXE" C:/Users/u/.local/bin/hermes-aify --aify-agent pc-other-agent --resume 20260907_192520_2d35dd'),
+  win("C:\\nvm4w\\nodejs\\node.exe C:/Users/u/.aify-comms/mcp/stdio/hermes-managed-host.js run pc-other-agent"),
+  win('"C:\\Program Files\\Git\\usr\\bin\\nohup.exe" node /c/Users/u/.aify-comms/mcp/stdio/hermes-managed-host.js run pc-other-agent'),
   win("C:\\Users\\u\\AppData\\Local\\hermes\\tools\\python-3.14.9\\python.exe C:\\Users\\u\\AppData\\Local\\Temp\\hermes_kernel_p94o02dg\\hermes_kernel_runner.py"),
   win("C:\\Users\\u\\AppData\\Local\\hermes\\tools\\node-26.12.1-win32-x64\\node.EXE --expose-gc C:\\Users\\u\\AppData\\Local\\hermes\\hermes-agent\\ui-tui\\dist\\entry.js"),
   win("node C:/w/bin/aify-hermes-pending-config.mjs apply --marker C:/h/.aify/hermes-config-pending.json"),

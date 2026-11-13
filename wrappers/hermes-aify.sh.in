@@ -429,7 +429,7 @@ unset HERMES_TUI_GATEWAY_URL AIFY_HERMES_GATEWAY_URL AIFY_HERMES_GATEWAY_TOKEN 2
 #   2. otherwise ask the aify service which hermes agent owns this session handle.
 # Best-effort; never blocks the launch. (Claude got the same wiring on 2026-07-14 — this
 # comment previously claimed claude/codex already had it, which was FALSE and is exactly how
-# general-manager ran for weeks with no agent id and a permanently latched status. CODEX
+# target-agent ran for weeks with no agent id and a permanently latched status. CODEX
 # still has no such recovery: its operator path is covered by the resume command now carrying
 # --aify-agent, but a hand-typed `codex-aify --resume <id>` is still identity-less.)
 HERMES_RECOVER_HANDLE="$HERMES_SESSION_HANDLE"
@@ -780,7 +780,7 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
   # (3) Background delivery loop — detached, survives the exec below. Capture
   # its PID so kill-prior can EXCLUDE it (self-reap race) and so we can report
   # which loop we are health-gating on. ITS OUTPUT IS KEPT, one file per agent beside its markers and
-  # started fresh each launch: pc-manager's loop, found 2026-09-28 beside a gateway with no TUI, had
+  # started fresh each launch: pc-other-agent's loop, found 2026-09-28 beside a gateway with no TUI, had
   # written to /dev/null and left nothing to say what it was doing.
   # The gateway just verified, exported BEFORE the loop starts: the loop's bring-up takes it from here rather than
   # asking aify-env again, because a second ask whose probe missed a busy gateway would end the one the TUI uses
@@ -879,7 +879,7 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
     # active-session file + marker. CRITICAL: we now USE its result as the resume
     # target. A REAL id resumes; a GC'd/dead id yields EMPTY, so we start FRESH cleanly
     # instead of launching --resume on a dead id, which errors 'session not found' and
-    # strands the console (the cms-senior-dev / next-* incident). A flaky/absent gateway
+    # strands the console (the repeated-restart incident). A flaky/absent gateway
     # returns the id unchanged, preserving operator intent. (The bridge ALSO sees
     # AIFY_EXPLICIT_SESSION_HANDLE=true + AIFY_SESSION_HANDLE=<id> as a fallback.)
     HERMES_EXPLICIT_RESOLVED="$(node "$AIFY_HERMES_MANAGED_HOST_JS" resolve-session "$HERMES_AIFY_AGENT_ID" --explicit "$HERMES_SESSION_HANDLE" 2>/dev/null | head -n1 | tr -d '[:space:]' || true)"
@@ -898,7 +898,7 @@ if [ -n "$HERMES_AIFY_AGENT_ID" ] && [ ${#HERMES_ARGS[@]} -eq 0 ] && [ "$HERMES_
       # CRITICAL (2026-06-05): the requested handle is DEAD and we are starting fresh, so CLEAR
       # the exported handle. Otherwise the in-session bridge heartbeats the dead handle back, aify
       # stores it, and the env bridge re-resumes it on every restart — an infinite dead-handle
-      # cycle that never captures the fresh session (the next-tech-lead 'fresh on every stop+start'
+      # cycle that never captures the fresh session (the 'fresh on every stop+start'
       # bug). Cleared, the bridge DISCOVERS the fresh session's real id and reports THAT.
       unset HERMES_SESSION_ID AIFY_SESSION_HANDLE AIFY_EXPLICIT_SESSION_HANDLE HERMES_EXPLICIT_SESSION_HANDLE
       AIFY_RUNTIME_RUNNING=1

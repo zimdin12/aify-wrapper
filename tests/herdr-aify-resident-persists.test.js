@@ -1,14 +1,10 @@
 #!/usr/bin/env node
 // Plain `herdr-aify` is the Herdr this host KEEPS, and leaving it detaches.
 //
-// THE DEFECT THIS EXISTS FOR, in the operator's words after using it:
+// THE DEFECT: after detaching and starting Herdr again, the operator saw the resident agent online
+// in the service but could no longer find its space or agent in Herdr. The resident was orphaned.
 //
-//   "i started resident claude-aify llamacpp-manager with command. then i detached and i still see
-//    llamacpp running in dashboard (online). then i started it again (herdr-aify) and i do not see
-//    that llamacpp space nor agent, but aify-comms dashboard shows that he is online (still is, so
-//    orphan resident???)"
-//
-// and the rule they gave: "ordinary herdr-aify should remember previous instance agents like
+// The rule they gave: "ordinary herdr-aify should remember previous instance agents like
 // ordinary herdr does, that herdr-aify env is the one that really acts differently."
 //
 // Plain mode minted a FRESH INVOCATION PROFILE per launch, so Herdr had no session to restore and

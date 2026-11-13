@@ -52,7 +52,7 @@ test('READY WHEN THE SOCKET OPENS: the start answers the socket url, tied to the
   const spawned = [];
   // The agent's aify-env binding rides through whole, with no allowlist: hermes' plugins in the gateway post its
   // turns to aify-env with it (moved from comms' agent-state-event test, G5).
-  const binding = { AIFY_ENV_URL: 'http://127.0.0.1:9', AIFY_ENV_INSTANCE: 'test', AIFY_LIFETIME: 'L', AIFY_AGENT_ID: 'pc-manager' };
+  const binding = { AIFY_ENV_URL: 'http://127.0.0.1:9', AIFY_ENV_INSTANCE: 'test', AIFY_LIFETIME: 'L', AIFY_AGENT_ID: 'pc-other-agent' };
   const ready = await startGateway({ port: PORT, ownerPid: 777, logDir: h.logDir, env: { PATH: 'x', HERMES_PARENT_NONCE: 'inherited', ...binding },
     token: TOKEN, onSpawn: (pid) => spawned.push(pid), spawn: h.spawn, fetchImpl: h.fetchImpl, WebSocketImpl: h.WebSocketImpl, intervalMs: 5 });
   assert.deepEqual(ready, { port: PORT, token: TOKEN, wsUrl: `ws://127.0.0.1:${PORT}/api/ws?token=${TOKEN}`, pid: 4242 });

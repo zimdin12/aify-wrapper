@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { ensureGateway, envEndpoint, freePort } from '../lib/hermes-gateway-ensure.mjs';
 
 const LIFETIME = '11111111-1111-4111-8111-111111111111';
-const ENV = { AIFY_ENV_INSTANCE: 'default', AIFY_LIFETIME: LIFETIME, AIFY_AGENT_LEASE: '700', AIFY_AGENT_ID: 'pc-manager', SECRET: 'kept' };
+const ENV = { AIFY_ENV_INSTANCE: 'default', AIFY_LIFETIME: LIFETIME, AIFY_AGENT_LEASE: '700', AIFY_AGENT_ID: 'pc-other-agent', SECRET: 'kept' };
 const BASE = new URL('http://127.0.0.1:8802');
 
 /** A fake aify-env answering each action, recording what it was asked. */
@@ -24,7 +24,7 @@ test('NO LIVE GATEWAY: start on the port aify-env gave, from this launch\'s own 
   const env = aifyEnv({ prepare: { status: 200, body: { ok: true, port: 9341, live: false } }, register: { status: 200, body: { ok: true } } });
   const starts = [];
   const attached = [];
-  const gateway = await ensureGateway({ agentId: 'pc-manager', env: ENV, logDir: 'L', endpoint: () => BASE, fetchImpl: env.fetchImpl,
+  const gateway = await ensureGateway({ agentId: 'pc-other-agent', env: ENV, logDir: 'L', endpoint: () => BASE, fetchImpl: env.fetchImpl,
     start: async (input) => { starts.push(input); input.onSpawn(4242); return { port: input.port, token: 't', wsUrl: 'ws://127.0.0.1:9341/api/ws?token=t', pid: 4242 }; },
     attach: (pid) => attached.push(pid) });
   assert.deepEqual(gateway, { port: 9341, token: 't', wsUrl: 'ws://127.0.0.1:9341/api/ws?token=t' });
@@ -32,14 +32,14 @@ test('NO LIVE GATEWAY: start on the port aify-env gave, from this launch\'s own 
   assert.equal(starts[0].env, ENV, "the gateway starts with the launcher's environment: the agent's id and secrets");
   assert.deepEqual(attached, [4242], 'the gateway joins the agent lease, at spawn');
   assert.deepEqual(env.asked.map(({ url, body }) => [url, body]), [
-    ['http://127.0.0.1:8802/agents/pc-manager/gateway', { instance: 'default', lifetime: LIFETIME, action: 'prepare' }],
-    ['http://127.0.0.1:8802/agents/pc-manager/gateway', { instance: 'default', lifetime: LIFETIME, action: 'register', port: 9341, pid: 4242 }],
+    ['http://127.0.0.1:8802/agents/pc-other-agent/gateway', { instance: 'default', lifetime: LIFETIME, action: 'prepare' }],
+    ['http://127.0.0.1:8802/agents/pc-other-agent/gateway', { instance: 'default', lifetime: LIFETIME, action: 'register', port: 9341, pid: 4242 }],
   ]);
 });
 
 test('A LIVE GATEWAY IS REUSED: nothing starts and nothing registers', async () => {
   const env = aifyEnv({ prepare: { status: 200, body: { ok: true, port: 9341, live: true, token: 't', wsUrl: 'ws://x' } } });
-  const gateway = await ensureGateway({ agentId: 'pc-manager', env: ENV, logDir: 'L', endpoint: () => BASE, fetchImpl: env.fetchImpl,
+  const gateway = await ensureGateway({ agentId: 'pc-other-agent', env: ENV, logDir: 'L', endpoint: () => BASE, fetchImpl: env.fetchImpl,
     start: async () => assert.fail('a live gateway was started again') });
   assert.deepEqual(gateway, { port: 9341, token: 't', wsUrl: 'ws://x' });
   assert.equal(env.asked.length, 1);
@@ -47,15 +47,15 @@ test('A LIVE GATEWAY IS REUSED: nothing starts and nothing registers', async () 
 
 test('NO aify-env, NO GATEWAY: a launch without a lifetime or a serving aify-env stops with the reason', async () => {
   const never = async () => assert.fail('nothing may start');
-  await assert.rejects(ensureGateway({ agentId: 'pc-manager', env: { ...ENV, AIFY_LIFETIME: '' }, logDir: 'L', start: never }),
+  await assert.rejects(ensureGateway({ agentId: 'pc-other-agent', env: { ...ENV, AIFY_LIFETIME: '' }, logDir: 'L', start: never }),
     /has no aify-env lifetime/);
-  await assert.rejects(ensureGateway({ agentId: 'pc-manager', env: ENV, logDir: 'L', start: never, endpoint: () => null }),
+  await assert.rejects(ensureGateway({ agentId: 'pc-other-agent', env: ENV, logDir: 'L', start: never, endpoint: () => null }),
     /no aify-env serves instance 'default'/);
 });
 
 test('A REFUSAL IS SAID, AND A SUPERSEDED LAUNCH STARTS NOTHING', async () => {
   const env = aifyEnv({ prepare: { status: 409, body: { ok: false, reason: 'not-current' } } });
-  await assert.rejects(ensureGateway({ agentId: 'pc-manager', env: ENV, logDir: 'L', endpoint: () => BASE, fetchImpl: env.fetchImpl,
+  await assert.rejects(ensureGateway({ agentId: 'pc-other-agent', env: ENV, logDir: 'L', endpoint: () => BASE, fetchImpl: env.fetchImpl,
     start: async () => assert.fail('a superseded launch started a gateway') }), /refused the gateway prepare: not-current/);
 });
 
@@ -75,7 +75,7 @@ test('THE DESCRIPTOR names a loopback aify-env for its own instance, or nothing'
 test('NO LEASE, NO GATEWAY: a launch holding no agent lease is refused before aify-env is asked (review of 6959d44, F4)', async () => {
   for (const lease of ['', '0', 'x']) {
     const env = aifyEnv({ prepare: { status: 200, body: { ok: true, port: 9341, live: false } } });
-    await assert.rejects(ensureGateway({ agentId: 'pc-manager', env: { ...ENV, AIFY_AGENT_LEASE: lease }, logDir: 'L', endpoint: () => BASE,
+    await assert.rejects(ensureGateway({ agentId: 'pc-other-agent', env: { ...ENV, AIFY_AGENT_LEASE: lease }, logDir: 'L', endpoint: () => BASE,
       fetchImpl: env.fetchImpl, start: async () => assert.fail('a gateway with no owner was started') }), /holds no agent lease/, lease);
     assert.equal(env.asked.length, 0, `${JSON.stringify(lease)}: aify-env was asked anyway`);
   }
@@ -84,7 +84,7 @@ test('NO LEASE, NO GATEWAY: a launch holding no agent lease is refused before ai
 test('A GATEWAY aify-env WILL NOT RECORD IS ENDED: no later launch could end it', async () => {
   const env = aifyEnv({ prepare: { status: 200, body: { ok: true, port: 9341, live: false } }, register: { status: 409, body: { ok: false, reason: 'not-prepared' } } });
   const stopped = [];
-  await assert.rejects(ensureGateway({ agentId: 'pc-manager', env: ENV, logDir: 'L', endpoint: () => BASE, fetchImpl: env.fetchImpl,
+  await assert.rejects(ensureGateway({ agentId: 'pc-other-agent', env: ENV, logDir: 'L', endpoint: () => BASE, fetchImpl: env.fetchImpl,
     start: async (input) => ({ port: input.port, token: 't', wsUrl: 'ws://x', pid: 4242 }), stop: async (pid) => { stopped.push(pid); } }),
   /refused the gateway register: not-prepared/);
   assert.deepEqual(stopped, [4242]);
@@ -98,7 +98,7 @@ test('A HAND LAUNCH WORKS WITHOUT aify-env (operator, 2026-10-26): it starts on 
     const starts = [];
     const attached = [];
     const notes = [];
-    const gateway = await ensureGateway({ agentId: 'pc-manager', env: RESIDENT, logDir: 'L', endpoint, fetchImpl: refused, pickPort: async () => 8868,
+    const gateway = await ensureGateway({ agentId: 'pc-other-agent', env: RESIDENT, logDir: 'L', endpoint, fetchImpl: refused, pickPort: async () => 8868,
       start: async (input) => { starts.push(input); input.onSpawn(4242); return { port: input.port, token: 't', wsUrl: 'ws://127.0.0.1:8868/api/ws?token=t', pid: 4242 }; },
       attach: (pid) => attached.push(pid), note: (line) => notes.push(line) });
     assert.deepEqual(gateway, { port: 8868, token: 't', wsUrl: 'ws://127.0.0.1:8868/api/ws?token=t' }, why);
@@ -111,15 +111,15 @@ test('A HAND LAUNCH WORKS WITHOUT aify-env (operator, 2026-10-26): it starts on 
 
 test('ONLY A HAND LAUNCH, AND ONLY WHEN NOTHING ANSWERS: a managed launch, a refusal and a timeout still stop', async () => {
   const never = async () => assert.fail('nothing may start');
-  await assert.rejects(ensureGateway({ agentId: 'pc-manager', env: ENV, logDir: 'L', start: never, endpoint: () => BASE, fetchImpl: refused }),
+  await assert.rejects(ensureGateway({ agentId: 'pc-other-agent', env: ENV, logDir: 'L', start: never, endpoint: () => BASE, fetchImpl: refused }),
     /fetch failed/, 'a managed launch whose aify-env is gone');
   const env = aifyEnv({ prepare: { status: 409, body: { ok: false, reason: 'not-current' } } });
-  await assert.rejects(ensureGateway({ agentId: 'pc-manager', env: RESIDENT, logDir: 'L', start: never, endpoint: () => BASE, fetchImpl: env.fetchImpl }),
+  await assert.rejects(ensureGateway({ agentId: 'pc-other-agent', env: RESIDENT, logDir: 'L', start: never, endpoint: () => BASE, fetchImpl: env.fetchImpl }),
     /refused the gateway prepare: not-current/, 'aify-env answered: a refusal is an answer');
   const slow = async () => { throw new DOMException('The operation was aborted due to timeout', 'TimeoutError'); };
-  await assert.rejects(ensureGateway({ agentId: 'pc-manager', env: RESIDENT, logDir: 'L', start: never, endpoint: () => BASE, fetchImpl: slow }),
+  await assert.rejects(ensureGateway({ agentId: 'pc-other-agent', env: RESIDENT, logDir: 'L', start: never, endpoint: () => BASE, fetchImpl: slow }),
     /timeout/, 'a slow aify-env may be ending the older gateway on that port');
-  await assert.rejects(ensureGateway({ agentId: 'pc-manager', env: { ...RESIDENT, AIFY_AGENT_LEASE: '' }, logDir: 'L', start: never, endpoint: () => null }),
+  await assert.rejects(ensureGateway({ agentId: 'pc-other-agent', env: { ...RESIDENT, AIFY_AGENT_LEASE: '' }, logDir: 'L', start: never, endpoint: () => null }),
     /holds no agent lease/, 'a hand launch with no lease still starts nothing');
 });
 
@@ -139,17 +139,17 @@ test('A RECOVERY SERVES THE TOKEN, AND WITHOUT aify-env THE PORT, THE VISIBLE TU
   const LAUNCH = 'ws://127.0.0.1:9101/api/ws?token=launch-token';
   const started = (starts) => async (input) => { starts.push(input); return { port: input.port, token: input.token ?? 'fresh', wsUrl: 'ws://x', pid: 4242 }; };
   const noEnv = [];
-  await ensureGateway({ agentId: 'pc-manager', env: { ...RESIDENT, AIFY_HERMES_GATEWAY_URL: LAUNCH }, logDir: 'L', endpoint: () => null,
+  await ensureGateway({ agentId: 'pc-other-agent', env: { ...RESIDENT, AIFY_HERMES_GATEWAY_URL: LAUNCH }, logDir: 'L', endpoint: () => null,
     pickPort: async () => assert.fail('a recovery takes no other port'), start: started(noEnv), note: () => {} });
   assert.deepEqual(noEnv.map(({ port, token }) => ({ port, token })), [{ port: 9101, token: 'launch-token' }], 'without aify-env');
   const recorded = [];
   const env = aifyEnv({ prepare: { status: 200, body: { ok: true, port: 9341, live: false } }, register: { status: 200, body: { ok: true } } });
-  await ensureGateway({ agentId: 'pc-manager', env: { ...ENV, AIFY_HERMES_GATEWAY_URL: LAUNCH }, logDir: 'L', endpoint: () => BASE,
+  await ensureGateway({ agentId: 'pc-other-agent', env: { ...ENV, AIFY_HERMES_GATEWAY_URL: LAUNCH }, logDir: 'L', endpoint: () => BASE,
     fetchImpl: env.fetchImpl, start: started(recorded), stop: async () => {} });
   assert.deepEqual(recorded.map(({ port, token }) => ({ port, token })), [{ port: 9341, token: 'launch-token' }], "aify-env's port, the same token");
   // CONTROL: a first launch carries no launch URL, so its gateway mints a fresh token on the port it is given.
   const first = [];
-  await ensureGateway({ agentId: 'pc-manager', env: RESIDENT, logDir: 'L', endpoint: () => null, pickPort: async () => 8868,
+  await ensureGateway({ agentId: 'pc-other-agent', env: RESIDENT, logDir: 'L', endpoint: () => null, pickPort: async () => 8868,
     start: started(first), note: () => {} });
   assert.deepEqual(first.map(({ port, token }) => ({ port, token })), [{ port: 8868, token: undefined }]);
 });

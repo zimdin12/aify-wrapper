@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // hermes-aify never prints the managed gateway's bearer token, on its success line or its parse-failure line.
 //
-// THE DEFECT (2026-10-05, graph-tech-lead's spawn test). The launcher echoed the gateway host's whole answer,
+// THE DEFECT (2026-10-05, a managed agent's spawn test). The launcher echoed the gateway host's whole answer,
 // {port, token, wsUrl}, to stderr -- and the wsUrl carries the same token as `?token=`. A managed worker's stderr
 // is its console, which console_tail and the dashboard serve, so anyone able to read a console could drive that
 // agent's gateway. The answer itself is private IPC on stdout and stays whole: the TUI still needs the URL.

@@ -335,9 +335,9 @@ inside WSL, which passes through only what `WSLENV` names: the variables were re
 was not.
 
 **So is whatever session `herdr-aify` was run from, and that one cost a live agent.** On 2026-09-15 the
-resident Herdr server's environment still held `AIFY_AGENT_ID=comms-tech-lead` and that agent's
+resident Herdr server's environment still held `AIFY_AGENT_ID=source-agent` and that agent's
 `CLAUDE_SESSION_ID`: it had been started from inside that agent's Claude Code session. Every pane shell
-inherited both, and a bare `claude-aify` in one started as comms-tech-lead and replaced the live one. The
+inherited both, and a bare `claude-aify` in one started as source-agent and replaced the live one. The
 server is now started without any agent session (`withoutAgentSession`, `lib/inherited-session.mjs`), and
 the launchers ignore an inherited one (README, "One live instance per agent"). A server started before
 that fix keeps what it inherited until it is restarted.

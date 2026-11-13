@@ -132,7 +132,7 @@ test("startIntent: inside a running session, only an intent the COMMAND carries 
 });
 
 test("leaseFileName refuses what it cannot name, rather than rewriting it into somebody else's id", () => {
-  assert.equal(leaseFileName("mc-senior-dev"), "mc-senior-dev.json");
+  assert.equal(leaseFileName("managed-agent"), "managed-agent.json");
   for (const bad of ["", "a/b", "..", ".hidden", "a b"]) assert.throws(() => leaseFileName(bad));
   assert.equal(leaseDirectory({ env: { AIFY_AGENT_LEASE_DIR: "/x" } }), "/x");
   assert.equal(leaseDirectory({ env: {}, home: "/h" }), path.join("/h", ".aify", "agents"));

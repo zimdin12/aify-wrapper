@@ -57,7 +57,7 @@ function runInstall({ PATH: sealedPath, args, overrides = {} }) {
   return spawnSync("bash", [INSTALL, "--registry", emptyRegistry(), ...args], {
     encoding: "utf8",
     env: { ...overrides, PATH: sealedPath, HOME: os.tmpdir().replace(/\\/g, "/") },
-    // A budget above what the render costs under a full suite, not alone. Measured by dashboard-manager
+    // A budget above what the render costs under a full suite, not alone. Measured by the dashboard maintainer
     // on 2026-10-01: a two-runtime render takes 14-17 s alone and 97 s in a full run, and twice took
     // 121-122 s, so the 120 s it had ended it with status null and failed the run.
     timeout: 300_000,

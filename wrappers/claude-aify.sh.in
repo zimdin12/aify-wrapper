@@ -515,7 +515,7 @@ fi
 # messages and heartbeats normally — but its status LATCHES FOREVER: the channel sidecar
 # (which carries the id in its own config) still SETS `working` on an inbound wake, and
 # nothing left alive can ever CLEAR it. That is a silent, total status failure that looks
-# healthy from every other angle; it cost days of "general-manager is always working" before
+# healthy from every other angle; it cost days of "target-agent is always working" before
 # the missing env var was found. Claude's own /resume picker offers a SESSION, never an agent,
 # so an operator naturally resumes by session id — exactly the path that strips the identity.
 #

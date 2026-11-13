@@ -158,8 +158,8 @@ for (const client of ["claude", "codex", "hermes", "pi"]) {
 
 for (const client of ["claude", "codex", "hermes", "pi"]) {
   test(`${client}: an agent the command did not NAME never replaces its live instance, and a shell inside a session names none`, { skip: WIN }, async () => {
-    // 2026-09-15: a bare `claude-aify` in a pane that had inherited comms-tech-lead's session environment
-    // started as comms-tech-lead and replaced the live one.
+    // 2026-09-15: a bare `claude-aify` in a pane that had inherited source-agent's session environment
+    // started as source-agent and replaced the live one.
     const w = world(client);
     const id = agentId();
     const first = spawn("bash", [w.launcher, "--aify-agent", id], { env: w.env({ STUB_EXIT: "hang", AIFY_START_INTENT: "start" }), detached: true, stdio: "ignore" });

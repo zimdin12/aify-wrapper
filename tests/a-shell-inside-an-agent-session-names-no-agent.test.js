@@ -2,8 +2,8 @@
 // A shell that belongs to a running agent session names no agent (lib/inherited-session.mjs,
 // bin/aify-inherited-session.sh).
 //
-// THE INCIDENT, 2026-09-15: a Herdr server started from inside comms-tech-lead's Claude Code session gave every
-// pane that agent's id and conversation. A bare `claude-aify` typed into one started as comms-tech-lead and
+// THE INCIDENT, 2026-09-15: a Herdr server started from inside source-agent's Claude Code session gave every
+// pane that agent's id and conversation. A bare `claude-aify` typed into one started as source-agent and
 // replaced the live one. The launchers' end of it is in a-launcher-holds-the-agent-lease.test.js; this holds
 // the helper and its two lists, and the pane claim that the same day's launches were all refused.
 
@@ -63,7 +63,7 @@ function forget(env, named = "") {
 }
 
 test("inside a session a command naming no agent loses the session; outside one nothing changes", { skip: WIN }, () => {
-  const session = { AIFY_AGENT_ID: "comms-tech-lead", CLAUDE_SESSION_ID: "651b895f", AIFY_SESSION_MODE: "resident", AIFY_START_INTENT: "replace" };
+  const session = { AIFY_AGENT_ID: "source-agent", CLAUDE_SESSION_ID: "651b895f", AIFY_SESSION_MODE: "resident", AIFY_START_INTENT: "replace" };
 
   for (const marker of [{ AIFY_AGENT_LEASE: "62512" }, { CLAUDE_CODE_CHILD_SESSION: "1" }]) {
     const { left, said } = forget({ ...session, ...marker });
@@ -76,7 +76,7 @@ test("inside a session a command naming no agent loses the session; outside one 
   // CONTROLS: a clean shell, and an empty lease (what a lease watch runs with), keep what a person gave.
   for (const clean of [{}, { AIFY_AGENT_LEASE: "" }]) {
     const { left, said } = forget({ ...session, ...clean });
-    assert.deepEqual([left.AIFY_AGENT_ID, left.CLAUDE_SESSION_ID, left.AIFY_START_INTENT], ["comms-tech-lead", "651b895f", "replace"], JSON.stringify(clean));
+    assert.deepEqual([left.AIFY_AGENT_ID, left.CLAUDE_SESSION_ID, left.AIFY_START_INTENT], ["source-agent", "651b895f", "replace"], JSON.stringify(clean));
     assert.equal(said, "", "a clean shell is told nothing");
   }
 });
@@ -84,9 +84,9 @@ test("inside a session a command naming no agent loses the session; outside one 
 test("a command that NAMES its agent keeps its host's mode and identity, and still inherits no conversation or intent", { skip: WIN }, () => {
   // External review, 2026-09-15: a host carrying a marker composed a managed launch; dropping its mode made the
   // worker read as a person, and its named start replaced the live instance it was meant to leave alone.
-  const hostComposed = { AIFY_AGENT_ID: "mc-senior-dev", AIFY_SESSION_MODE: "managed", AIFY_START_INTENT: "start", CLAUDE_SESSION_ID: "inherited", CLAUDE_CODE_CHILD_SESSION: "1" };
-  const { left, said } = forget(hostComposed, "mc-senior-dev");
-  assert.deepEqual([left.AIFY_AGENT_ID, left.AIFY_SESSION_MODE], ["mc-senior-dev", "managed"], "a named launch lost what its host gave it");
+  const hostComposed = { AIFY_AGENT_ID: "managed-agent", AIFY_SESSION_MODE: "managed", AIFY_START_INTENT: "start", CLAUDE_SESSION_ID: "inherited", CLAUDE_CODE_CHILD_SESSION: "1" };
+  const { left, said } = forget(hostComposed, "managed-agent");
+  assert.deepEqual([left.AIFY_AGENT_ID, left.AIFY_SESSION_MODE], ["managed-agent", "managed"], "a named launch lost what its host gave it");
   assert.deepEqual([left.CLAUDE_SESSION_ID, left.AIFY_START_INTENT], ["<unset>", "<unset>"], "a named launch inherited a conversation or an intent");
   assert.match(said, /inherits none of its conversation or start intent; ignored: AIFY_START_INTENT CLAUDE_SESSION_ID\./);
 });
@@ -96,18 +96,18 @@ test("one agent's shell starting ANOTHER agent hands it none of this session's v
   // `claude-aify --aify-agent agent-y` gave agent-y X's role, cwd, mode, model and terminal id. The id resolved
   // to agent-y, which would then report itself running in X's terminal. The values are the SESSION's, so they
   // travel only to a launch that names the agent whose session this is.
-  const xsShell = { AIFY_AGENT_ID: "comms-tech-lead", AIFY_AGENT_ROLE: "tech-lead", AIFY_TERMINAL_ID: "term-77", AIFY_SESSION_MODE: "managed",
+  const xsShell = { AIFY_AGENT_ID: "source-agent", AIFY_AGENT_ROLE: "tech-lead", AIFY_TERMINAL_ID: "term-77", AIFY_SESSION_MODE: "managed",
     AIFY_MANAGED_MODEL: "opus", AIFY_AGENT_CWD: "C:/Docker/aify-comms", CLAUDE_SESSION_ID: "651b895f", AIFY_AGENT_LEASE: "62512" };
-  const { left, said } = forget(xsShell, "general-manager");
+  const { left, said } = forget(xsShell, "target-agent");
   assert.deepEqual([left.AIFY_AGENT_ID, left.AIFY_AGENT_ROLE, left.AIFY_TERMINAL_ID, left.AIFY_SESSION_MODE, left.AIFY_MANAGED_MODEL, left.AIFY_AGENT_CWD],
     ["<unset>", "<unset>", "<unset>", "<unset>", "<unset>", "<unset>"], "a different agent inherited this session's values");
   assert.equal(left.AIFY_AGENT_LEASE, "62512", "the lease is kept for the nested refusal");
-  assert.match(said, /this shell belongs to comms-tech-lead .* and this start names general-manager, so it inherits nothing of that session/);
+  assert.match(said, /this shell belongs to source-agent .* and this start names target-agent, so it inherits nothing of that session/);
   // CONTROL: the same shell naming its OWN agent keeps them, which is the host-composed launch above.
-  assert.equal(forget(xsShell, "comms-tech-lead").left.AIFY_TERMINAL_ID, "term-77");
+  assert.equal(forget(xsShell, "source-agent").left.AIFY_TERMINAL_ID, "term-77");
   // A session whose id is only in AIFY_COMMS_AGENT_ID is matched the same way.
-  const commsId = { AIFY_COMMS_AGENT_ID: "mc-senior-dev", AIFY_TERMINAL_ID: "term-9", AIFY_AGENT_LEASE: "5" };
-  assert.equal(forget(commsId, "mc-senior-dev").left.AIFY_TERMINAL_ID, "term-9");
+  const commsId = { AIFY_COMMS_AGENT_ID: "managed-agent", AIFY_TERMINAL_ID: "term-9", AIFY_AGENT_LEASE: "5" };
+  assert.equal(forget(commsId, "managed-agent").left.AIFY_TERMINAL_ID, "term-9");
   assert.equal(forget(commsId, "other").left.AIFY_TERMINAL_ID, "<unset>");
   // An environment that names NO agent belongs to nobody else: it is a host that composed this launch, and its
   // mode is kept. Dropping it made a managed worker read as a person at a terminal, so its start replaced the
@@ -133,11 +133,11 @@ test("a pane launched through the Windows shim is CLAIMED, and recorded by name"
   const env = { PATH: process.env.PATH, HERDR_ENV: "1", HERDR_PANE_ID: "w1:p2", HERDR_WORKSPACE_ID: "w1", HERDR_BIN_PATH: herdr, AIFY_HERDR_LEDGER: ledger };
   const shim = String.raw`C:\Users\Administrator\.local\bin\claude-aify`;
 
-  const run = spawnSync(process.execPath, [PANE, "claim", "--wrapper", shim, "--", shim, "--aify-agent", "general-manager"], { encoding: "utf8", env });
+  const run = spawnSync(process.execPath, [PANE, "claim", "--wrapper", shim, "--", shim, "--aify-agent", "target-agent"], { encoding: "utf8", env });
   assert.equal(run.stdout, "claimed\n", `the shim's launch was not claimed: ${run.stderr}`);
   const records = new HerdrPaneLedger({ file: ledger }).load().all();
   const [record] = records.values();
-  assert.deepEqual([records.size, record.wrapper, record.argv], [1, "claude-aify", ["claude-aify", "--aify-agent", "general-manager"]]);
+  assert.deepEqual([records.size, record.wrapper, record.argv], [1, "claude-aify", ["claude-aify", "--aify-agent", "target-agent"]]);
   assert.match(fs.readFileSync(calls, "utf8"), /pane report-agent w1:p2 --source herdr:aify --agent claude-aify /);
 
   // CONTROL: an argument no pane can replay is still refused, and nothing is recorded for it.

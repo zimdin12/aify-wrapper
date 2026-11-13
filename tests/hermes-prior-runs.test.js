@@ -26,7 +26,7 @@ test("THE AGENT ID IS MATCHED WHOLE, the nohup parent stands for its child, and 
     row(1, 0, 0, "init"),
     row(10, 1, 100, `"C:\\Program Files\\Git\\usr\\bin\\nohup.exe" node ${LOOP} pc`),
     row(11, 10, 110, `C:\\nvm4w\\nodejs\\node.exe ${LOOP} pc`),
-    row(20, 1, 100, `node ${LOOP} pc-manager`),
+    row(20, 1, 100, `node ${LOOP} pc-other-agent`),
     row(30, 1, 100, "hermes --tui --resume 20261013_old"),
     row(31, 1, 100, "hermes --tui --resume 20261013_older"),
   ]);
@@ -65,7 +65,7 @@ test("WHAT A PROCESS RUNS IS MATCHED, NOT WHAT IT MENTIONS: an observer of the l
   const table = new Map([
     row(1, 0, 0, "init"),
     row(40, 1, 100, `node observer.js "hermes-managed-host.js run pc"`),
-    row(41, 40, 110, `node ${LOOP} pc-manager`),
+    row(41, 40, 110, `node ${LOOP} pc-other-agent`),
     row(42, 1, 100, `grep -- "--tui --resume 20261013_old" log.txt`),
     row(43, 1, 100, `node --max-old-space-size=512 ${LOOP} pc`), // the loop, with a node option
     row(44, 1, 100, "node C:/tools/observer.js hermes --tui --resume 20261013_old"), // "hermes" as an argument
@@ -75,13 +75,13 @@ test("WHAT A PROCESS RUNS IS MATCHED, NOT WHAT IT MENTIONS: an observer of the l
 });
 
 test("ANOTHER AGENT'S PROCESSES ARE NEVER TARGETS, and never inside a kill: its TUI, its host, the excluded loop", () => {
-  // Review of 39d61c5: pc-manager's TUI resuming the same session was selected, and the kill itself received no
+  // Review of 39d61c5: pc-other-agent's TUI resuming the same session was selected, and the kill itself received no
   // exclusions, so a tree or group walk reached the excluded loop and another agent's processes.
   const table = new Map([
     row(1, 0, 0, "init"),
-    row(30, 1, 100, "hermes --tui --resume 20261013_shared"), // pc-manager's, named by its lease
+    row(30, 1, 100, "hermes --tui --resume 20261013_shared"), // pc-other-agent's, named by its lease
     row(31, 1, 100, "hermes --tui --resume 20261013_shared"), // an operator's own window on this session: left alone
-    row(10, 1, 100, `node ${LOOP} pc`), // the old loop, now hosting pc-manager's 40
+    row(10, 1, 100, `node ${LOOP} pc`), // the old loop, now hosting pc-other-agent's 40
     row(40, 10, 120, "hermes --tui"),
     row(20, 1, 300, `nohup node ${LOOP} pc`), // this launch's loop
     row(21, 20, 310, `node ${LOOP} pc`),
@@ -166,7 +166,7 @@ test("ONLY THE LEASE HOLDER REAPS: a launch whose claim failed starts, but ends 
   try {
     run("");
     assert.equal(fs.existsSync(marker), false, "a launch holding no lease reaped");
-    run("pc-manager");
+    run("pc-other-agent");
     assert.equal(fs.existsSync(marker), false, "a lease for another agent reaped this one");
     run("pc");
     assert.equal(fs.existsSync(marker), true, "CONTROL: the holder's reap ran");

@@ -18,7 +18,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TEMPLATE = fs.readFileSync(path.join(ROOT, "wrappers", "hermes-aify.sh.in"), "utf8");
 
 test("the delivery-loop kill goes through the node reap, whose id match is whole (tests/hermes-prior-runs.test.js)", () => {
-  assert.match(TEMPLATE, /aify-hermes-reap-prior\.mjs" --agent "\$agent_id"/, "`run lc-coder` must not match `run lc-coder-2`");
+  assert.match(TEMPLATE, /aify-hermes-reap-prior\.mjs" --agent "\$agent_id"/, "`run probe-agent` must not match `run probe-agent-2`");
 });
 
 test("a fresh-context launch mints a new session id before the handle is exported, and drops the marker", () => {
