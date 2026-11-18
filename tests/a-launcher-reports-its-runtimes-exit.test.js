@@ -151,7 +151,7 @@ const NO_LEAK = (run) => {
 // the one taken. hermes' three are all in its agent-id branch.
 const CHILD_PATHS = [
   ["claude", "claude", [], {}, /--dangerously-load-development-channels/],
-  ["codex", "codex (fresh)", [], {}, /^--remote ws:\S+ --dangerously-bypass-approvals-and-sandbox$/],
+  ["codex", "codex (fresh)", [], {}, /^--remote ws:\S+ --remote-auth-token-env AIFY_CODEX_APP_SERVER_TOKEN --dangerously-bypass-approvals-and-sandbox$/],
   ["codex", "codex (resume)", ["--resume", "thread-1"], {}, / resume --include-non-interactive thread-1$/],
   ["hermes", "hermes (fresh session)", [], {}, /^--tui --yolo$/],
   ["hermes", "hermes (stored session)", [], { STUB_RESOLVE: "sess-1" }, /^--tui --resume sess-1 /],
