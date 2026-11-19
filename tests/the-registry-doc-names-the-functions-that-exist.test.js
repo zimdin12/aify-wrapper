@@ -26,6 +26,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import * as registry from "../lib/registry.mjs";
+import { ENV_READ_FIELDS } from "../lib/service-spec.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DOC = path.join(HERE, "..", "docs", "REGISTRY.md");
@@ -82,9 +83,10 @@ function documentedFields(text) {
   return new Set(Array.from(table.matchAll(/^\| `<service>\.([a-zA-Z]\w*)` \|/gm), (row) => row[1]));
 }
 
-test("the field table documents every field the wrapper reads", () => {
+test("the field table documents wrapper and env reader fields owned by connect", () => {
   const fields = documentedFields(readFileSync(DOC, "utf8"));
   assert.ok(fields.has("endpoint"), "control: the known endpoint row must be read");
-  assert.deepEqual(registry.READ_FIELDS.filter((field) => !fields.has(field)), [],
-    "docs/REGISTRY.md is missing rows for wrapper-read service fields");
+  const required = [...registry.READ_FIELDS, ...ENV_READ_FIELDS];
+  assert.deepEqual(required.filter((field) => !fields.has(field)), [],
+    "docs/REGISTRY.md is missing rows for service fields with a reader");
 });
