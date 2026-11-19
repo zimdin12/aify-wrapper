@@ -24,10 +24,12 @@ import { renderWorld } from "./launch-to-a-stub-runtime.mjs";
 import { ownerEnv, writePrivateCredential } from "./private-credential.mjs";
 
 import { folderCustodyProblemFor } from "../lib/credential-custody.mjs";
+import { npmCliBeside } from "../lib/package-install.mjs";
 import { parseRegistry, reachedOverHttp, sessionMcpEntriesFor } from "../lib/registry.mjs";
 import { sessionCodexWords } from "../lib/session-codex.mjs";
 import { sessionHermesEntries } from "../lib/session-hermes.mjs";
 import {
+  MCP_HTTP_PATH, MCP_HTTP_HEADERS,
   claudeHttpServers, hermesHttpEntries, sessionEndpoint, sessionHttpBase64, sessionHttpFromBase64, sessionHttpServices,
 } from "../lib/session-http.mjs";
 
@@ -55,6 +57,16 @@ const raw = (dashboard, comms = COMMS) => ({ version: 1, services: { "aify-comms
 /** The registry as the code reads it: parsed, so every field has its default. */
 const registryWith = (dashboard, comms) => parseRegistry(JSON.stringify(raw(dashboard, comms))).registry;
 const LAUNCH = { agentId: "agent-one", machineId: "win32:host-a", folder: "C:/work/alpha", keys: { "aify-dashboard": KEY }, ownEndpoint: "http://127.0.0.3:8800" };
+
+test("the packaged HTTP MCP fixture agrees with the wrapper exports", () => {
+  const file = "docs/contracts/http-mcp.json";
+  const fixture = JSON.parse(fs.readFileSync(path.join(ROOT, file), "utf8"));
+  assert.deepEqual(fixture, { path: MCP_HTTP_PATH, headers: MCP_HTTP_HEADERS });
+  const [packed] = JSON.parse(execFileSync(process.execPath, [npmCliBeside(process.execPath),
+    "pack", "--dry-run", "--json", "--ignore-scripts", "--offline", "--cache", path.join(os.tmpdir(), "http-contract-npm-cache")],
+    { cwd: ROOT, encoding: "utf8", timeout: 30000 }));
+  assert.ok(packed.files.some(({ path }) => path === file), `${file} is missing from the npm package`);
+});
 
 test("the services reached over HTTP are the launcher's own when it is named, then each other one declaring http", () => {
   // Bug this catches: comms' own tools left out of the generic entry (it declares no sessionInject), or a service

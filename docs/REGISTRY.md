@@ -201,9 +201,12 @@ Codex keeps them: whether it sends headers, or expands variables in them, is not
 service is reached the same way whenever the launcher is installed for http (`--mcp-transport http`, or the service's
 declared `mcpTransport`), with or without `sessionInject`: that is aify-comms' per-launch entry, which this replaced.
 
-- **One header set for every service:** `X-Aify-Agent-Id` (the launch's agent), `X-Aify-Machine-Id` (`machineIdFor`),
-  `X-Aify-Launch-Folder` (the cwd Claude starts in, which a local process would have reported) and `X-API-Key`. A
-  service ignores what it does not use.
+- **Path and headers.** The packaged [HTTP MCP fixture](contracts/http-mcp.json) mirrors `MCP_HTTP_PATH` and
+  `MCP_HTTP_HEADERS` from `lib/session-http.mjs`. `/mcp/http` is appended to the configured endpoint (including
+  any endpoint prefix); it matches aify-comms' default mount, not a custom `MCP_PATH_PREFIX`.
+- **Caller and placement headers are not credentials.** Only `X-API-Key` carries the service key. Header names
+  are case-insensitive. An unnamed Claude launch keeps the entry without the agent header; each tool decides
+  whether a caller is needed. An unset agent variable makes the templated Hermes entry unusable (see below).
 - **The key, per service** (`sessionKey`): a key exported under a name the service itself declares in `keyEnv` wins;
   a service that declares none never takes an exported key, so one service's key cannot reach another's header.
   Otherwise the key its `credentialRef` names, only when the launch sends to the endpoint the registry names it for
