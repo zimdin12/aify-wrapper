@@ -75,3 +75,16 @@ test("every export is documented", () => {
   assert.deepEqual(undocumented, [],
     `lib/registry.mjs exports ${undocumented.join(", ")}, which docs/REGISTRY.md never mentions`);
 });
+
+/** Count service-field rows in the field table, not references in prose or examples. */
+function documentedFields(text) {
+  const table = /^\| field \| required \| meaning \|\r?\n(?:\|[^\r\n]*\r?\n)+/m.exec(text)?.[0] ?? "";
+  return new Set(Array.from(table.matchAll(/^\| `<service>\.([a-zA-Z]\w*)` \|/gm), (row) => row[1]));
+}
+
+test("the field table documents every field the wrapper reads", () => {
+  const fields = documentedFields(readFileSync(DOC, "utf8"));
+  assert.ok(fields.has("endpoint"), "control: the known endpoint row must be read");
+  assert.deepEqual(registry.READ_FIELDS.filter((field) => !fields.has(field)), [],
+    "docs/REGISTRY.md is missing rows for wrapper-read service fields");
+});
