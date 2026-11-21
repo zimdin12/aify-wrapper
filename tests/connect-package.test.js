@@ -3,7 +3,9 @@
 // scripts on, the installed commit read back, every entry a declared bin, no sha256.
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -59,6 +61,40 @@ test("INSTALL WITH SCRIPTS: the spec's commit is installed in its own prefix, pr
   assert.deepEqual(entry.mcp, [{ name: "aify-dashboard", command: process.execPath.split(path.sep).join("/"), args: [bin] }]);
   assert.deepEqual(packageDirs(host), [revisions[0]], "no partial directory is left");
   assert.match(run.stdout, /dashboard-bridge: installed at /);
+  const clientRequire = createRequire(createRequire(bin).resolve("fixture-client"));
+  assert.throws(() => clientRequire.resolve("fixture-native/binding.node"), { code: "MODULE_NOT_FOUND" },
+    "npm must leave the transitive optional native package out of the final prefix");
+  const bridge = spawnSync(entry.mcp[0].command, entry.mcp[0].args, { encoding: "utf8" });
+  assert.equal(bridge.status, 0, bridge.stderr);
+  assert.equal(bridge.stdout.trim(), "fixture bridge", "the registered bin still loads the required package");
+});
+
+test("REUSE WITH OPTIONALS: reconnect keeps the old prefix and reports the same accepted package", async (t) => {
+  const host = makeHost();
+  const spec = packageSpec();
+  const service = await startService({ spec });
+  t.after(() => service.close());
+  const args = [spec.name, service.url, "--key-file", host.keyFile(KEY), ...approvals(spec)];
+  const firstReport = path.join(host.home, "first.json");
+  // npm gives include precedence over omit. Seed a prefix with the contents of a pre-policy install.
+  const first = await runConnect(host, [...args, "--report-file", firstReport], { env: { NPM_CONFIG_INCLUDE: "optional" } });
+  assert.equal(first.status, 0, first.stderr);
+  const [installed] = JSON.parse(fs.readFileSync(firstReport, "utf8")).installed;
+  assert.equal(installed.reused, false);
+  const bin = path.join(installed.at, "dist", "bridge.js");
+  const clientRequire = createRequire(createRequire(bin).resolve("fixture-client"));
+  const native = clientRequire.resolve("fixture-native/binding.node");
+  const bytes = fs.readFileSync(native);
+  assert.equal(bytes.toString(), "fixture native prebuild\n", "control: the optional package actually installed");
+
+  const before = host.npmCalls().length;
+  const nextReport = path.join(host.home, "next.json");
+  const next = await runConnect(host, [...args, "--report-file", nextReport]);
+  const npmCommands = host.npmCalls().slice(before).map(([command]) => command);
+  assert.deepEqual(npmCommands, ["ls"], "reconnect verifies the prefix without installing again");
+  assert.equal(next.status, 0, next.stderr);
+  assert.deepEqual(JSON.parse(fs.readFileSync(nextReport, "utf8")).installed, [{ ...installed, reused: true }]);
+  assert.deepEqual(fs.readFileSync(native), bytes, "reconnect leaves the optional prebuild untouched");
 });
 
 test("REPORT FILE: --report-file records what connect installed as data, which a pending reason's text cannot add to", async () => {

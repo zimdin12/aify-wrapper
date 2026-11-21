@@ -215,6 +215,22 @@ export function runConnect(host, args, { env = {}, input = "" } = {}) {
 let gitRoot = "";
 let built = null;
 
+/** Make local tarballs so npm resolves a transitive optional package without a registry. */
+function packFixturePackage(root, name, manifest, files) {
+  const dir = path.join(root, name);
+  fs.mkdirSync(dir);
+  fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name, version: "1.0.0", ...manifest }));
+  for (const [file, text] of Object.entries(files)) fs.writeFileSync(path.join(dir, file), text);
+  const env = {
+    ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^npm_/i.test(key))),
+    npm_config_cache: path.join(root, "cache"), npm_config_userconfig: path.join(root, "empty-npmrc"),
+    npm_config_globalconfig: path.join(root, "empty-global-npmrc"), npm_config_update_notifier: "false",
+  };
+  const run = spawnSync(process.execPath, [REAL_NPM, "pack", "--ignore-scripts", "--offline", "--json"], { cwd: dir, env, encoding: "utf8" });
+  if (run.status !== 0) throw new Error(`pack ${name}: ${run.stderr || run.error?.message}`);
+  return `file:${fwd(path.join(dir, JSON.parse(run.stdout)[0].filename))}`;
+}
+
 /**
  * A package in a local bare repository, `owner/fixture-bridge`, built once per test file: its bin `fixture-bridge`
  * is dist/bridge.js, which only its `prepare` script writes, so an install that skipped scripts has no bin file.
@@ -236,12 +252,18 @@ export function gitPackage() {
     if (run.status !== 0) throw new Error(`git ${args.join(" ")}: ${run.stderr}`);
     return run.stdout.trim();
   };
-  const pkg = { name: "fixture-bridge", version: "1.0.0", bin: { "fixture-bridge": "dist/bridge.js" }, scripts: { prepare: "node build.js" }, files: ["dist", "build.js"] };
+  // Stand in for a native prebuild without making the fixture depend on a compiler or a registry.
+  const native = packFixturePackage(gitRoot, "fixture-native", {}, { "binding.node": "fixture native prebuild\n" });
+  const client = packFixturePackage(gitRoot, "fixture-client", { optionalDependencies: { "fixture-native": native } }, {
+    "index.js": 'module.exports = "fixture bridge";\n',
+  });
+  const pkg = { name: "fixture-bridge", version: "1.0.0", bin: { "fixture-bridge": "dist/bridge.js" }, scripts: { prepare: "node build.js" },
+    files: ["dist", "build.js"], dependencies: { "fixture-client": client } };
   fs.writeFileSync(path.join(work, "package.json"), `${JSON.stringify(pkg, null, 2)}\n`);
   fs.writeFileSync(path.join(work, "build.js"), [
     'const fs = require("fs");',
     'fs.mkdirSync("dist", { recursive: true });',
-    'fs.writeFileSync("dist/bridge.js", "console.log(\\"fixture bridge\\");" + String.fromCharCode(10));',
+    'fs.writeFileSync("dist/bridge.js", \'console.log(require("fixture-client"));\\n\');',
     "",
   ].join(String.fromCharCode(10)));
   git("init", "-q");

@@ -96,7 +96,7 @@ test("an installed package: npm's one dependency names the commit, and an entry 
   assert.deepEqual(binFiles({ name: "p", bin: { a: "dist/a.js" } }, ["a"]).files, { a: "dist/a.js" });
   assert.match(binFiles({ name: "p", bin: { a: "dist/a.js" } }, ["b"]).problems[0], /b is not a bin p declares \(it declares a\)/);
   assert.match(binFiles({ name: "p", bin: { a: "../x.js" } }, ["a"]).problems[0], /leaves the package/);
-  assert.deepEqual(installArgs("/p", { repo: "o/r", revision: sha }), ["install", "--prefix", "/p", "--ignore-scripts=false", "--no-audit", "--no-fund", `github:o/r#${sha}`]);
+  assert.deepEqual(installArgs("/p", { repo: "o/r", revision: sha }), ["install", "--prefix", "/p", "--ignore-scripts=false", "--no-audit", "--no-fund", "--omit=optional", `github:o/r#${sha}`]);
 });
 
 test("servers render with the given absolute node and the install root; a pending one is reported, not written", () => {

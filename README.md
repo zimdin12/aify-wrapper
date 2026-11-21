@@ -145,11 +145,13 @@ manifest does not list (node_modules, untracked files) are reported, not failed.
 
 A `package` from git is approved by `{kind, repo, entries}`, and its revision comes from the spec. That revision must
 be a full 40-hex commit, and the artifact carries no `sha256`. After the probes pass, connect runs
-`npm install --prefix ~/.aify/packages/<service>/<id>/<revision> --ignore-scripts=false github:<repo>#<revision>`
-(`--package-root` and `--npm-cli` override where it installs and which npm it runs). Scripts stay on because a
-package's build can run in `prepare`. The install goes into its own prefix rather than `-g`, one per service and
-revision: it touches no global npm state, a failed reconnect cannot touch the files the live entry runs, and npm
-records the installed commit in that prefix's lockfile. Connect reads that commit back and refuses anything other
+`npm install --prefix ~/.aify/packages/<service>/<id>/<revision> --ignore-scripts=false --omit=optional github:<repo>#<revision>`
+(`--package-root` and `--npm-cli` override where it installs and which npm it runs). The flag asks npm to omit
+optional dependencies from new bridge prefixes. Scripts stay on because a package can build in `prepare`, and
+npm may still install optional build dependencies in its temporary Git checkout. Connect reuses a verified prefix
+at the same revision, including any optionals already there. The install goes into its own prefix rather than `-g`,
+one per service and revision. It touches no global npm state, a failed reconnect cannot touch the files the live
+entry runs, and npm records the installed commit in that prefix's lockfile. Connect reads that commit back and refuses anything other
 than the spec's revision. Every entry must be a bin the installed `package.json` declares and must exist on disk. The server
 runs that bin's file with the absolute node. A `pending` artifact, and one the service serves, gets no entry; the
 report says why.
