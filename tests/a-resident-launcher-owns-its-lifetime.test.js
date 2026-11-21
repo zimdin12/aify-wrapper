@@ -11,10 +11,12 @@ import { linuxStartTokenFromStat } from "../lib/linux-process-token.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const HOST = "8ecc46f8-9e99-4703-9df9-e34cc50faaba";
 const OWN = "179d14a8-51ac-45c9-8221-dc977a6f8102";
-const keys = ["AIFY_LIFETIME", "AIFY_ENV_INSTANCE", "AIFY_ENV_URL"];
+const ownerKeys = ["AIFY_LIFETIME", "AIFY_ENV_INSTANCE"];
+const keys = [...ownerKeys, "AIFY_ENV_ENDPOINT", "AIFY_ENV_URL"];
+const endpoint = "http://127.0.0.1:1";
 const inherited = { AIFY_AGENT_ID: "host-worker", AIFY_SESSION_MODE: "managed",
   AIFY_MANAGED_VIA_WRAPPER: "1", AIFY_LIFETIME: HOST,
-  AIFY_ENV_INSTANCE: "test-host", AIFY_ENV_URL: "http://127.0.0.1:1" };
+  AIFY_ENV_INSTANCE: "test-host", AIFY_ENV_ENDPOINT: endpoint, AIFY_ENV_URL: endpoint };
 const read = (name) => fs.readFileSync(path.join(root, name), "utf8");
 const quote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
 const shellPath = (value) => process.platform === "win32"
@@ -122,7 +124,7 @@ function wrapper(client, { bridge, wrapperDir }) {
     assert.equal(source.indexOf(start, a + start.length), -1, `ambiguous region ${start}`);
     ranges.push([a + (start.startsWith("fi\n") ? 3 : 0), b]);
   }
-  region('AIFY_BRIDGE_DIR_FWD="@@BRIDGE_DIR@@"', "# ── Herdr:");
+  region(client === "claude" ? 'AIFY_OWN_SERVICE="@@SERVICE_NAME@@"' : 'AIFY_BRIDGE_DIR_FWD="@@BRIDGE_DIR@@"', "# ── Herdr:");
   region('HARNESS_IDENTITY="', 'HARNESS_CWD="');
   region('HARNESS_EXTRA_ENV="${HARNESS_EXTRA_ENV:-}"', '\n');
   // Keep the real common-loader region and its input initializer in source order, not invented readiness state.
@@ -138,7 +140,7 @@ function wrapper(client, { bridge, wrapperDir }) {
     region('HERMES_AIFY_AGENT_ID="$HARNESS_IDENTITY"', "# Role, model and effort for the id known now");
     region('\nif [ -n "$HERMES_AIFY_AGENT_ID" ]; then\n', "# LOCAL PATCH (temporary, until upstream)");
   }
-  region("AIFY_SESSION_MODE_INFERRED=0", client === "claude" ? "# claude-aify ALWAYS" : client === "codex"
+  region("AIFY_SESSION_MODE_INFERRED=0", client === "claude" ? "CLAUDE_PERMISSION_FLAGS=()" : client === "codex"
     ? "# Fresh codex-aify launch" : "# Load aify-comms' durable Hermes runtime shim");
   if (client === "claude") {
     // Include the production partial-install fallbacks that the actual tail now calls; never invent them in probes.
@@ -155,7 +157,8 @@ function wrapper(client, { bridge, wrapperDir }) {
     region("# Plain sessions and subcommands", null);
   }
   for (let i = 1; i < ranges.length; i++) assert.ok(ranges[i - 1][1] <= ranges[i][0], `${client} source order`);
-  return ranges.map(([a, b]) => source.slice(a, b)).join("\n").replaceAll("@@BRIDGE_DIR@@", bridge).replaceAll("@@WRAPPER_DIR@@", wrapperDir);
+  return ranges.map(([a, b]) => source.slice(a, b)).join("\n").replaceAll("@@BRIDGE_DIR@@", bridge)
+    .replaceAll("@@WRAPPER_DIR@@", wrapperDir).replaceAll("@@SERVICE_NAME@@", "fixture-service");
 }
 const probes = `
 cygpath() { printf '%s' "$2"; }
@@ -286,9 +289,18 @@ test("shared adoption guards distinguish resident, empty identity and each missi
   try {
     const { wrapperDir, bin } = fixture(home);
     fs.appendFileSync(path.join(bin, "aify-lease.sh"), '\naify_lease_pid() { printf 43210; }\n');
-    const rows = [["resident-same", "host-worker", "resident", inherited, { AIFY_LIFETIME: OWN, AIFY_ENV_INSTANCE: "residents" }],
+    const { AIFY_ENV_ENDPOINT: canonical, AIFY_ENV_URL: alias, ...binding } = inherited;
+    const other = "http://127.0.0.1:2";
+    const rows = [
+      ["resident-same", "host-worker", "resident", inherited, { AIFY_LIFETIME: OWN, AIFY_ENV_INSTANCE: "residents" }],
       ["empty", "", "managed", { ...inherited, AIFY_AGENT_ID: "" }, {}],
-      ...keys.map((key) => [`missing-${key}`, "host-worker", "managed", Object.fromEntries(Object.entries(inherited).filter(([name]) => name !== key)), {}])];
+      ["canonical-only", "host-worker", "managed", { ...binding, AIFY_ENV_ENDPOINT: canonical }, { ...binding, AIFY_ENV_ENDPOINT: canonical }],
+      ["alias-only", "host-worker", "managed", { ...binding, AIFY_ENV_URL: alias }, inherited],
+      ["canonical-wins", "host-worker", "managed", { ...inherited, AIFY_ENV_URL: other }, inherited],
+      ["empty-canonical-falls-back", "host-worker", "managed", { ...inherited, AIFY_ENV_ENDPOINT: "" }, inherited],
+      ["neither", "host-worker", "managed", binding, {}],
+      ...ownerKeys.map((key) => [`missing-${key}`, "host-worker", "managed", Object.fromEntries(Object.entries(inherited).filter(([name]) => name !== key)), {}]),
+    ];
     fs.writeFileSync(path.join(home, "probes.sh"), probes);
     let batch = "set -eu\njobs=()\n";
     for (const [row, agent, mode, env] of rows) {
@@ -298,7 +310,10 @@ test("shared adoption guards distinguish resident, empty identity and each missi
       batch += `. ${quote(shellPath(path.join(home, "probes.sh")))}\n. ${quote(`${wrapperDir}/bin/aify-lease.sh`)}\naify_lifetime_start ${quote(agent)} claude ${quote(mode)}\nsnapshot runtime\n) &\njobs+=("$!")\n`;
     }
     batch += 'for job in "${jobs[@]}"; do wait "$job" || exit $?; done\n';
-    const result = await batchRun(bash(), ["--noprofile", "--norc", "-c", batch, "/fake/claude-aify"], privateEnv(home));
+    // Keep the guard matrix out of the Windows command line as the cases grow.
+    const script = path.join(home, "guard-batch.sh");
+    fs.writeFileSync(script, batch);
+    const result = await batchRun(bash(), ["--noprofile", "--norc", "-c", '. "$1"', "/fake/claude-aify", shellPath(script)], privateEnv(home));
     assert.equal(result.status, 0, `${result.error ?? ""}\n${result.stderr}`);
     for (const [row, , , , expected] of rows) {
       const env = environment(path.join(home, row, "runtime.env"));

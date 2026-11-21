@@ -19,12 +19,16 @@ aify_lifetime_home() {
 
 aify_lifetime_start() {
   local _agent="$1" _harness="$2" _mode="$3" _producer="${4:-}" _capture=""
-  # A host-minted lifetime is addressed to the inherited identity, before the launcher exports its own.
+  # Match env's endpoint precedence. A host-minted lifetime belongs to the inherited identity.
+  local _endpoint="${AIFY_ENV_ENDPOINT:-${AIFY_ENV_URL:-}}"
   if [ "$_mode" = managed ] && [ -n "$_agent" ] && [ "$_agent" = "$AIFY_LIFETIME_AGENT" ] \
-    && [ -n "${AIFY_LIFETIME:-}" ] && [ -n "${AIFY_ENV_INSTANCE:-}" ] && [ -n "${AIFY_ENV_URL:-}" ]; then
+    && [ -n "${AIFY_LIFETIME:-}" ] && [ -n "${AIFY_ENV_INSTANCE:-}" ] && [ -n "$_endpoint" ]; then
+    export AIFY_ENV_ENDPOINT="$_endpoint"
+    # An older reader can use a supplied alias, but it must resolve to the same owner.
+    if [ "${AIFY_ENV_URL+x}" = x ]; then export AIFY_ENV_URL="$_endpoint"; fi
     return 0
   fi
-  unset AIFY_LIFETIME AIFY_ENV_URL AIFY_ENV_INSTANCE
+  unset AIFY_LIFETIME AIFY_ENV_ENDPOINT AIFY_ENV_URL AIFY_ENV_INSTANCE
   [ "$_mode" = resident ] && [ -n "$_agent" ] || return 0
   # A resident belongs to its home's residents role, whichever aify-env holds it (B1): its record and its hooks carry
   # the role's name, never an inherited instance, so a pane opened by a dedicated Herdr does not bind it to that Herdr.
