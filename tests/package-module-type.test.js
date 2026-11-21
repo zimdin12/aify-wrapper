@@ -40,7 +40,19 @@ test('actual npm pack retains runtime and contract files but excludes historical
  assert.ok(files.includes('lib/session-http.mjs'),'inventory missed a known consumer import');
  assert.ok(files.includes('bin/aify-wrapper-check.mjs'),'inventory missed a known bin');
  assert.ok(!files.includes('tests/fixtures/module-type-probe.js'),'test fixture leaked into the package');
- assert.ok(files.includes('docs/contracts/harness-wrapper.md'),'implementation contract must remain packaged');
+ const contracts='docs/contracts/';
+ const readContract=name=>fs.readFileSync(path.join(ROOT,contracts,name),'utf8').replace(/\r\n/g,'\n').trim();
+ assert.ok(files.includes(contracts+'harness-wrapper.md'),'implementation contract must remain packaged');
+ const harness=readContract('harness-wrapper.md');
+ for(const [name,section] of [['launch-env','## Launcher facts'],['turn-start','## The request']]){
+  const canonical=`${name}.md`,legacy=`dashboard-${canonical}`;
+  assert.ok(files.includes(contracts+canonical),`${canonical} must be packaged as the canonical contract`);
+  assert.ok(files.includes(contracts+legacy),`${legacy} must remain packaged for existing links`);
+  const [, ...body]=readContract(legacy).split('\n\n');
+  assert.deepEqual(body,[`This contract moved to [\`${canonical}\`](${canonical}).`],`${legacy} must only forward to the packaged contract`);
+  assert.ok(readContract(canonical).split('\n').includes(section),`${canonical} must contain the contract`);
+  assert.ok(harness.includes(`](${canonical})`),`the launcher contract should link directly to ${canonical}`);
+ }
  assert.deepEqual(files.filter(file=>file.startsWith('docs/evidence/')),[],'historical evidence leaked into the package');
  const loaders=files.filter(file=>/\.(?:js|cjs)$/.test(file));
  console.log('PACKAGED_JS_CJS',JSON.stringify(loaders));

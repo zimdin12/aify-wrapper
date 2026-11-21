@@ -39,9 +39,10 @@ Pi's accepted MCP-command input does not imply generic registry injection. See [
 for the per-runtime rules and credential isolation; this page does not extend their capabilities.
 
 Launchers export identity/runtime/role/session-mode facts when applicable; a service's bridge consumes them.
-[The existing launch-env agreement](dashboard-launch-env.md) names the consumer fields. Optional identity and
+[The launcher environment contract](launch-env.md) names the exported fields. Optional identity and
 session handles must not be replaced with invented bindings. Explicit resident/managed mode wins over stdin
 inference. A nested launch drops another session's identity/context by the inherited-session rule.
+Services that opt into `turnStart` use the [turn-start request contract](turn-start.md).
 
 Wrapper-selected bypass is reported separately from final native permissions. The unattended defaults are
 unchanged; `--safe` is not a guarantee about a runtime's own config or an explicitly forwarded bypass argument.
