@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { npmCliBeside } from "../lib/package-install.mjs";
+import { npmCliBeside } from "../lib/npm-cli.mjs";
 import { packCandidate, sha256 } from "../scripts/pack-wrapper-candidate.mjs";
 import { makePrivate, ownerEnv } from "./private-credential.mjs";
 

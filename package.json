@@ -27,6 +27,6 @@
     "test": "node tests/run-in-a-temp-root.mjs"
   },
   "dependencies": {
-    "aify-env": "git+https://github.com/zimdin12/aify-env.git#8f03d26e43dbf17642113d101ebdade5f75f12b0"
+    "aify-env": "git+https://github.com/zimdin12/aify-env.git#5b441ad4d13dc51cd15150010df7b89525cc39e8"
   }
 }

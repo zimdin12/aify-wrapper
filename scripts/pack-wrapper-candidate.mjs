@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { npmCliBeside } from "../lib/package-install.mjs";
+import { npmCliBeside } from "../lib/npm-cli.mjs";
 
 export function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");

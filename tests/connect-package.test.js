@@ -71,14 +71,14 @@ test("INSTALL WITH SCRIPTS: the spec's commit is installed in its own prefix, pr
   const clientRequire = createRequire(createRequire(bin).resolve("fixture-client"));
   assert.throws(() => clientRequire.resolve("fixture-native/binding.node"), { code: "MODULE_NOT_FOUND" },
     "npm must leave the transitive optional native package out of the final prefix");
-  assert.equal(fs.readFileSync(path.join(path.dirname(bin), "../assets/skills/sample/SKILL.md"), "utf8"), "# Sample skill\n",
+  assert.equal(fs.readFileSync(path.join(path.dirname(bin), "../.agents/skills/sample/SKILL.md"), "utf8"), "# Sample skill\n",
     "a requested bin still works when its package also ships skills");
   const bridge = spawnSync(entry.mcp[0].command, entry.mcp[0].args, { encoding: "utf8" });
   assert.equal(bridge.status, 0, bridge.stderr);
   assert.equal(bridge.stdout.trim(), "fixture bridge", "the registered bin still loads the required package");
 });
 
-test("DATA-ONLY SKILLS: exact approval and revision yield a package receipt, not an MCP server", async (t) => {
+test("DATA-ONLY SKILLS: .agents/skills with exact approval and revision yields a package receipt, not an MCP server", async (t) => {
   const { revisions, skills } = gitPackage();
   const host = makeHost();
   const spec = skillSpec();
@@ -104,7 +104,7 @@ test("DATA-ONLY SKILLS: exact approval and revision yield a package receipt, not
   const at = path.join(host.home, ".aify", "packages", spec.name, spec.artifacts[0].id, skills.valid, "node_modules", "fixture-bridge").split(path.sep).join("/");
   const report = JSON.parse(fs.readFileSync(firstReport, "utf8"));
   assert.deepEqual(report, { result: "committed", service: spec.name, installed: [{ id: spec.artifacts[0].id, at, reused: false }], pending: [] });
-  assert.equal(fs.readFileSync(path.join(at, "assets/skills/sample/SKILL.md"), "utf8"), "# Sample skill\n");
+  assert.equal(fs.readFileSync(path.join(at, ".agents/skills/sample/SKILL.md"), "utf8"), "# Sample skill\n");
   assert.deepEqual(JSON.parse(host.registryBytes()).services[spec.name].mcp ?? [], []);
 
   const nextReport = path.join(host.home, "skills-reused.json");
@@ -116,10 +116,10 @@ test("DATA-ONLY SKILLS: exact approval and revision yield a package receipt, not
 
   // Replace an ancestor of the declared directory with a link to the exact same readable tree.
   const outside = path.join(host.home, "outside-package");
-  const assets = path.join(at, "assets");
-  fs.renameSync(assets, outside);
-  fs.symlinkSync(outside, assets, process.platform === "win32" ? "junction" : "dir");
-  assert.equal(fs.readFileSync(path.join(assets, "skills/sample/SKILL.md"), "utf8"), "# Sample skill\n", "CONTROL: the link resolves");
+  const skillParent = path.join(at, ".agents");
+  fs.renameSync(skillParent, outside);
+  fs.symlinkSync(outside, skillParent, process.platform === "win32" ? "junction" : "dir");
+  assert.equal(fs.readFileSync(path.join(skillParent, "skills/sample/SKILL.md"), "utf8"), "# Sample skill\n", "CONTROL: the link resolves");
   const linkedReport = path.join(host.home, "skills-linked.json");
   const oldRegistry = host.registryBytes();
   const linked = await runConnect(host, [...accepted, "--report-file", linkedReport]);
