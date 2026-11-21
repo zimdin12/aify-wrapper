@@ -162,7 +162,11 @@ at the same revision, including any optionals already there. The install goes in
 one per service and revision. It touches no global npm state, a failed reconnect cannot touch the files the live
 entry runs, and npm records the installed commit in that prefix's lockfile. Connect reads that commit back and refuses anything other
 than the spec's revision. Every entry must be a bin the installed `package.json` declares and must exist on disk. The server
-runs that bin's file with the absolute node. A `pending` artifact, and one the service serves, gets no entry; the
+runs that bin's file with the absolute node. A Git package may instead set `entries: []`. Connect then requires
+no declared bins and an `aifySkills` field in the installed `package.json` with just `directory`, naming an existing,
+portable, package-relative directory. Connect refuses links along that directory path. The package still needs its
+own approval and exact revision. It appears in the same `--report-file` record and supplies no MCP server. aify-env
+checks the contents and places the skills. A `pending` artifact, and one the service serves, gets no MCP entry; the
 report says why.
 
 `install.sh` records what each launcher was rendered from in `launchers/` beside the registry

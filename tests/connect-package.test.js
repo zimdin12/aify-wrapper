@@ -39,6 +39,13 @@ async function connectWith(spec, env = {}, key = KEY) {
   }
 }
 
+function skillSpec(revision = gitPackage().skills.valid) {
+  const spec = packageSpec({ revision });
+  spec.artifacts[0].entries = [];
+  spec.mcp = [];
+  return spec;
+}
+
 const packageDirs = (host) => {
   const dir = path.join(host.home, ".aify", "packages", "aify-dashboard", "dashboard-bridge");
   return fs.existsSync(dir) ? fs.readdirSync(dir) : [];
@@ -64,9 +71,86 @@ test("INSTALL WITH SCRIPTS: the spec's commit is installed in its own prefix, pr
   const clientRequire = createRequire(createRequire(bin).resolve("fixture-client"));
   assert.throws(() => clientRequire.resolve("fixture-native/binding.node"), { code: "MODULE_NOT_FOUND" },
     "npm must leave the transitive optional native package out of the final prefix");
+  assert.equal(fs.readFileSync(path.join(path.dirname(bin), "../assets/skills/sample/SKILL.md"), "utf8"), "# Sample skill\n",
+    "a requested bin still works when its package also ships skills");
   const bridge = spawnSync(entry.mcp[0].command, entry.mcp[0].args, { encoding: "utf8" });
   assert.equal(bridge.status, 0, bridge.stderr);
   assert.equal(bridge.stdout.trim(), "fixture bridge", "the registered bin still loads the required package");
+});
+
+test("DATA-ONLY SKILLS: exact approval and revision yield a package receipt, not an MCP server", async (t) => {
+  const { revisions, skills } = gitPackage();
+  const host = makeHost();
+  const spec = skillSpec();
+  const service = await startService({ spec });
+  t.after(() => service.close());
+  const firstReport = path.join(host.home, "skills.json");
+  const args = [spec.name, service.url, "--key-file", host.keyFile(KEY)];
+  const wrongApproval = await runConnect(host, [...args, "--report-file", firstReport, ...approvals(packageSpec())]);
+  assert.equal(wrongApproval.status, 78, wrongApproval.stderr);
+  assert.match(wrongApproval.stderr, /not approved/);
+  assert.deepEqual(host.npmCalls(), [], "the bin-containing tuple cannot approve the empty tuple");
+  assert.equal(fs.existsSync(firstReport), false);
+
+  const accepted = [...args, ...approvals(spec)];
+  const wrongRevision = await runConnect(host, [...accepted, "--report-file", firstReport], { env: { AIFY_TEST_NPM_REVISION: revisions[0] } });
+  assert.equal(wrongRevision.status, 78, wrongRevision.stderr);
+  assert.match(wrongRevision.stderr, new RegExp(`npm installed ${revisions[0]}, not the spec's revision ${skills.valid}`));
+  assert.equal(fs.existsSync(firstReport), false);
+  assert.deepEqual(packageDirs(host), []);
+
+  const first = await runConnect(host, [...accepted, "--report-file", firstReport]);
+  assert.equal(first.status, 0, first.stderr);
+  const at = path.join(host.home, ".aify", "packages", spec.name, spec.artifacts[0].id, skills.valid, "node_modules", "fixture-bridge").split(path.sep).join("/");
+  const report = JSON.parse(fs.readFileSync(firstReport, "utf8"));
+  assert.deepEqual(report, { result: "committed", service: spec.name, installed: [{ id: spec.artifacts[0].id, at, reused: false }], pending: [] });
+  assert.equal(fs.readFileSync(path.join(at, "assets/skills/sample/SKILL.md"), "utf8"), "# Sample skill\n");
+  assert.deepEqual(JSON.parse(host.registryBytes()).services[spec.name].mcp ?? [], []);
+
+  const nextReport = path.join(host.home, "skills-reused.json");
+  const before = host.npmCalls().length;
+  const next = await runConnect(host, [...accepted, "--report-file", nextReport]);
+  assert.equal(next.status, 0, next.stderr);
+  assert.deepEqual(JSON.parse(fs.readFileSync(nextReport, "utf8")).installed, [{ ...report.installed[0], reused: true }]);
+  assert.deepEqual(host.npmCalls().slice(before).map(([command]) => command), ["ls"]);
+
+  // Replace an ancestor of the declared directory with a link to the exact same readable tree.
+  const outside = path.join(host.home, "outside-package");
+  const assets = path.join(at, "assets");
+  fs.renameSync(assets, outside);
+  fs.symlinkSync(outside, assets, process.platform === "win32" ? "junction" : "dir");
+  assert.equal(fs.readFileSync(path.join(assets, "skills/sample/SKILL.md"), "utf8"), "# Sample skill\n", "CONTROL: the link resolves");
+  const linkedReport = path.join(host.home, "skills-linked.json");
+  const oldRegistry = host.registryBytes();
+  const linked = await runConnect(host, [...accepted, "--report-file", linkedReport]);
+  assert.equal(linked.status, 78, linked.stderr);
+  assert.match(linked.stderr, /aifySkills.directory is not an existing, unlinked directory/);
+  assert.equal(fs.existsSync(linkedReport), false);
+  assert.deepEqual(host.registryBytes(), oldRegistry);
+});
+
+test("DATA-ONLY SKILLS: an approved empty tuple still refuses a missing declaration, a bin or an invalid directory", async (t) => {
+  const { revisions, skills } = gitPackage();
+  for (const [revision, expected] of [
+    [skills.undeclared, /requires aifySkills with one portable package-relative directory/],
+    [revisions[0], /only for packages that declare no bins/],
+    [skills.outside, /requires aifySkills with one portable package-relative directory/],
+    [skills.missing, /aifySkills.directory is not an existing, unlinked directory/],
+  ]) {
+    const host = makeHost();
+    const spec = skillSpec(revision);
+    const service = await startService({ spec });
+    t.after(() => service.close());
+    const report = path.join(host.home, "refused-skills.json");
+    const run = await runConnect(host, [spec.name, service.url, "--key-file", host.keyFile(KEY), "--report-file", report, ...approvals(spec)]);
+    assert.equal(run.status, 78, run.stderr);
+    assert.match(run.stderr, expected);
+    assert.ok(host.npmCalls().some(([command]) => command === "ls"), "the refusal used the installed package");
+    assert.equal(host.registryBytes().length, 0);
+    assert.equal(fs.existsSync(report), false);
+    assert.deepEqual(host.refs(), []);
+    assert.deepEqual(packageDirs(host), []);
+  }
 });
 
 test("REUSE WITH OPTIONALS: reconnect keeps the old prefix and reports the same accepted package", async (t) => {

@@ -86,6 +86,24 @@ test("a package from git: a full commit only, no sha256, and its approval binds 
   }
 });
 
+test("an empty entry list is only for an installable Git package and cannot supply an MCP server", () => {
+  const spec = JSON.parse(fs.readFileSync(new URL("./fixtures/aify-dashboard-spec-1.3.13.json", import.meta.url), "utf8"));
+  const dashboard = { name: spec.name, endpoint: "http://127.0.0.1:9700" };
+  const artifact = { ...spec.artifacts[0], entries: [] };
+  const judge = (changes, mcp = []) => validateSpec({ ...spec, artifacts: [{ ...artifact, ...changes }], mcp }, dashboard);
+  assert.deepEqual(judge({}).errors, []);
+  assert.match(judge({}, spec.mcp).errors.join(";"), /is not an entry of/);
+  const sha256 = "a".repeat(64);
+  for (const change of [
+    { source: { pending: "later" } },
+    { source: { served: { path: "/assets.tgz", version: "1" } }, sha256 },
+    { kind: "file-set", manifest: { path: "/manifest" }, sha256 },
+    { entries: undefined },
+  ]) {
+    assert.match(judge(change).errors.join(";"), /entries must be a non-empty array/);
+  }
+});
+
 test("an installed package: npm's one dependency names the commit, and an entry is a bin the package declares", () => {
   const sha = "c".repeat(40);
   assert.deepEqual(installedCommit({ dependencies: { b: { resolved: `git+ssh://git@github.com/o/r.git#${sha}` } } }), { name: "b", commit: sha, problem: "" });

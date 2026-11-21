@@ -237,7 +237,7 @@ function packFixturePackage(root, name, manifest, files) {
  * Two good commits, so a test can make npm install the wrong one, and one whose bin is never built. No test reaches
  * github: the npm double maps `github:owner/fixture-bridge#<sha>` here.
  *
- * @returns {{repo: string, revisions: string[], unbuilt: string}}
+ * @returns {{repo: string, revisions: string[], unbuilt: string, skills: object}}
  */
 export function gitPackage() {
   if (built) return built;
@@ -257,8 +257,11 @@ export function gitPackage() {
   const client = packFixturePackage(gitRoot, "fixture-client", { optionalDependencies: { "fixture-native": native } }, {
     "index.js": 'module.exports = "fixture bridge";\n',
   });
+  const skill = "assets/skills/sample/SKILL.md";
+  fs.mkdirSync(path.join(work, path.dirname(skill)), { recursive: true });
+  fs.writeFileSync(path.join(work, skill), "# Sample skill\n");
   const pkg = { name: "fixture-bridge", version: "1.0.0", bin: { "fixture-bridge": "dist/bridge.js" }, scripts: { prepare: "node build.js" },
-    files: ["dist", "build.js"], dependencies: { "fixture-client": client } };
+    files: ["dist", "build.js", "assets"], aifySkills: { directory: "assets/skills" }, dependencies: { "fixture-client": client } };
   fs.writeFileSync(path.join(work, "package.json"), `${JSON.stringify(pkg, null, 2)}\n`);
   fs.writeFileSync(path.join(work, "build.js"), [
     'const fs = require("fs");',
@@ -279,7 +282,20 @@ export function gitPackage() {
   git("add", "-A");
   git("commit", "-q", "-m", "three");
   const unbuilt = git("rev-parse", "HEAD");
-  git("clone", "-q", "--bare", ".", path.join(gitRoot, "owner", "fixture-bridge.git"));
-  built = { repo: "owner/fixture-bridge", revisions: [first, second], unbuilt };
+  const data = { name: pkg.name, version: pkg.version, files: ["assets"] };
+  const skills = {};
+  for (const [kind, manifest] of Object.entries({
+    valid: { ...data, aifySkills: pkg.aifySkills },
+    undeclared: data,
+    outside: { ...data, aifySkills: { directory: "../assets" } },
+    missing: { ...data, aifySkills: { directory: "assets/missing" } },
+  })) {
+    fs.writeFileSync(path.join(work, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+    git("add", "package.json");
+    git("commit", "-q", "-m", `skills-${kind}`);
+    skills[kind] = git("rev-parse", "HEAD");
+  }
+  git("clone", "-q", "--bare", "--no-local", ".", path.join(gitRoot, "owner", "fixture-bridge.git"));
+  built = { repo: "owner/fixture-bridge", revisions: [first, second], unbuilt, skills };
   return built;
 }
