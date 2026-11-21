@@ -108,6 +108,8 @@ the native CLI by this warning change.
 
 ### Connecting a service: `aify-wrapper-connect`
 
+Writing a service? Start with [the HTTP MCP integration guide](docs/SERVICE-INTEGRATION.md).
+
 ```bash
 aify-wrapper-connect aify-comms http://127.0.0.1:8800 --key-file ~/comms.key --approve <digest>
 ```
