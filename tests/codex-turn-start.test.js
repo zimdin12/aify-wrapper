@@ -19,7 +19,7 @@ const rule = "fixture turn-start context";
 const trustRow = (key, hash) => `[hooks.state.${JSON.stringify(key)}]\ntrusted_hash = "${hash}"\n`;
 
 async function launch(t, endpoint, { target = true, herdr = false, subagent = false, resume = false,
-  managed = resume, viaWrapper = resume, trustContext = false } = {}) {
+  managed = resume, viaWrapper = resume, trustContext = false, trustState = resume } = {}) {
   const env = host(t, { endpoint });
   const home = env.HOME;
   const registry = env.AIFY_SERVICE_REGISTRY;
@@ -40,7 +40,7 @@ async function launch(t, endpoint, { target = true, herdr = false, subagent = fa
   const trust = path.join(codex, "config.toml");
   fs.mkdirSync(path.join(codex, "sessions"), { recursive: true });
   fs.writeFileSync(path.join(codex, "sessions", "thread-1.jsonl"), "");
-  let config = herdr && resume ? CODEX_STATE_EVENTS.map(([, event, value]) =>
+  let config = herdr && trustState ? CODEX_STATE_EVENTS.map(([, event, value]) =>
     trustRow(codexHookTrustKey(event, { root: path.parse(home).root }), codexHookHash(event, codexStateCommand(state, value)))).join("\n") : "";
   if (trustContext) {
     const event = "user_prompt_submit";
@@ -60,7 +60,8 @@ async function launch(t, endpoint, { target = true, herdr = false, subagent = fa
   assert.equal(fs.readFileSync(trust, "utf8"), config, "launch must not write user trust configuration");
   const appArgs = JSON.parse(fs.readFileSync(`${capture}.argv`, "utf8"));
   assert.equal(appArgs.includes("--dangerously-bypass-hook-trust"), false, "the app-server's existing trust policy must not be widened");
-  return { ...result, ...JSON.parse(fs.readFileSync(`${capture}.turn`, "utf8")), tuiArgs: JSON.parse(fs.readFileSync(`${capture}.tui`, "utf8")) };
+  return { ...result, ...JSON.parse(fs.readFileSync(`${capture}.turn`, "utf8")), appArgs,
+    tuiArgs: JSON.parse(fs.readFileSync(`${capture}.tui`, "utf8")) };
 }
 
 const hook = { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: rule } };
@@ -117,4 +118,22 @@ test("a managed fresh start without the existing bypass requires trust for conte
   assert.equal(wrapped.tuiArgs.includes("--dangerously-bypass-hook-trust"), true, "wrapped fresh start keeps its existing TUI bypass");
   assert.deepEqual(wrapped.added, hook);
   assert.equal(receiver.seen.length, 2);
+});
+
+test("local managed fresh starts withhold untrusted Herdr hooks and say so", async (t) => {
+  const receiver = await service(t, answer(rule));
+  const fresh = { target: false, managed: true, herdr: true };
+  const local = await launch(t, receiver.endpoint, fresh);
+  assert.ok(!local.appArgs.some((arg) => arg.startsWith("hooks.")), "local managed fresh must withhold all untrusted Herdr hooks");
+  assert.match(local.stderr, /Herdr state hooks withheld: Codex does not trust them for this managed launch\./);
+  assert.ok(!local.tuiArgs.includes("--dangerously-bypass-hook-trust"));
+
+  const trusted = await launch(t, receiver.endpoint, { ...fresh, trustState: true });
+  assert.deepEqual(trusted.handlers, [stateHandler], "admitted Herdr hooks still reach a local fresh start");
+  assert.doesNotMatch(trusted.stderr, /Herdr state hooks withheld/);
+  const wrapped = await launch(t, receiver.endpoint, { ...fresh, viaWrapper: true });
+  assert.ok(wrapped.tuiArgs.includes("--dangerously-bypass-hook-trust"));
+  assert.deepEqual(wrapped.handlers, [stateHandler], "the existing wrapped fresh bypass keeps the state hook");
+  assert.doesNotMatch(wrapped.stderr, /Herdr state hooks withheld/);
+  assert.deepEqual(receiver.seen, []);
 });

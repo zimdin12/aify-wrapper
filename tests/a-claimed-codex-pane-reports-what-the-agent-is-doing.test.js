@@ -37,7 +37,8 @@ const INSTALL = path.join(ROOT, "install.sh");
 const NOWHERE = "http://127.0.0.2:1";
 const WIN = process.platform === "win32" && "the stub herdr is a shell script, which Windows cannot spawn by path";
 
-function launch({ env = {}, args = [], listFails = false, codexConfig = null } = {}) {
+// The ordinary pane fixture represents an operator at a terminal, even though its stub has no TTY.
+function launch({ env = {}, args = ["--resident"], listFails = false, codexConfig = null } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "aify-codex-dot-"));
   const out = path.join(dir, "out");
   const stubs = path.join(dir, "stubs");
