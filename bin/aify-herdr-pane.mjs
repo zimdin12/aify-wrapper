@@ -26,7 +26,7 @@ import fs from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-import { codexHookArgs, codexHooksTrusted } from "../lib/codex-herdr-hooks.mjs";
+import { codexHookLines } from "../lib/codex-hook-cli.mjs";
 import { isMainModule } from "../lib/main-module.mjs";
 import { herdr, listPanes } from "../lib/herdr-cli.mjs";
 import { paneLabel, parsePaneLabel, readPaneContext, renamePaneArgv, reportAgentArgv, reportSeq } from "../lib/herdr-pane.mjs";
@@ -322,24 +322,8 @@ function main(argv) {
   }
 
   if (options.command === "codex-hooks") {
-    // PRINTS NOTHING RATHER THAN FAILING. The launcher reads these lines into codex's argv, so the
-    // only safe answers are "every hook" or "no hooks"; a launch never depends on this.
-    const flags = argv.slice(1);
-    const value = (name) => (flags.indexOf(name) === -1 ? null : flags[flags.indexOf(name) + 1] ?? null);
-    const stateScript = value("--state-script");
-    if (!stateScript) return 0;
-    const trustFile = value("--require-trust");
-    if (trustFile !== null) {
-      let text = "";
-      try {
-        text = fs.readFileSync(trustFile, "utf8");
-      } catch {}
-      if (!codexHooksTrusted(text, stateScript)) {
-        note("codex hooks withheld: this managed resume would stop at codex's hook review, and config.toml does not trust them yet");
-        return 0;
-      }
-    }
-    process.stdout.write(`${codexHookArgs(stateScript).join("\n")}\n`);
+    const lines = codexHookLines(argv.slice(1), { env: process.env, note });
+    if (lines.length) process.stdout.write(`${lines.join("\n")}\n`);
     return 0;
   }
 

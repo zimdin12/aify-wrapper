@@ -614,19 +614,34 @@ if [ "$CODEX_AIFY_SHARED" != true ]; then
   aify_lease_claim "${CODEX_AIFY_AGENT_ID:-}" codex "${AIFY_SESSION_MODE:-}" || exit $?
 fi
 CODEX_HERDR_HOOKS=()
+_aify_hook_options=(codex-hooks)
+_aify_codex_config="${CODEX_HOME:-$HOME/.codex}/config.toml"
 if aify_herdr_hooks_report 2>/dev/null; then
   export AIFY_HERDR_AGENT="${0##*/}"
-  _aify_herdr_trust=()
+  _aify_hook_options+=(--state-script "$AIFY_WRAPPER_DIR_FWD/bin/aify-herdr-state.sh")
   if [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ]; then
     for _aify_arg in "$@"; do
       case "$_aify_arg" in
-        --resume|--resume=*|--session-id|--session-id=*) _aify_herdr_trust=(--require-trust "${CODEX_HOME:-$HOME/.codex}/config.toml") ;;
+        --resume|--resume=*|--session-id|--session-id=*) _aify_hook_options+=(--require-trust "$_aify_codex_config"); break ;;
       esac
     done
   fi
+fi
+if [ "$CODEX_AIFY_SHARED" != true ] && [ -n "$CODEX_AIFY_AGENT_ID" ]; then
+  _aify_hook_options+=(--turn-start-script "$AIFY_WRAPPER_DIR_FWD/bin/aify-turn-start.mjs")
+  # Codex honors the existing TUI bypass only for fresh starts. A local managed Start lacks it.
+  if { [ "${AIFY_SESSION_MODE:-}" = managed ] || [ "${AIFY_MANAGED_VIA_WRAPPER:-}" = "1" ]; } &&
+     { [ -n "$CODEX_RESUME_HANDLE" ] || [ "${AIFY_MANAGED_VIA_WRAPPER:-}" != "1" ]; }; then
+    _aify_hook_options+=(--require-turn-start-trust "$_aify_codex_config")
+  fi
+fi
+if [ "${#_aify_hook_options[@]}" -gt 1 ]; then
   while IFS= read -r _aify_line; do
-    CODEX_HERDR_HOOKS+=("$_aify_line")
-  done < <(node "$AIFY_HERDR_HELPER" codex-hooks --state-script "$AIFY_WRAPPER_DIR_FWD/bin/aify-herdr-state.sh" "${_aify_herdr_trust[@]}" 2>>"$AIFY_HERDR_LOG" || true)
+    case "$_aify_line" in
+      turn-start-hook-untrusted) echo '[codex-aify] turn-start context withheld: the hook is not trusted for this managed launch.' >&2 ;;
+      *) CODEX_HERDR_HOOKS+=("$_aify_line") ;;
+    esac
+  done < <(node "$AIFY_WRAPPER_DIR_FWD/bin/aify-herdr-pane.mjs" "${_aify_hook_options[@]}" 2>>"${AIFY_HERDR_LOG:-/dev/null}" || true)
 fi
 
 # ── The app-server's configuration ───

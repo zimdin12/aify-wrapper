@@ -7,8 +7,13 @@ agreement with its receivers.
 
 ## When a request is sent
 
-The runner asks opted-in services in parallel at `UserPromptSubmit` and `SessionStart`, inside its
-existing deadline (`TURN_START_DEADLINE_MS`, 1500 ms) and each service's own `budgetMs`.
+The runner asks opted-in services in parallel inside its existing deadline (`TURN_START_DEADLINE_MS`,
+1500 ms) and each service's own `budgetMs`. Claude uses `UserPromptSubmit` and `SessionStart`; Hermes
+has its own turn callback. Codex uses one synchronous `UserPromptSubmit` command in the app-server
+for named launches with a `turnStart` target. It keeps any Herdr state handler in the same list.
+A managed resume, or a managed fresh start without Codex's existing TUI bypass, omits an untrusted
+turn-start hook and prints a notice. The wrapper never grants hook trust or changes the user's Codex
+configuration.
 
 The runner sends no request when the launch names no agent (`AIFY_AGENT_ID` is blank), the hook input
 has no `session_id`, or the input is for a Codex subagent (`agent_id` is a string). It skips a service

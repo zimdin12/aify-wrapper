@@ -237,10 +237,11 @@ declared `mcpTransport`), with or without `sessionInject`: that is aify-comms' p
 
 ## `turnStart`: what a service says as a turn begins
 
-The launcher registers one synchronous `UserPromptSubmit` command, `bin/aify-turn-start.mjs`, which a channel wake runs
-as well as a typed prompt. It reads this file at run time, asks every service declaring `turnStart` at once, and adds
-their answers' `text`, joined in the parser's service order, as the turn's `additionalContext`. Each request carries
-`{agentId, cwd, machineId, sessionKey}` (`sessionKey` is Claude's `session_id`), the key the entry's `credentialRef`
+Claude and Codex use the synchronous `UserPromptSubmit` hook to run `bin/aify-turn-start.mjs`; Claude's channel wakes
+also run it. See the [turn-start contract](contracts/turn-start.md) for Codex hook trust and Hermes' callback. The runner
+reads this file at run time, asks every service declaring `turnStart` at once, and adds their answers' `text`, joined in
+parser order, as `additionalContext`. Each request carries `{agentId, cwd, machineId, sessionKey}` (`sessionKey` is the
+harness's `session_id`), the key the entry's `credentialRef`
 names as `x-api-key`, and the agent as `x-aify-agent`. A service that is slow past its budget, fails, answers anything
 but a 200 with a string `text`, redirects, or has no key contributes nothing; the runner always exits 0, and adds
 nothing once `TURN_START_DEADLINE_MS` has passed. `machineId` is aify-env's derivation exactly (`lib/machine-id.mjs`).
