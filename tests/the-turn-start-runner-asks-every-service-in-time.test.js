@@ -236,11 +236,35 @@ test("THE MOMENT comes from the hook that ran: SessionStart's source, every User
 
 // ---- the hook command, end to end ----------------------------------------------------------------------------------
 
+const RELEASE = "/proc/sys/kernel/osrelease";
+const MACHINE = "/etc/machine-id";
+const MOUNTS = "/proc/mounts";
+const NO_WSL = { [RELEASE]: "fixture-linux\n", [MACHINE]: "", [MOUNTS]: "" };
+const FIXTURE_WSL = { [RELEASE]: "fixture-microsoft-WSL2\n", [MACHINE]: "fixture-distro\n",
+  [MOUNTS]: String.raw`Q:\ /fixture/drive 9p rw,aname=drvfs,path=Q:\ 0 0` };
+
+// Both consumers must read the same fixture: env's tag uses the sync reader and wrapper facts use the async one.
+const PRELOAD = `import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const evidence = JSON.parse(process.env.AIFY_TEST_WSL_FILES);
+const owned = new Set(${JSON.stringify([RELEASE, MACHINE, MOUNTS])});
+function fixture(file) {
+  if (!Object.hasOwn(evidence, file)) throw Object.assign(new Error('missing fixture file'), { code: 'ENOENT' });
+  return evidence[file];
+}
+const sync = fs.readFileSync.bind(fs), asyncRead = fs.promises.readFile.bind(fs.promises);
+fs.readFileSync = (file, ...rest) => owned.has(file) ? fixture(file) : sync(file, ...rest);
+fs.promises.readFile = async (file, ...rest) => owned.has(file) ? fixture(file) : asyncRead(file, ...rest);
+syncBuiltinESMExports();`;
+const preload = `data:text/javascript;base64,${Buffer.from(PRELOAD).toString("base64")}`;
+
 /** Run the hook as Claude does; `stdin` null leaves the pipe open and never writes. */
-function runHook(env, stdin) {
+function runHook(env, stdin, facts = NO_WSL) {
   return new Promise((resolve) => {
     const started = Date.now();
-    const child = spawn(process.execPath, [RUNNER], { env, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(process.execPath, ["--import", preload, RUNNER], {
+      env: { ...env, AIFY_TEST_WSL_FILES: JSON.stringify(facts) }, stdio: ["pipe", "pipe", "pipe"],
+    });
     let stdout = "", stderr = "";
     child.stdout.on("data", (chunk) => { stdout += chunk; });
     child.stderr.on("data", (chunk) => { stderr += chunk; });
@@ -314,10 +338,19 @@ test("END TO END: the hook sends the runner-built request and prints the context
   const [seen] = svc.seen;
   assert.equal(seen.headers["x-api-key"], KEY);
   assert.equal(seen.headers["x-aify-agent"], "probe-agent");
-  // PLACEMENT: the id the runner itself derived, lower-cased, from a mixed-case COMPUTERNAME.
-  const tag = process.platform === "linux" && /microsoft|wsl/i.test(fs.existsSync("/proc/sys/kernel/osrelease") ? fs.readFileSync("/proc/sys/kernel/osrelease", "utf8") : "") ? "wsl" : process.platform;
-  assert.deepEqual(seen.body, { agentId: "probe-agent", cwd: "C:\\Docker\\aify-dashboard", machineId: `${tag}:probe-host`, sessionKey: "claude-session-42", moment: "turn" });
+  // The neutral release fixture is not WSL even when this test runs on a WSL host.
+  assert.deepEqual(seen.body, { agentId: "probe-agent", cwd: "C:\\Docker\\aify-dashboard", machineId: `${process.platform}:probe-host`, sessionKey: "claude-session-42", moment: "turn" });
   assert.doesNotMatch(result.stdout + result.stderr, new RegExp(KEY));
+});
+
+test("END TO END: a Linux hook sends only the injected WSL placement facts", { skip: process.platform !== "linux" && "the WSL reader is Linux-only" }, async (t) => {
+  const svc = await service(t, answer("OPERATOR RULE"));
+  const result = await runHook(host(t, { endpoint: svc.endpoint }), HOOK_INPUT, FIXTURE_WSL);
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(svc.seen.length, 1);
+  assert.equal(svc.seen[0].body.machineId, "wsl:probe-host");
+  assert.deepEqual(svc.seen[0].body.wsl, { distroId: "fixture-distro", driveMounts: [{ drive: "Q", mountPoint: "/fixture/drive" }] },
+    "the hook must send the fixture's distro and mount rather than the host's");
 });
 
 test("END TO END, A COMPACTION: Claude's SessionStart after a compaction asks with moment compact and prints SessionStart's shape", async (t) => {
