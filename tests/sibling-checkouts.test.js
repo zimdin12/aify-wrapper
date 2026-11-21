@@ -85,6 +85,7 @@ test('separate schema source survives while live env selection remains unchanged
 test('the unchanged real comms parity gate still refuses while unrelated selected work can run',t=>{
  const f=fixture(t);success(f.run());
  fs.cpSync(path.join(ROOT,'lib'),path.join(f.root,'lib'),{recursive:true});
+ fs.cpSync(path.join(ROOT,'node_modules/aify-env'),path.join(f.root,'node_modules/aify-env'),{recursive:true});
  fs.copyFileSync(path.join(ROOT,'tests/private-credential.mjs'),path.join(f.root,'tests/private-credential.mjs'));
  fs.copyFileSync(path.join(ROOT,'tests/the-session-key-is-resolved-as-comms-resolves-it.test.js'),path.join(f.root,'tests/probe.test.js'));
  fs.unlinkSync(f.output);

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
+import { includePinnedEnv } from './pinned-env-fixture.mjs';
 
 console.log(JSON.stringify({ worker: 'activity-launcher', node: process.version, executable: process.execPath }));
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -23,6 +24,7 @@ function fixture({ enabled = '1', managed = false, claimed = false, rewrite = fa
   for (const file of ['bin/aify-input-boundary.sh', 'bin/aify-tool-event.mjs', 'bin/aify-tool-hook-json.sh', 'bin/aify-herdr-state.sh', 'bin/aify-herdr-pane.mjs', 'bin/aify-herdr-launch.sh', ...fs.readdirSync(path.join(ROOT, 'lib')).filter(n => n.endsWith('.mjs')).map(n => `lib/${n}`)]) {
     const to = path.join(wrapper, file); fs.mkdirSync(path.dirname(to), { recursive: true }); fs.copyFileSync(path.join(ROOT, file), to);
   }
+  includePinnedEnv(wrapper);
   const registry = path.join(dir, 'registry'); fs.writeFileSync(registry, '');
   const channel = path.join(bridge, 'claude-channel.js'); fs.writeFileSync(channel, '// owned installed channel specimen\n');
   fs.writeFileSync(path.join(dir, '.claude.json'), JSON.stringify({ mcpServers: { 'aify-comms-channel': { command: 'node', args: [channel] } } }));

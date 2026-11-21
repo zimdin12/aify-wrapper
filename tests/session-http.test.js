@@ -107,6 +107,8 @@ test("each service gets one entry at its /mcp/http with the four agreed headers,
   // A launch nobody named still gets the tools, with no agent header; the service then answers reads and refuses writes.
   const unnamed = claudeHttpServers(services, { ...LAUNCH, agentId: "" })["aify-dashboard"].headers;
   assert.equal("X-Aify-Agent-Id" in unnamed, false);
+  const tls = claudeHttpServers(services, { ...LAUNCH, ownEndpoint: "https://localhost:8800/tools" });
+  assert.equal(tls["aify-comms"].url, "https://localhost:8800/tools/mcp/http", "keep the TLS hostname");
 });
 
 test("a service reached over HTTP leaves the stdio entries for Claude and Hermes, and keeps them for Codex", () => {

@@ -9,7 +9,7 @@ function fixture(t,missing){
  const out=path.join(dir,'out'),home=path.join(dir,'home'),bin=path.join(dir,'bin'),state=path.join(dir,'state'),records=path.join(state,'launchers');
  for(const folder of [out,home,bin,records])fs.mkdirSync(folder,{recursive:true});
  fs.writeFileSync(path.join(out,'claude-aify'),'owned existing launcher');fs.writeFileSync(path.join(records,'previous.args'),'owned existing record');
- fs.writeFileSync(path.join(bin,'node'),'#!/bin/bash\nif [ "${1:-}" = --owned-positive ]; then printf owned-reader; exit 0; fi\nprintf "%s\\n" "$*" >> "$PAIR_READER_CALLS"\nprintf "%s\\n" "$PAIR_READER_OUTPUT"\n',{mode:0o755});
+ fs.writeFileSync(path.join(bin,'node'),`#!/bin/bash\nif [ "\${1:-}" = --owned-positive ]; then printf owned-reader; exit 0; fi\ncase "$1" in */checkout-env-pin.mjs) exec "${posix(process.execPath)}" "$@" ;; esac\nprintf "%s\\n" "$*" >> "$PAIR_READER_CALLS"\nprintf "%s\\n" "$PAIR_READER_OUTPUT"\n`,{mode:0o755});
  const seal=sealedPath([]),calls=path.join(dir,'calls'),values={REGISTRY_FINGERPRINT:'a'.repeat(64),STRICT_EXTRA_MCP_B64:'',SESSION_MCP_B64:'',SESSION_HTTP_B64:''};
  const env={...process.env,HOME:home,USERPROFILE:home,APPDATA:path.join(home,'AppData/Roaming'),LOCALAPPDATA:path.join(home,'AppData/Local'),PATH:bin+path.delimiter+seal.PATH,PAIR_READER_CALLS:posix(calls),PAIR_READER_OUTPUT:Object.entries(values).filter(([name])=>name!==missing).map(([name,value])=>name+'='+value).join('\n')};
  // Poison every required inherited value: a missing successful output cannot be repaired from the caller's env.

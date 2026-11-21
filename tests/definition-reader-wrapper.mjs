@@ -13,6 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { includePinnedEnv } from "./pinned-env-fixture.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -35,6 +36,7 @@ export function readerWrapper(wrapper) {
     fs.mkdirSync(path.dirname(to), { recursive: true });
     fs.copyFileSync(path.join(ROOT, file), to);
   }
+  includePinnedEnv(wrapper);
   return wrapper;
 }
 

@@ -21,7 +21,6 @@
 import os from "node:os";
 import path from "node:path";
 
-import { credentialRead } from "../lib/credential-file.mjs";
 import { hostIsWsl, machineIdFor } from "../lib/machine-id.mjs";
 import { recordLauncher, sessionFolder, sweepEndedLaunches, writeSessionFile } from "../lib/session-folder.mjs";
 import { claudeHttpServers, sessionEndpoint, sessionHttpFromBase64, sessionKey } from "../lib/session-http.mjs";
@@ -47,7 +46,7 @@ try {
 const ownEndpoint = env.AIFY_SESSION_ENDPOINT || "";
 const keys = {};
 for (const service of services) {
-  const { key, refused } = await sessionKey(service, { url: sessionEndpoint(service, ownEndpoint), env, read: credentialRead });
+  const { key, refused } = await sessionKey(service, { url: sessionEndpoint(service, ownEndpoint), env });
   if (key) keys[service.name] = key;
   else process.stderr.write(`[aify-session-mcp] ${service.name}: no key found (${refused}); the service decides\n`);
 }

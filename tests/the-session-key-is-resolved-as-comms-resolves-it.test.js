@@ -1,9 +1,6 @@
 #!/usr/bin/env node
-// The key a session entry carries is the key aify-comms' own resolver would choose (destinationKeyResolver): an
-// exported key first, else the credential aify-env holds, only for the endpoint the registry names it for, and only
-// from a file aify-env's custody rules accept. The wrapper applies that rule per service from the registry
-// (lib/session-http.mjs sessionKey, lib/credential-file.mjs, lib/credential-custody.mjs) instead of importing comms,
-// which pins this package; this file is what keeps the two from drifting apart.
+// Compare the shipping wrapper adapter (using aify-env) against the current comms adapter on real files.
+// The explicitly comms-only failover behavior remains a separate case, not part of shared endpoint authority.
 //
 // AGAINST THE REAL THING: comms' modules are imported from AIFY_COMMS_REPO and run on the same files. Test-only: no
 // runtime path imports comms. FAILS, never skips, without AIFY_COMMS_REPO, because a cross-repo proof that quietly
@@ -19,8 +16,7 @@ import { pathToFileURL } from "node:url";
 
 import { makePrivate, writePrivateCredential } from "./private-credential.mjs";
 
-import { custodyProblem, icaclsPath } from "../lib/credential-custody.mjs";
-import { credentialRead } from "../lib/credential-file.mjs";
+import { icaclsPath } from "../lib/credential-custody.mjs";
 import { parseRegistry } from "../lib/registry.mjs";
 import { sameEndpoint, sessionHttpServices, sessionKey } from "../lib/session-http.mjs";
 
@@ -31,6 +27,9 @@ const stdio = (file) => pathToFileURL(path.join(COMMS_REPO, "mcp", "stdio", file
 const { destinationKeyResolver, API_KEY_ENV_NAMES } = await import(stdio("aify-service-endpoint.mjs"));
 const { sameEndpoint: commsSameEndpoint } = await import(stdio("registry-credential.mjs"));
 const { custodyProblem: commsCustodyProblem } = await import(stdio("credential-custody.mjs"));
+// Test-only: compare the pure judgment actually used by the pinned leaf, not a wrapper copy.
+const envPackage = import.meta.resolve("aify-env/package.json");
+const { fileSecurityProblem: custodyProblem } = await import(new URL("./lib/credential-inspection.mjs", envPackage));
 
 const ENDPOINT = "http://127.0.0.1:8800";
 const KEY = "credential-key-for-this-test-only-0123456789";
@@ -69,7 +68,7 @@ function fixture({ credential = "private" } = {}) {
 async function both({ home, registry }, { url = ENDPOINT, env = {} } = {}) {
   const commsKey = destinationKeyResolver(ENDPOINT, { env, homeDir: home, onDiagnostic: () => {} })(url);
   const [service] = sessionHttpServices(registry, { own: "aify-comms" });
-  const ours = await sessionKey(service, { url, env, read: (ref) => credentialRead(ref, { home }) });
+  const ours = await sessionKey(service, { url, env, home });
   return { comms: commsKey, ours: ours.key, refused: ours.refused };
 }
 
@@ -114,7 +113,7 @@ test("a service that declares no key variable never takes an exported key, where
   try {
     const env = { AIFY_API_KEY: EXPORTED };
     const dashboard = sessionHttpServices(home.registry).find((service) => service.name === "aify-dashboard");
-    const ours = await sessionKey(dashboard, { url: dashboard.endpoint, env, read: (ref) => credentialRead(ref, { home: home.home }) });
+    const ours = await sessionKey(dashboard, { url: dashboard.endpoint, env, home: home.home });
     assert.equal(ours.key, "dashboard-key-for-this-test-only-0123456789");
     assert.equal(destinationKeyResolver(dashboard.endpoint, { env, homeDir: home.home, onDiagnostic: () => {} })(dashboard.endpoint), EXPORTED,
       "control: comms' resolver no longer applies an exported key everywhere, so this difference may be gone");
@@ -127,20 +126,24 @@ test("custodyProblemFor reads a real file's custody on this host: private passes
   // The gather, not only the judgement: icacls by its system path on Windows (a launch's PATH may lack System32), lstat
   // and the mode on POSIX. A sealed PATH is the case that refused every key before.
   // In a child whose PATH holds only node's folder, as in a sealed launch: the lookup is the process's own PATH.
-  const module = new URL("../lib/credential-custody.mjs", import.meta.url).href;
-  const custodyOf = (file) => execFileSync(process.execPath, ["--input-type=module", "-e",
-    `const { custodyProblemFor } = await import(${JSON.stringify(module)}); process.stdout.write(await custodyProblemFor(process.argv[1]));`, file],
-  { encoding: "utf8", env: { ...process.env, PATH: path.dirname(process.execPath) } });
+  const module = new URL("../lib/session-http.mjs", import.meta.url).href;
+  const custodyOf = (home) => JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e",
+    `const { sessionKey } = await import(${JSON.stringify(module)});
+    const url = ${JSON.stringify(ENDPOINT)};
+    process.stdout.write(JSON.stringify(await sessionKey({ endpoint: url, credentialRef: 'aify-comms.key' }, { url, home: process.argv[1], env: {} })));`, home],
+  { encoding: "utf8", env: { ...process.env, PATH: path.dirname(process.execPath) } }));
   // No system root named, no icacls guessed at: the ACL is then unreadable and the check refuses.
   assert.equal(icaclsPath({}), "");
   assert.equal(path.basename(icaclsPath({ SystemRoot: "X:\\Win" })), "icacls.exe");
   const home = fixture();
   try {
     const file = path.join(home.home, ".aify", "credentials", "aify-comms.key");
-    assert.equal(custodyOf(file), "");
+    assert.deepEqual(custodyOf(home.home), { key: KEY, refused: "" });
     if (WIN) execFileSync("icacls", [file, "/grant", "*S-1-1-0:R"], { stdio: "ignore", windowsHide: true });
     else fs.chmodSync(file, 0o644);
-    assert.match(custodyOf(file), /readable by|grants access beyond/);
+    const denied = custodyOf(home.home);
+    assert.equal(denied.key, "");
+    assert.match(denied.refused, /readable by|grants access beyond/);
   } finally {
     fs.rmSync(home.home, { recursive: true, force: true });
   }

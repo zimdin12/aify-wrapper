@@ -34,6 +34,12 @@ probed; those remain launcher-time choices.
 Either writes into `~/.local/bin` (override with `--dest`). Run `./install.sh --help` for the rest.
 On Windows run it from Git Bash: from PowerShell or cmd a bare `bash` is WSL's, and installs into WSL instead.
 
+A source checkout fetches its pinned aify-env dependency into the checkout's `node_modules` on
+first install or when the local version or revision differs from the lock. This step needs npm
+and network access if the package is not cached. It omits optional dependencies and runs no
+build scripts. With the exact dependency already installed, the installer does not call npm.
+A failed bootstrap leaves the existing launchers and render records untouched.
+
 The launchers find this package's own `bin/` and `lib/` in the directory the installer runs from (override
 with `--wrapper-dir`), never through a service's bridge, so the order of the two installs does not matter. The
 claude, codex and hermes launchers read a named agent's definition with `bin/aify-definition.mjs` there, and the
@@ -98,7 +104,7 @@ the native CLI by this warning change.
 | `--wrapper-dir` | where the launchers find this package's `bin/` and `lib/` (default: this package's own directory). Resolved to an absolute path before it is baked in; one that is not a directory is refused |
 | `--host-repo` | your checkout, for hooks that run from source |
 | `--set KEY=VALUE` | an extra placeholder, repeatable |
-| `--render-only DIR` | write the launcher into `DIR` and stop, touching nothing else |
+| `--render-only DIR` | render into `DIR` without installing launchers or writing render records; source dependency bootstrap still applies |
 
 ### Connecting a service: `aify-wrapper-connect`
 

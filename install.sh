@@ -20,7 +20,7 @@
 #   --host-repo <dir>      host checkout, for hooks that must run from source
 #   --set KEY=VALUE        extra placeholder, repeatable (hermes needs three; see README)
 #   --registry <path>      service registry to build against (default: ~/.aify/services.json)
-#   --render-only <dir>    write the launchers into <dir> and exit, touching nothing else
+#   --render-only <dir>    render into <dir> without installing launchers or writing render records
 #
 # Exit codes match the contract the wrappers themselves use: 78 configuration invalid, 127 a required
 # command is missing.
@@ -311,6 +311,24 @@ if [ -z "$RENDER_ONLY" ]; then
   done
 fi
 
+# A source checkout has a lockfile; npm-packed installs already have their dependency.
+if [ -e "$HERE/package-lock.json" ] || [ -e "$HERE/.git" ]; then
+  _env_pin="$(node_path "$HERE/lib/checkout-env-pin.mjs")"
+  _bootstrap_status=0
+  node "$_env_pin" || _bootstrap_status=$?
+  if [ "$_bootstrap_status" = 1 ]; then
+    if ! command -v npm >/dev/null 2>&1 \
+      || ! (CDPATH= cd -- "$HERE" && npm ci --global=false --omit=optional --ignore-scripts --no-audit --no-fund) \
+      || ! node "$_env_pin"; then
+      echo 'install.sh: the pinned aify-env dependency is not available; no launcher or record was written.' >&2
+      echo 'Run from this checkout with npm and network access: npm ci --omit=optional --ignore-scripts' >&2
+      exit "$EXIT_CONFIG"
+    fi
+  elif [ "$_bootstrap_status" != 0 ]; then
+    exit "$EXIT_CONFIG"
+  fi
+fi
+
 # THE REGISTRY IS READ ONLY ONCE THE INSTALL IS KNOWN TO BE VALID: after the client set and every --wrapper-dir check
 # above, so a misconfigured install refuses without a node start or a registry read. What it reads is baked in so
 # anything holding the CURRENT registry can see a launcher is stale without executing it. An absent registry is a
@@ -358,7 +376,7 @@ for _client in "${CLIENTS[@]}"; do
   install_one "$_client"
 done
 
-# --render-only writes launchers and nothing else, so it never touches the user's hermes config.
+# --render-only does not write the user's Hermes config.
 if [ -n "$RENDER_ONLY" ]; then
   exit 0
 fi
