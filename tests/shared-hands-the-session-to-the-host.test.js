@@ -89,7 +89,7 @@ test("THE DEFAULT PATH STILL ENDS EXACTLY AS IT DID", () => {
     /\nclaude "\$\{AIFY_CHANNEL_FLAGS\[@\]\}" "\$\{CLAUDE_MCP_FLAGS\[@\]\}" "\$\{CLAUDE_PERMISSION_FLAGS\[@\]\}" "\$\{CLAUDE_INSTRUCTION_FLAGS\[@\]\}" "\$\{CLAUDE_ARGS\[@\]\}"\nSTATUS=\$\?\nexit "\$STATUS"/,
     "the ordinary launch line changed shape",
   );
-  assert.match(claude, /\n {4}AIFY_CHANNEL_FLAGS=\(--dangerously-load-development-channels server:aify-comms-channel\)\n/,
+  assert.match(claude, /\n +AIFY_CHANNEL_FLAGS=\(--dangerously-load-development-channels server:aify-comms-channel\)\n/,
     "the development route's flags changed");
 });
 

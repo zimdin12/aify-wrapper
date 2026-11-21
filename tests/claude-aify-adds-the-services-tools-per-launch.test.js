@@ -128,7 +128,7 @@ test("the own service is reached at the endpoint this launch resolved, and its c
   const { run, configs } = launch({ transport: "http", env: { AIFY_COMMS_URL: moved } });
   assert.equal(run.status, 0, run.stderr);
   assert.deepEqual(own(configs[0]), { ...httpEntry(moved), headers: { "X-Aify-Agent-Id": "probe-agent" } });
-  assert.match(run.stderr, /aify-comms: no key found \(its credential opens http:\/\/127\.0\.0\.2:1, and this launch sends to http:\/\/127\.0\.0\.2:2\)/);
+  assert.match(run.stderr, /aify-comms: no key found \(the request base does not match an authorized service base\)/);
 });
 
 test("in strict mode the service's tools come from the same per-launch file, beside the channel", () => {

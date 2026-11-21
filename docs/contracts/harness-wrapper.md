@@ -13,7 +13,7 @@ install-only configuration and deferred-Hermes statements are not current requir
 
 | Input | Current behavior |
 | --- | --- |
-| `HARNESS_ENDPOINT` | Coordinating service URL; legacy `AIFY_COMMS_URL`, then rendered endpoint are fallbacks. Explicit empty is invalid, not an unset value. |
+| `HARNESS_ENDPOINT` | Coordinating service URL; legacy `AIFY_COMMS_URL`, then rendered endpoint are fallbacks. Explicit empty is invalid for a launcher with an own service. Claude installed with `--no-own-service` has no coordinating endpoint and ignores these overrides. |
 | `HARNESS_IDENTITY` | Optional agent id; legacy `AIFY_AGENT_ID`. Named argv wins; anonymous launches remain valid, with runtime-specific warnings about unavailable status/delivery. |
 | `HARNESS_ROLE` | Optional role; legacy `AIFY_AGENT_ROLE`. Named argv wins. Where a definition reader exists, a definition supplies defaults below explicit/env choices. |
 | `HARNESS_CWD` | Reported cwd hint; legacy `AIFY_AGENT_CWD`. It does **not** make the launcher change directory. The host must set the actual process cwd. |

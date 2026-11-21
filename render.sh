@@ -67,6 +67,8 @@ aify_render_value_safe() {
     *\"*|*\$*|*\`*|*\}*) _aify_input_refused "$key" 'shell-source characters'; return 78 ;;
   esac
   if [ "$key" = SERVICE_NAME ]; then
+    # Providing an empty pair explicitly selects Claude's registry-only path. An omitted pair is still missing.
+    if [ -z "$value" ] && [ "${template##*/}" = claude-aify.sh.in ]; then return 0; fi
     case "$value" in ''|*[!A-Za-z0-9_-]*) _aify_input_refused "$key" 'service-name characters'; return 78 ;; esac
   fi
   return 0

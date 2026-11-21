@@ -33,7 +33,8 @@ set -euo pipefail
 # this, and bash keeps the raw placeholder.
 # THE UNCONVERTED PATH FIRST, and the substitution kept out of the assignment: under `set -e` a
 # `cygpath` that fails inside `VAR="$(...)"` would end the launch before the agent ran.
-AIFY_BRIDGE_DIR_FWD="@@BRIDGE_DIR@@"
+AIFY_OWN_SERVICE="@@SERVICE_NAME@@"
+AIFY_BRIDGE_DIR_FWD="${AIFY_OWN_SERVICE:+@@BRIDGE_DIR@@}"
 # THE WRAPPER'S OWN INSTALL ROOT, where every bin/ and lib/ helper below is found: this package's own directory,
 # which arrives with the launcher (a service's bridge is used only for that service's code). Converted with the bridge
 # directory, by ONE cygpath for both, since each start costs 100-500 ms on a loaded Windows host. The wrapper FIRST:
@@ -41,7 +42,7 @@ AIFY_BRIDGE_DIR_FWD="@@BRIDGE_DIR@@"
 # leaves the wrapper converted, and the wrapper path is always absolute (render.sh refuses any other).
 AIFY_WRAPPER_DIR_FWD="@@WRAPPER_DIR@@"
 if command -v cygpath >/dev/null 2>&1; then
-  _aify_converted="$(cygpath -m "@@WRAPPER_DIR@@" "@@BRIDGE_DIR@@" 2>/dev/null || true)"
+  _aify_converted="$(cygpath -m "@@WRAPPER_DIR@@" "$AIFY_BRIDGE_DIR_FWD" 2>/dev/null || true)"
   if [ -n "${_aify_converted%%$'\n'*}" ]; then AIFY_WRAPPER_DIR_FWD="${_aify_converted%%$'\n'*}"; fi
   case "$_aify_converted" in *$'\n'?*) AIFY_BRIDGE_DIR_FWD="${_aify_converted#*$'\n'}" ;; esac
 fi
@@ -122,6 +123,7 @@ HARNESS_REGISTRY_FINGERPRINT="@@REGISTRY_FINGERPRINT@@"
 export HARNESS_WRAPPER_VERSION="$HARNESS_WRAPPER_VERSION"
 export HARNESS_REGISTRY_FINGERPRINT="$HARNESS_REGISTRY_FINGERPRINT"
 HARNESS_ENDPOINT="${HARNESS_ENDPOINT-${AIFY_COMMS_URL:-@@ENDPOINT@@}}"
+if [ -z "$AIFY_OWN_SERVICE" ]; then HARNESS_ENDPOINT=""; fi
 . "$AIFY_WRAPPER_DIR_FWD/bin/aify-input-boundary.sh" || exit 78
 aify_json_scalar_safe HARNESS_ENDPOINT "$HARNESS_ENDPOINT" || exit 78
 aify_json_scalar_safe AIFY_WRAPPER_DIR_FWD "$AIFY_WRAPPER_DIR_FWD" || exit 78
@@ -396,7 +398,12 @@ claude_aify_defaults
 #
 # Ordered so `--check` reports on a configuration that has ALREADY been validated: a check that says
 # "fine" about something the launch would reject is worse than no check.
-if [ -z "$HARNESS_ENDPOINT" ]; then
+if [ -z "$AIFY_OWN_SERVICE" ]; then
+  if [ "$CLAUDE_AIFY_SHARED" = true ] || [ "${AIFY_CLAUDE_STRICT_MCP:-0}" = 1 ] || [ -n "$HARNESS_MCP_COMMAND" ]; then
+    echo '[claude-aify] --shared, strict MCP and HARNESS_MCP_COMMAND require an own service.' >&2
+    exit "$HARNESS_EXIT_CONFIG"
+  fi
+elif [ -z "$HARNESS_ENDPOINT" ]; then
   echo "[claude-aify] HARNESS_ENDPOINT is empty. A wrapper will not guess an endpoint: an agent" >&2
   echo "              talking to a service nobody named is worse than one that refuses to start." >&2
   exit "$HARNESS_EXIT_CONFIG"
@@ -421,7 +428,7 @@ if [ "$HARNESS_CHECK" = true ]; then
     _claude_permission_mode=omitted
   fi
   echo "  wrapper-selected permissions: mode=$_claude_permission_mode; source=$CLAUDE_PERMISSION_SOURCE; not final runtime permissions"
-  echo "  endpoint  : $HARNESS_ENDPOINT"
+  echo "  endpoint  : ${HARNESS_ENDPOINT:-<no own service>}"
   echo "  identity  : ${CLAUDE_AIFY_AGENT_ID:-<none — this session would be anonymous>}"
   echo "  role      : $CLAUDE_AIFY_ROLE"
   echo "  definition: ${AIFY_DEF_FILE:-<none>}"
@@ -437,7 +444,9 @@ if [ "$HARNESS_CHECK" = true ]; then
   # inside the strict-MCP branch below, which is opt-in via AIFY_CLAUDE_STRICT_MCP=1. In the default
   # mode this line printed the configured value as though it were in force, so `--check` confirmed a
   # setting that the launch then ignored -- the one report an operator consults to find out exactly this.
-  if [ "@@MCP_TRANSPORT@@" = "http" ]; then
+  if [ -z "$AIFY_OWN_SERVICE" ]; then
+    echo "  mcp       : registry session entries only"
+  elif [ "@@MCP_TRANSPORT@@" = "http" ]; then
     echo "  mcp       : the service's /mcp/http, added for this launch as its agent"
   elif [ "${AIFY_CLAUDE_STRICT_MCP:-0}" = "1" ]; then
     echo "  mcp       : ${HARNESS_MCP_COMMAND:-<built-in bridge>} (strict mode)"
@@ -466,7 +475,7 @@ if [ -r "$AIFY_HERDR_LAUNCH_SH" ]; then aify_herdr_claim_pane; fi
 CLAUDE_PIN_SELECTED=false
 if [ "$CLAUDE_NEW_SESSION" = true ]; then CLAUDE_RESUME_ID=""; unset CLAUDE_SESSION_ID AIFY_SESSION_HANDLE; fi
 _claude_session_reader="$AIFY_WRAPPER_DIR_FWD/bin/aify-claude-session.mjs"
-if [ "$CLAUDE_AIFY_AGENT_FROM_ARG" = true ] && [ "$CLAUDE_AIFY_SHARED" != true ]; then
+if [ -n "$AIFY_OWN_SERVICE" ] && [ "$CLAUDE_AIFY_AGENT_FROM_ARG" = true ] && [ "$CLAUDE_AIFY_SHARED" != true ]; then
   if [ -f "$_claude_session_reader" ]; then
     _claude_pin="$(node "$_claude_session_reader" select "$AIFY_BRIDGE_DIR_FWD" "$HARNESS_ENDPOINT" "$CLAUDE_AIFY_AGENT_ID" "$CLAUDE_AIFY_AGENT_FROM_ARG" "$CLAUDE_SESSION_SELECTOR" "$CLAUDE_NEW_SESSION" "$CLAUDE_AIFY_SHARED" "${CLAUDE_RESUME_ID:-}")" || _claude_pin=""
     if [ -n "$_claude_pin" ]; then CLAUDE_RESUME_ID="$_claude_pin"; CLAUDE_PIN_SELECTED=true; fi
@@ -517,24 +526,10 @@ if [ -n "${CLAUDE_RESUME_ID:-}" ]; then
     echo "[claude-aify] resuming pinned Claude session '$CLAUDE_RESUME_ID' for '$CLAUDE_AIFY_AGENT_ID'." >&2
   fi
 fi
-# IDENTITY RECOVERY (2026-07-14). EVERY turn-state path is gated on AIFY_AGENT_ID: the
-# bridge's turn detector (server.js), the Stop / UserPromptSubmit / PostToolUse hooks, and
-# the session-store capture hook. So a session started WITHOUT an agent id registers,
-# messages and heartbeats normally — but its status LATCHES FOREVER: the channel sidecar
-# (which carries the id in its own config) still SETS `working` on an inbound wake, and
-# nothing left alive can ever CLEAR it. That is a silent, total status failure that looks
-# healthy from every other angle; it cost days of "target-agent is always working" before
-# the missing env var was found. Claude's own /resume picker offers a SESSION, never an agent,
-# so an operator naturally resumes by session id — exactly the path that strips the identity.
-#
-# hermes has recovered its agent from a bare `--resume <handle>` since 2026-06-03 (see the
-# hermes block below); the comment there claimed "same idea is wired into claude/codex" — it
-# never was. This is that wiring, mirrored: ask the SERVICE which agent owns this session
-# handle (authoritative, and unlike the /tmp store it survives a reboot), then fall back to
-# the local session store (offline-robust when the service is down). If the id is STILL
-# unknown, say so out loud rather than degrade in silence. Anonymous sessions remain legal —
-# a plain claude+comms session is a real use case — they just can't be silent about it.
-if [ -z "$CLAUDE_AIFY_AGENT_ID" ] && [ -n "${CLAUDE_RESUME_ID:-}" ]; then
+# Identity recovery (2026-07-14): turn-state reporting needs AIFY_AGENT_ID. A channel can set
+# working on a wake, but an id-less resume never clears it. Ask the own service when present,
+# then try the local session store. Warn if the session is still anonymous.
+if [ -n "$AIFY_OWN_SERVICE" ] && [ -z "$CLAUDE_AIFY_AGENT_ID" ] && [ -n "${CLAUDE_RESUME_ID:-}" ]; then
   if command -v node >/dev/null 2>&1; then
     # `|| _aify_rec=""` is load-bearing. Under `set -euo pipefail` this assignment inherits the
     # command's status, so an unreachable service ended the wrapper here: no claude, no message, just
@@ -593,7 +588,11 @@ fi
 # 120s server-side stale window after every reply.
 # Caller env wins — a bridge-spawned managed PTY can override the
 # install-time default by exporting AIFY_COMMS_URL beforehand.
-export AIFY_COMMS_URL="$HARNESS_ENDPOINT"
+if [ -n "$AIFY_OWN_SERVICE" ]; then
+  export AIFY_COMMS_URL="$HARNESS_ENDPOINT"
+else
+  unset AIFY_COMMS_URL AIFY_SERVER_URL CLAUDE_MCP_SERVER_URL
+fi
 
 # Agent view / background sessions OFF for aify-driven sessions (2026-08-02).
 #
@@ -639,12 +638,6 @@ if [ -z "$CLAUDE_AIFY_SESSION_MODE" ]; then
   AIFY_SESSION_MODE_INFERRED=1
 fi
 export AIFY_SESSION_MODE="$CLAUDE_AIFY_SESSION_MODE"
-# claude-aify ALWAYS activates aify-comms-channel as a dev channel below
-# (--dangerously-load-development-channels), so tell the registration path
-# that channels are enabled. This stops the service-side _row_capabilities
-# strip from removing resident-run from this agent's capabilities.
-export AIFY_CHANNELS_ENABLED="1"
-
 CLAUDE_PERMISSION_FLAGS=()
 if [ "$CLAUDE_AUTO" = true ]; then
   CLAUDE_PERMISSION_FLAGS+=(--dangerously-skip-permissions)
@@ -654,62 +647,47 @@ fi
 # today's development channel, or `none`, refused here with the repair rather than started deaf. Strict mode, a service
 # other than the plugin's, and any failure of the check keep the development channel. Exported on every route: each configured channel
 # server reads it to decide whether it claims messages (aify-comms mcp/stdio/channel-producer.mjs).
-AIFY_CHANNEL_ROUTE=dev
-AIFY_CHANNEL_REASON=""
-if [ "${AIFY_CLAUDE_STRICT_MCP:-0}" != "1" ]; then
-  _aify_route_text="$(AIFY_CHANNEL_SERVICE="@@SERVICE_NAME@@" AIFY_BRIDGE_DIR="$AIFY_BRIDGE_DIR_FWD" AIFY_CHANNEL_SESSION_MCP="@@SESSION_MCP_B64@@" \
-    node "$AIFY_WRAPPER_DIR_FWD/lib/channel-route-cli.mjs" "${CLAUDE_ARGS[@]}" 2>/dev/null)" || _aify_route_text=dev
-  AIFY_CHANNEL_ROUTE="$(printf '%s\n' "$_aify_route_text" | sed -n 1p)"
-  AIFY_CHANNEL_REASON="$(printf '%s\n' "$_aify_route_text" | sed -n 2p)"
-elif [ ! -r "$AIFY_BRIDGE_DIR_FWD/claude-channel.js" ]; then
-  # Strict mode writes its own channel server below, running this bridge's claude-channel.js: without it, deaf.
-  AIFY_CHANNEL_ROUTE=none
-  AIFY_CHANNEL_REASON="strict mode runs $AIFY_BRIDGE_DIR_FWD/claude-channel.js, which is missing"
+if [ -z "$AIFY_OWN_SERVICE" ]; then
+  AIFY_CHANNEL_FLAGS=()
+  unset AIFY_CHANNEL_ROUTE AIFY_CHANNELS_ENABLED
+else
+  # Registration reads this flag so the service's _row_capabilities keeps resident-run
+  # for a session with channels. Without a channel, the launcher must not advertise it.
+  export AIFY_CHANNELS_ENABLED="1"
+  AIFY_CHANNEL_ROUTE=dev
+  AIFY_CHANNEL_REASON=""
+  if [ "${AIFY_CLAUDE_STRICT_MCP:-0}" != "1" ]; then
+    _aify_route_text="$(AIFY_CHANNEL_SERVICE="$AIFY_OWN_SERVICE" AIFY_BRIDGE_DIR="$AIFY_BRIDGE_DIR_FWD" AIFY_CHANNEL_SESSION_MCP="@@SESSION_MCP_B64@@" \
+      node "$AIFY_WRAPPER_DIR_FWD/lib/channel-route-cli.mjs" "${CLAUDE_ARGS[@]}" 2>/dev/null)" || _aify_route_text=dev
+    AIFY_CHANNEL_ROUTE="$(printf '%s\n' "$_aify_route_text" | sed -n 1p)"
+    AIFY_CHANNEL_REASON="$(printf '%s\n' "$_aify_route_text" | sed -n 2p)"
+  elif [ ! -r "$AIFY_BRIDGE_DIR_FWD/claude-channel.js" ]; then
+    # Strict mode writes its own channel server below. If the bridge has no channel, refuse this launch.
+    AIFY_CHANNEL_ROUTE=none
+    AIFY_CHANNEL_REASON="strict mode runs $AIFY_BRIDGE_DIR_FWD/claude-channel.js, which is missing"
+  fi
+  case "$AIFY_CHANNEL_ROUTE" in
+    plugin)
+      AIFY_CHANNEL_FLAGS=(--channels plugin:aify-channel@aify-local)
+      # The plugin's server has no env block of its own: it reads the endpoint from what Claude inherits.
+      export AIFY_SERVER_URL="$HARNESS_ENDPOINT" CLAUDE_MCP_SERVER_URL="$HARNESS_ENDPOINT"
+      ;;
+    none)
+      echo "[claude-aify] this session would start with no channel: $AIFY_CHANNEL_REASON" >&2
+      echo "              Re-run the service's installer (install.sh --client claude) to configure its channel server." >&2
+      exit "$HARNESS_EXIT_CONFIG"
+      ;;
+    *)
+      AIFY_CHANNEL_ROUTE=dev
+      AIFY_CHANNEL_FLAGS=(--dangerously-load-development-channels server:@@SERVICE_NAME@@-channel)
+      ;;
+  esac
+  export AIFY_CHANNEL_ROUTE
 fi
-case "$AIFY_CHANNEL_ROUTE" in
-  plugin)
-    AIFY_CHANNEL_FLAGS=(--channels plugin:aify-channel@aify-local)
-    # The plugin's server has no env block of its own: it reads the endpoint from what Claude inherits.
-    export AIFY_SERVER_URL="$HARNESS_ENDPOINT" CLAUDE_MCP_SERVER_URL="$HARNESS_ENDPOINT"
-    ;;
-  none)
-    echo "[claude-aify] this session would start with no channel: $AIFY_CHANNEL_REASON" >&2
-    echo "              Re-run the service's installer (install.sh --client claude) to configure its channel server." >&2
-    exit "$HARNESS_EXIT_CONFIG"
-    ;;
-  *)
-    AIFY_CHANNEL_ROUTE=dev
-    AIFY_CHANNEL_FLAGS=(--dangerously-load-development-channels server:@@SERVICE_NAME@@-channel)
-    ;;
-esac
-export AIFY_CHANNEL_ROUTE
 
-# MCP server config: default is "load the operator's full ~/.claude.json
-# mcpServers list" (the install_claude_config function has already merged
-# aify-comms + aify-comms-channel into that file at install time, so the
-# wrapper still gets channel wake — it just also gets aify-project-graph,
-# github, browsermcp, and every other server the operator configured).
-#
-# Escape hatch: set AIFY_CLAUDE_STRICT_MCP=1 in the launching shell to
-# revert to the legacy strict two-server config (aify-comms +
-# aify-comms-channel only, via --strict-mcp-config). Use this when the
-# Claude Code MCP init race (upstream issues #38462, #21341) re-bites and
-# channel notifications stop delivering because slower MCP servers leave
-# aify-comms-channel stuck in "still connecting" state. The legacy
-# strict mode trades operator-visible MCP servers inside the wrapper for
-# guaranteed channel wake.
-# THE INSTALLED BRIDGE DIRECTORY is `AIFY_BRIDGE_DIR_FWD`, converted once at the top of this file.
-# Native-Windows Claude fails to start the MCP server children on an MSYS path, so everything written
-# into Claude's own config below takes the converted form, as every `node` call in this file does.
-#
-# ONE NAME FOR ONE DIRECTORY. This launcher used to reach the same directory through
-# `AIFY_SCRIPT_DIR_FWD` + a hardcoded `/mcp/stdio/` segment, and that variable WAS assigned twice
-# from two different bases -- `@@NATIVE_BASE@@` in the strict-MCP branch and `@@SCRIPT_DIR@@`
-# unconditionally further down. The session hook, written after the second assignment, therefore
-# resolved to the REPO CHECKOUT while the bridge resolved to the installed copy: one launcher, two
-# deploy models, and the hook silently opting out of "security fixes flow on reinstall". Both
-# assignments are gone -- nothing reads that name now, which is what makes the hazard unavailable
-# rather than merely corrected.
+# Default mode leaves Claude's own MCP config in place. Strict mode replaces it with the
+# own-service config and explicitly opted-in entries, keeping slow servers out of channel startup.
+# Node and Claude both read the native bridge path, never the source checkout or an MSYS path.
 CLAUDE_MCP_FLAGS=()
 AIFY_MCP_CONFIG=""
 if [ "${AIFY_CLAUDE_STRICT_MCP:-0}" = "1" ]; then
@@ -803,7 +781,7 @@ else
 fi
 # The comms switch is this install's, never a shell's. This session's own MCP file is written below the lease claim.
 unset AIFY_COMMS_MCP
-if [ "@@MCP_TRANSPORT@@" = "http" ]; then export AIFY_COMMS_MCP=http; fi  # the channel holds the resident duties (comms resident-duties.mjs)
+if [ -n "$AIFY_OWN_SERVICE" ] && [ "@@MCP_TRANSPORT@@" = "http" ]; then export AIFY_COMMS_MCP=http; fi
 
 # Session-id truth capture (2026-05-30, #138): install SessionStart +
 # UserPromptSubmit hooks that record THIS claude session's own id. Claude
@@ -853,18 +831,22 @@ elif [ "${AIFY_FILE_ACTIVITY-1}" = 1 ]; then
     \"PostToolUse\": [ { \"hooks\": [ $(_aify_tool_hook "${AIFY_FILE_ACTIVITY-1}" "$AIFY_WRAPPER_DIR_FWD" success) ] } ],
     \"PostToolUseFailure\": [ { \"hooks\": [ $(_aify_tool_hook "${AIFY_FILE_ACTIVITY-1}" "$AIFY_WRAPPER_DIR_FWD" failure) ] } ]"
 fi
+_turn_hook="{ \"type\": \"command\", \"command\": \"node \\\"${AIFY_WRAPPER_DIR_FWD}/bin/aify-turn-start.mjs\\\"\", \"timeout\": 15 }"
+if [ -n "$AIFY_OWN_SERVICE" ]; then
+  _capture_hook="{ \"type\": \"command\", \"command\": \"node \\\"${AIFY_BRIDGE_DIR_FWD}/claude-session-hook.js\\\"\" }"
+  _resident_hook="{ \"type\": \"command\", \"command\": \"node \\\"${AIFY_BRIDGE_DIR_FWD}/agent-state-event.mjs\\\" resident-started claude\" }"
+  _start_hooks="$_capture_hook, $_resident_hook$AIFY_MODEL_HOOK, $_turn_hook"
+  _submit_hooks="$_capture_hook$AIFY_HERDR_WORKING$AIFY_MODEL_HOOK, $_turn_hook"
+else
+  _start_hooks="$_turn_hook$AIFY_MODEL_HOOK"
+  _submit_hooks="$_turn_hook$AIFY_HERDR_WORKING$AIFY_MODEL_HOOK"
+fi
 AIFY_HOOK_SETTINGS="$(mktemp -t aify-hooks.XXXXXX.json 2>/dev/null || mktemp -t aify-hooks)"
 cat > "$AIFY_HOOK_SETTINGS" <<JSON
 {
   "hooks": {
-    "SessionStart": [
-      { "hooks": [ { "type": "command", "command": "node \"${AIFY_BRIDGE_DIR_FWD}/claude-session-hook.js\"" },
-        { "type": "command", "command": "node \"${AIFY_BRIDGE_DIR_FWD}/agent-state-event.mjs\" resident-started claude" }${AIFY_MODEL_HOOK},
-        { "type": "command", "command": "node \"${AIFY_WRAPPER_DIR_FWD}/bin/aify-turn-start.mjs\"", "timeout": 15 } ] } ],
-    "UserPromptSubmit": [
-      { "hooks": [ { "type": "command", "command": "node \"${AIFY_BRIDGE_DIR_FWD}/claude-session-hook.js\"" }${AIFY_HERDR_WORKING}${AIFY_MODEL_HOOK},
-        { "type": "command", "command": "node \"${AIFY_WRAPPER_DIR_FWD}/bin/aify-turn-start.mjs\"", "timeout": 15 } ] }
-    ]${AIFY_HERDR_EVENTS}${AIFY_MODEL_STOP}${AIFY_MODEL_EVENTS}
+    "SessionStart": [ { "hooks": [ $_start_hooks ] } ],
+    "UserPromptSubmit": [ { "hooks": [ $_submit_hooks ] } ]${AIFY_HERDR_EVENTS}${AIFY_MODEL_STOP}${AIFY_MODEL_EVENTS}
   }
 }
 JSON
@@ -884,7 +866,7 @@ _aify_runtime_exited() {
   AIFY_RUNTIME_RUNNING=0
   _aify_exit_herdr=""
   if aify_herdr_hooks_report 2>/dev/null; then _aify_exit_herdr=herdr; fi
-  sh "@@WRAPPER_DIR@@/bin/aify-runtime-exited.sh" "@@BRIDGE_DIR@@" "$_aify_exit_herdr" </dev/null >/dev/null 2>&1 || true
+  sh "@@WRAPPER_DIR@@/bin/aify-runtime-exited.sh" "${AIFY_OWN_SERVICE:+@@BRIDGE_DIR@@}" "$_aify_exit_herdr" </dev/null >/dev/null 2>&1 || true
 }
 trap 'aify_model_selection_finish; rm -f "$AIFY_MCP_CONFIG" "$AIFY_HOOK_SETTINGS" 2>/dev/null; _aify_runtime_exited; aify_lifetime_release; aify_lease_release' EXIT
 
@@ -955,7 +937,7 @@ fi
 # dispatch is delivered to a RANDOM sibling, not the console. Reaping by the
 # per-agent resume handle collapses that to one (mirrors hermes kill-prior).
 # Managed-only: resident is the operator's own visible window.
-if [ "$CLAUDE_AIFY_SHARED" != true ] && [ "$AIFY_SESSION_MODE" = "managed" ] && [ -n "${CLAUDE_RESUME_ID:-}" ] && [ -n "${CLAUDE_AIFY_AGENT_ID:-}" ] && [ "${AIFY_LEASE_AGENT:-}" = "$CLAUDE_AIFY_AGENT_ID" ]; then
+if [ -n "$AIFY_OWN_SERVICE" ] && [ "$CLAUDE_AIFY_SHARED" != true ] && [ "$AIFY_SESSION_MODE" = "managed" ] && [ -n "${CLAUDE_RESUME_ID:-}" ] && [ -n "${CLAUDE_AIFY_AGENT_ID:-}" ] && [ "${AIFY_LEASE_AGENT:-}" = "$CLAUDE_AIFY_AGENT_ID" ]; then
   # AGENT-SCOPED reap (safety, 2026-05-31): pass the agent id so the reaper only
   # kills THIS agent's prior managed claude (verified via the candidate's parent
   # --aify-agent wrapper), never another agent or a resident operator session

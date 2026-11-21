@@ -32,6 +32,13 @@ probed; those remain launcher-time choices.
 ```
 
 Either writes into `~/.local/bin` (override with `--dest`). Run `./install.sh --help` for the rest.
+
+Use `./install.sh --client claude --no-own-service` to install Claude without an own service.
+Do not pass an endpoint, service or bridge options. The launcher adds opted-in registry tools without
+adding a service bridge, channel or service hooks of its own. Claude's user and project settings
+still apply. The wrapper's strict MCP mode, `HARNESS_MCP_COMMAND` and `--shared` require an own service.
+The installer never selects this mode automatically; use the flag again when reinstalling. The guided
+aify-env installer is unchanged.
 On Windows run it from Git Bash: from PowerShell or cmd a bare `bash` is WSL's, and installs into WSL instead.
 
 A source checkout fetches its pinned aify-env dependency into the checkout's `node_modules` on

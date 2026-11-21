@@ -12,7 +12,8 @@
 # Options:
 #   --all                  install a launcher for every harness runtime found on PATH
 #   --client <name>        install one launcher (mutually exclusive with --all)
-#   --endpoint <url>       coordinating service URL baked in as the fallback (required)
+#   --endpoint <url>       coordinating service URL baked in as the fallback
+#   --no-own-service       Claude only: use registry tools without a coordinating service
 #   --dest <dir>           where to install (default: ~/.local/bin)
 #   --bridge-dir <dir>     directory holding the MCP bridge (default: ~/.aify-comms/mcp/stdio)
 #   --native-base <dir>    the bridge's install root (default: ~/.aify-comms)
@@ -70,6 +71,8 @@ MCP_TRANSPORT="stdio"
 # WHICH SERVICE these launchers are for. aify-comms by default, which is what every existing install
 # renders -- the point of the default is that this change is invisible to them.
 SERVICE_NAME="aify-comms"
+NO_OWN_SERVICE=0
+OWN_SERVICE_OPTIONS=()
 EXTRAS=()
 
 # Empty is a supplied value; paths may even spell an option. Only enum/URL values cannot be option tokens.
@@ -87,6 +90,10 @@ need_value() {
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    --service|--endpoint|--bridge-dir|--native-base|--host-repo|--mcp-transport) OWN_SERVICE_OPTIONS+=("$1") ;;
+  esac
+  case "$1" in
+    --no-own-service) NO_OWN_SERVICE=1; shift ;;
     --all) ALL=1; shift ;;
     --client) need_value "$@"; CLIENT="${2:-}"; shift 2 ;;
     --endpoint) need_value "$@"; ENDPOINT="${2:-}"; shift 2 ;;
@@ -120,18 +127,27 @@ if [ "$ALL" != "1" ]; then
   esac
 fi
 
+if [ "$NO_OWN_SERVICE" = 1 ]; then
+  if [ "$CLIENT" != claude ] || [ "$ALL" = 1 ] || [ "${#OWN_SERVICE_OPTIONS[@]}" -gt 0 ]; then
+    echo 'install.sh: --no-own-service requires --client claude and takes no own-service options.' >&2
+    exit "$EXIT_CONFIG"
+  fi
+  SERVICE_NAME=""
+fi
+
 # A FIRST install will not guess an address: an agent pointed at the wrong service is worse than an
 # install that stopped. A REINSTALL is a different question -- the endpoint is already baked into the
 # launcher sitting in $DEST, so updating does not mean remembering what you typed months ago. Read out
 # of the file, never by running the launcher, which would start a coding-agent runtime to ask.
-if [ -z "$ENDPOINT" ] && [ -z "$RENDER_ONLY" ] && command -v node >/dev/null 2>&1; then
+if [ "$NO_OWN_SERVICE" = 0 ] && [ -z "$ENDPOINT" ] && [ -z "$RENDER_ONLY" ] && command -v node >/dev/null 2>&1; then
   ENDPOINT="$(node "$(node_path "$HERE/lib/installed-endpoint-cli.mjs")" "$(node_path "$DEST")" 2>/dev/null || true)"
   # Silently reusing an address is how a launcher ends up pointing somewhere nobody chose. Say it.
   [ -z "$ENDPOINT" ] || echo "install.sh: reusing the endpoint already installed in $DEST: $ENDPOINT" >&2
 fi
 
 case "$SERVICE_NAME" in
-  "") echo "install.sh: --service needs a name" >&2; exit "$EXIT_CONFIG" ;;
+  "")
+    if [ "$NO_OWN_SERVICE" = 0 ]; then echo "install.sh: --service needs a name" >&2; exit "$EXIT_CONFIG"; fi ;;
   # The name lands in a JSON key AND a shell word, so it is held to what both take without quoting
   # games. Refusing costs nothing; the alternative is a launcher that breaks when it is read.
   *[!A-Za-z0-9_-]*)
@@ -144,28 +160,16 @@ case "$MCP_TRANSPORT" in
   *) echo "install.sh: unknown --mcp-transport '$MCP_TRANSPORT' (stdio|http)" >&2; exit "$EXIT_CONFIG" ;;
 esac
 
-if [ -z "$ENDPOINT" ]; then
-  echo "install.sh: --endpoint is required. A wrapper will not guess where its service lives." >&2
-  exit "$EXIT_CONFIG"
+if [ "$NO_OWN_SERVICE" = 0 ]; then
+  if [ -z "$ENDPOINT" ]; then
+    echo "install.sh: --endpoint is required. A wrapper will not guess where its service lives." >&2
+    exit "$EXIT_CONFIG"
+  fi
+  # Derive paths from the validated SERVICE_NAME: a fixed comms dotfolder once pointed other
+  # services at the wrong bridge. Validate first so the name is safe to use as a directory.
+  [ -n "$NATIVE_BASE" ] || NATIVE_BASE="$HOME/.$SERVICE_NAME"
+  [ -n "$BRIDGE_DIR" ] || BRIDGE_DIR="$NATIVE_BASE/mcp/stdio"
 fi
-
-# WHERE THIS SERVICE'S RUNTIME LIVES, derived from WHOSE it is.
-#
-# This was `$HOME/.aify-comms`, set before the arguments were parsed -- so `--service my-service`
-# with no `--native-base` rendered a launcher for my-service that pointed its bridge directory,
-# its host repo and codex's log root at AIFY-COMMS' dotfolder. Silently: every other name in the
-# launcher followed the service correctly, and only the paths pointed at a neighbour.
-#
-# Identity and location are still different axes and `--native-base` still wins outright. What
-# changed is the DEFAULT, which named one service and was therefore right for exactly one caller.
-# Derived, it is right for all of them, and the default render is byte-identical because
-# SERVICE_NAME defaults to aify-comms.
-#
-# Placed after the SERVICE_NAME validation on purpose: that check refuses an empty name and
-# anything outside [A-Za-z0-9_-], so this cannot build a path out of a name a shell would reinterpret.
-[ -n "$NATIVE_BASE" ] || NATIVE_BASE="$HOME/.$SERVICE_NAME"
-
-[ -n "$BRIDGE_DIR" ] || BRIDGE_DIR="$NATIVE_BASE/mcp/stdio"
 # THE LAUNCHERS FIND THEIR OWN HELPERS HERE: this package, wherever it is installed. Not under the bridge,
 # which is a service's and holds only that service's code. render.sh takes no default for it, so a host that
 # renders through a copy of render.sh cannot end up pointing its launchers at that copy's directory.
