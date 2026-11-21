@@ -17,7 +17,7 @@
 // exactly the case that produced the pile. An hour is longer than any run here and short enough that
 // a forgotten root does not survive the day.
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -112,6 +112,18 @@ for (const file of selected) {
 const files = selected.length
   ? selected
   : fs.readdirSync('tests').filter((f) => f.endsWith('.test.js')).map((f) => path.join('tests', f));
+
+// Resolve the npm cache before sealing HOME so the packed test can install the locked package offline.
+if (files.some((file) => path.basename(file) === 'packed-session-key.test.js')) {
+  const npm = process.env.npm_execpath;
+  const cache = npm && spawnSync(process.execPath, [npm, 'config', 'get', 'cache'], { encoding: 'utf8' });
+  if (!cache || cache.status !== 0 || !path.isAbsolute(cache.stdout.trim())) {
+    console.error('NOT_RUN: packed session-key check could not resolve the npm cache populated by npm ci');
+    fs.rmSync(root, { recursive: true, force: true });
+    process.exit(2);
+  }
+  env.AIFY_TEST_NPM_CACHE = cache.stdout.trim();
+}
 
 // FOUR FILES AT ONCE, not node's default of one per core but one. On the shared 16-core host that default was 31 files
 // at once, over half of them spawning install.sh or a launcher. A full Windows run then took about 17 minutes, and its

@@ -520,24 +520,26 @@ separate, fail-closed contract-source override. `AIFY_TEST_CHECKOUTS` prints res
 and Git HEADs, not credentials or proof that every listed peer was exercised. Source archives without
 their own Git root report a null revision. Required integration prerequisites refuse as `NOT_RUN` with
 a nonzero result; optional missing coverage is named separately. Unrelated selected unit tests do not
-require every peer. Keep the mandatory comms key-parity gate until the comms receiver uses the shared
-resolver and a mandatory release check exercises the exact packed wrapper candidate with that receiver.
-The Codex registration and managed Claude launch checks also require real comms source; neither runs
-through the key resolver. WSL placement checks still require real dashboard source. A clean env-only
-checkout is not yet a full-suite test environment.
+require every peer. The packed session-key test uses the published comms data fixture, not a comms
+checkout. Codex registration and the managed Claude producer still require real comms source, and
+WSL placement still requires real dashboard source. An env-only checkout is not a full-suite test environment.
 
-**The full run is on Linux.** Every process start costs 100-500 ms on Windows under load and 1-20 ms on Linux, so
-the same suite takes about a minute in a container and over ten on Windows:
+**Before a pin or tag**, run the full qualification from Windows Git Bash. Have `node:22.20.0-bookworm`
+locally in Docker. The run packs committed wrapper HEAD once and verifies that tarball's SHA-256 in both
+required legs. Windows checks the actual ACL and restricted PATH; Linux checks real links and uses that
+same artifact in the full suite. A missing leg, artifact or fixture refuses the run.
 
 ```bash
-scripts/test-linux.sh --log linux.log              # committed HEAD of this repo, aify-comms and aify-env
-scripts/test-linux.sh --worktree tests/x.test.js   # this repo's uncommitted tree, chosen files only
+scripts/test-linux.sh --log qualification.log      # committed HEAD, both packed legs and the full Linux suite
+scripts/test-linux.sh --worktree --packed-only     # both packed legs for development, no sibling archives
+scripts/test-linux.sh --worktree tests/x.test.js   # chosen files only, not a release receipt
 ```
 
-It runs `git archive` of this repo, of `AIFY_COMMS_REPO` (else `../aify-comms`) and of `AIFY_ENV_REPO` (else
-`../aify-env`) in `node:22.20.0-bookworm` with `npm ci && npm test`. The log names every sha and ends with
-`ACTUAL_EXIT`, the status of `npm test` itself. Windows then runs only the files about what Windows alone has (a
-test that skips elsewhere, `.cmd` shims, `PATHEXT` lookup), found from the files themselves:
+For the full suite, the script archives `AIFY_COMMS_REPO` and `AIFY_ENV_REPO` (or the adjacent checkouts)
+alongside the wrapper. It reports the candidate hash, source revisions and actual exit status. The packed
+check installs offline using the cache populated by `npm ci`. The qualification does not pull images and
+removes its container and scratch files when it exits. Also run the other Windows-specific tests selected
+from the files themselves:
 
 ```bash
 npm test -- $(node scripts/windows-only-tests.mjs)

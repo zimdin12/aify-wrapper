@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // lib/session-folder.mjs: the files a launch writes that can hold a key, in ~/.aify/sessions/<agent id>/, a folder that
 // is its owner's alone. What a launch does with it (the 78, the killed launch) is tests/session-http.test.js; the
-// custody judgement itself is held to comms' by tests/the-session-key-is-resolved-as-comms-resolves-it.test.js.
+// installed credential custody is exercised by tests/packed-session-key.test.js.
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";

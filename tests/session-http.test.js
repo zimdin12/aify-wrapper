@@ -6,8 +6,8 @@
 // service with no key still gets its entry, without X-API-Key, and is named; strict mode carries only the launcher's
 // own service; Hermes gets one machine-wide entry whose per-launch values are Hermes' own variables; Codex keeps the
 // local process; and a service that does not declare http launches exactly as before. The own service's launch path
-// and the AIFY_COMMS_MCP switch are tests/claude-aify-adds-the-services-tools-per-launch.test.js; which key wins is
-// tests/the-session-key-is-resolved-as-comms-resolves-it.test.js.
+// and the AIFY_COMMS_MCP switch are tests/claude-aify-adds-the-services-tools-per-launch.test.js; the installed key
+// path is checked by tests/packed-session-key.test.js.
 //
 // Every case owns its registry, home and credential file, so no real registry, key or Hermes is read or written.
 

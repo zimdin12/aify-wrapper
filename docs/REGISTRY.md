@@ -211,8 +211,8 @@ declared `mcpTransport`), with or without `sessionInject`: that is aify-comms' p
   a service that declares none never takes an exported key, so one service's key cannot reach another's header.
   Otherwise the key its `credentialRef` names, only when the launch sends to the endpoint the registry names it for
   (an exported endpoint that moves the own service gets no credential), and only from a file aify-env's custody rules
-  accept: not reached through a link, readable by its owner alone. This is aify-comms' `destinationKeyResolver` applied
-  per service; `tests/the-session-key-is-resolved-as-comms-resolves-it.test.js` holds them equal.
+  accept: not reached through a link, readable by its owner alone. The packed session-key test uses comms' published
+  registration and key-selection fixture. Comms' own exported-key failover is adapter policy, not wrapper behavior.
 - **No key, no header.** The entry is still written, without `X-API-Key`, and the service is named on stderr: the
   service decides, and a 401 reads as a credential problem where absent tools read as a broken install.
 - **Claude, per launch.** `install.sh` bakes the list into the placeholder `SESSION_HTTP_B64`

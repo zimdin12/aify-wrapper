@@ -82,10 +82,7 @@ test('separate schema source survives while live env selection remains unchanged
  const run=f.run({AIFY_ENV_REPO:env,AIFY_ENV_SCHEMA_REPO:schema});success(run);
  assert.equal(run.observed.env,env);assert.equal(run.observed.schema,schema);
 });
-for (const [file, label, missing] of [
- ['tests/the-session-key-is-resolved-as-comms-resolves-it.test.js','comms key parity','mcp/stdio/registry-credential.mjs'],
- ['tests/managed-claude-conversation-intent.test.js','managed Claude producer','service/tests/_base.py'],
-]) test(`required comms tests refuse without a checkout: ${label}`,t=>{
+test('the required managed Claude producer test refuses without a comms checkout',t=>{
  const f=fixture(t),env=f.peer('env',path.join(f.root,'..','aify-env'));
  for(const dir of ['lib','tests','wrappers','node_modules/aify-env'])
   fs.cpSync(path.join(ROOT,dir),path.join(f.root,dir),{recursive:true});
@@ -93,10 +90,10 @@ for (const [file, label, missing] of [
  const resolved=local.observed;
  assert.equal(resolved.env,env);assert.equal(resolved.comms,null);
  fs.unlinkSync(f.output);
- const run=f.run({},file);
+ const run=f.run({},'tests/managed-claude-conversation-intent.test.js');
  refusal(run);
- assert.ok(run.text.includes(`NOT_RUN: ${label} needs AIFY_COMMS_REPO with readable `),run.text);
- assert.ok(run.text.includes(missing),run.text);
+ assert.ok(run.text.includes('NOT_RUN: managed Claude producer needs AIFY_COMMS_REPO with readable '),run.text);
+ assert.ok(run.text.includes('service/tests/_base.py'),run.text);
 });
 test('diagnostics do not expose an unrelated credential variable',t=>{
  const f=fixture(t),run=f.run({AIFY_API_KEY:'DO-NOT-PRINT-OWNED-SECRET-CONTROL'});success(run);

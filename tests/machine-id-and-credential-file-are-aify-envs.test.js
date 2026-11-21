@@ -81,7 +81,7 @@ test("THE CREDENTIAL is aify-env's decoding for every byte shape it refuses or a
 test("readCredential reads ~/.aify/credentials/<ref> under the home it is given, and gives nothing for a missing file", async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "aify-credential-file-"));
   try {
-    // Private, as aify-env writes it: custody refuses anything else (tests/the-session-key-is-resolved-as-comms-resolves-it.test.js).
+    // Private, as aify-env writes it. The packed session-key test covers refusals at the installed adapter.
     writePrivateCredential(home, "svc.key", "the-key");
     assert.equal(await readCredential("svc.key", { home }), "the-key");
     assert.equal(await readCredential("absent.key", { home }), "");
