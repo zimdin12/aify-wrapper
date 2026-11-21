@@ -509,8 +509,11 @@ separate, fail-closed contract-source override. `AIFY_TEST_CHECKOUTS` prints res
 and Git HEADs, not credentials or proof that every listed peer was exercised. Source archives without
 their own Git root report a null revision. Required integration prerequisites refuse as `NOT_RUN` with
 a nonzero result; optional missing coverage is named separately. Unrelated selected unit tests do not
-require every peer. The mandatory comms key-parity gate remains until its candidate-sensitive replacement
-lands with the shared resolver; this change does not make the complete suite independent of comms.
+require every peer. Keep the mandatory comms key-parity gate until the comms receiver uses the shared
+resolver and a mandatory release check exercises the exact packed wrapper candidate with that receiver.
+The Codex registration and managed Claude launch checks also require real comms source; neither runs
+through the key resolver. WSL placement checks still require real dashboard source. A clean env-only
+checkout is not yet a full-suite test environment.
 
 **The full run is on Linux.** Every process start costs 100-500 ms on Windows under load and 1-20 ms on Linux, so
 the same suite takes about a minute in a container and over ten on Windows:

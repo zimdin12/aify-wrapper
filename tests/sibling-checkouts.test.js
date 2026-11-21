@@ -28,10 +28,10 @@ function fixture(t){
   for(const file of INPUTS[kind]){const target=path.join(where,file);fs.mkdirSync(path.dirname(target),{recursive:true});fs.writeFileSync(target,'// owned source-path fixture\n');}
   return where;
  };
- const run=(extra={})=>{
+ const run=(extra={},file='tests/probe.test.js')=>{
   const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!/^AIFY_|^NODE_TEST_CONTEXT$|^npm_/i.test(key)));
   Object.assign(env,{HOME:home,USERPROFILE:home,CHECKOUT_PROBE_OUT:output,NPM_CONFIG_CACHE:path.join(base,'npm-cache'),NPM_CONFIG_USERCONFIG:path.join(base,'npmrc'),NPM_CONFIG_GLOBALCONFIG:path.join(base,'npm-globalrc'),NPM_CONFIG_UPDATE_NOTIFIER:'false',...extra});
-  const child=spawnSync(process.execPath,[NPM,'test','--','tests/probe.test.js'],{cwd:root,env,encoding:'utf8',timeout:25000});
+  const child=spawnSync(process.execPath,[NPM,'test','--',file],{cwd:root,env,encoding:'utf8',timeout:25000});
   return {...child,text:(child.stdout??'')+(child.stderr??''),observed:fs.existsSync(output)?JSON.parse(fs.readFileSync(output,'utf8')):null};
  };
  return {base,root,home,output,peer,run};
@@ -82,15 +82,21 @@ test('separate schema source survives while live env selection remains unchanged
  const run=f.run({AIFY_ENV_REPO:env,AIFY_ENV_SCHEMA_REPO:schema});success(run);
  assert.equal(run.observed.env,env);assert.equal(run.observed.schema,schema);
 });
-test('the unchanged real comms parity gate still refuses while unrelated selected work can run',t=>{
- const f=fixture(t);success(f.run());
- fs.cpSync(path.join(ROOT,'lib'),path.join(f.root,'lib'),{recursive:true});
- fs.cpSync(path.join(ROOT,'node_modules/aify-env'),path.join(f.root,'node_modules/aify-env'),{recursive:true});
- fs.copyFileSync(path.join(ROOT,'tests/private-credential.mjs'),path.join(f.root,'tests/private-credential.mjs'));
- fs.copyFileSync(path.join(ROOT,'tests/the-session-key-is-resolved-as-comms-resolves-it.test.js'),path.join(f.root,'tests/probe.test.js'));
+for (const [file, label, missing] of [
+ ['tests/the-session-key-is-resolved-as-comms-resolves-it.test.js','comms key parity','mcp/stdio/registry-credential.mjs'],
+ ['tests/managed-claude-conversation-intent.test.js','managed Claude producer','service/tests/_base.py'],
+]) test(`required comms tests refuse without a checkout: ${label}`,t=>{
+ const f=fixture(t),env=f.peer('env',path.join(f.root,'..','aify-env'));
+ for(const dir of ['lib','tests','wrappers','node_modules/aify-env'])
+  fs.cpSync(path.join(ROOT,dir),path.join(f.root,dir),{recursive:true});
+ const local=f.run();success(local);
+ const resolved=local.observed;
+ assert.equal(resolved.env,env);assert.equal(resolved.comms,null);
  fs.unlinkSync(f.output);
- const run=f.run();assert.notEqual(run.status,0,run.text);assert.equal(run.observed,null);
- assert.match(run.text,/AIFY_COMMS_REPO must name an aify-comms checkout: this test holds the wrapper's key rule to comms' resolver/);
+ const run=f.run({},file);
+ refusal(run);
+ assert.ok(run.text.includes(`NOT_RUN: ${label} needs AIFY_COMMS_REPO with readable `),run.text);
+ assert.ok(run.text.includes(missing),run.text);
 });
 test('diagnostics do not expose an unrelated credential variable',t=>{
  const f=fixture(t),run=f.run({AIFY_API_KEY:'DO-NOT-PRINT-OWNED-SECRET-CONTROL'});success(run);

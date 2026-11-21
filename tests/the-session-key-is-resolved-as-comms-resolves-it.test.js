@@ -15,18 +15,21 @@ import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 
 import { makePrivate, writePrivateCredential } from "./private-credential.mjs";
+import { checkoutSource } from "./sibling-checkouts.mjs";
 
 import { icaclsPath } from "../lib/credential-custody.mjs";
 import { parseRegistry } from "../lib/registry.mjs";
 import { sameEndpoint, sessionHttpServices, sessionKey } from "../lib/session-http.mjs";
 
-const COMMS_REPO = process.env.AIFY_COMMS_REPO || "";
-assert.ok(COMMS_REPO && fs.existsSync(path.join(COMMS_REPO, "mcp", "stdio", "aify-service-endpoint.mjs")),
-  "AIFY_COMMS_REPO must name an aify-comms checkout: this test holds the wrapper's key rule to comms' resolver");
-const stdio = (file) => pathToFileURL(path.join(COMMS_REPO, "mcp", "stdio", file)).href;
-const { destinationKeyResolver, API_KEY_ENV_NAMES } = await import(stdio("aify-service-endpoint.mjs"));
-const { sameEndpoint: commsSameEndpoint } = await import(stdio("registry-credential.mjs"));
-const { custodyProblem: commsCustodyProblem } = await import(stdio("credential-custody.mjs"));
+const commsFiles = ["aify-service-endpoint.mjs", "registry-credential.mjs", "credential-custody.mjs"]
+  .map(file => `mcp/stdio/${file}`);
+const { root: COMMS_REPO } = checkoutSource({
+  variable: "AIFY_COMMS_REPO", files: commsFiles, required: true, label: "comms key parity",
+});
+const load = file => import(pathToFileURL(path.join(COMMS_REPO, file)));
+const { destinationKeyResolver, API_KEY_ENV_NAMES } = await load(commsFiles[0]);
+const { sameEndpoint: commsSameEndpoint } = await load(commsFiles[1]);
+const { custodyProblem: commsCustodyProblem } = await load(commsFiles[2]);
 // Test-only: compare the pure judgment actually used by the pinned leaf, not a wrapper copy.
 const envPackage = import.meta.resolve("aify-env/package.json");
 const { fileSecurityProblem: custodyProblem } = await import(new URL("./lib/credential-inspection.mjs", envPackage));

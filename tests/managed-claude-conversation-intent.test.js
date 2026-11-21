@@ -9,23 +9,27 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
 import { KNOWN, launch } from "./launch-to-a-stub-runtime.mjs";
+import { checkoutSource } from "./sibling-checkouts.mjs";
 
+const COMMS_INPUTS = [
+  "service/tests/_base.py", "service/tests/defined_agents.py", "service/tests/published_state.py", "service/api_core/lifecycle_launch.py",
+  "service/api_core/launch_env.py", "service/api_core/definition_creation.py", "service/api_core/handoff_restart.py", "service/runtimes/claude.py",
+];
+const { root: repo } = checkoutSource({
+  variable: "AIFY_COMMS_REPO", files: COMMS_INPUTS, required: true, label: "managed Claude producer",
+});
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "managed-claude-caller-"));
 after(() => fs.rmSync(workspace, { recursive: true, force: true }));
 let prepared;
 before(() => {
-  const repo = process.env.AIFY_COMMS_REPO;
-  assert.ok(repo && fs.existsSync(path.join(repo, "service/tests/_base.py")), "mandatory actual comms producer fixture needs AIFY_COMMS_REPO");
   const env = { PATH: process.env.PATH, HOME: workspace, USERPROFILE: workspace, TMPDIR: workspace, TEMP: workspace, TMP: workspace,
     APPDATA: path.join(workspace, "AppData/Roaming"), LOCALAPPDATA: path.join(workspace, "AppData/Local"), PYTHONUTF8: "1",
     AIFY_ENV_REPO: process.env.AIFY_ENV_REPO, PYTHONDONTWRITEBYTECODE: "1",
     ...(process.env.AIFY_COMMS_TEST_PYTHON_USER_BASE ? { PYTHONUSERBASE: process.env.AIFY_COMMS_TEST_PYTHON_USER_BASE } : {}),
     ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}) };
-  const inputs = [fileURLToPath(import.meta.url), path.join(ROOT, "tests/fixtures/managed-claude-launch.py"), ...[
-    "service/tests/_base.py", "service/tests/defined_agents.py", "service/tests/published_state.py", "service/api_core/lifecycle_launch.py",
-    "service/api_core/launch_env.py", "service/api_core/definition_creation.py", "service/api_core/handoff_restart.py", "service/runtimes/claude.py",
-  ].map(file => path.join(repo, file))];
+  const inputs = [fileURLToPath(import.meta.url), path.join(ROOT, "tests/fixtures/managed-claude-launch.py"),
+    ...COMMS_INPUTS.map(file => path.join(repo, file))];
   const hashes = () => inputs.map(file => ({ file, sha256: createHash("sha256").update(fs.readFileSync(file)).digest("hex") }));
   const beforeInputs = hashes();
   console.log("COMMS_PRODUCER_INPUTS", JSON.stringify({ files: beforeInputs, home: workspace, temp: workspace, python: process.env.AIFY_COMMS_TEST_PYTHON || "PATH:python", userBase: env.PYTHONUSERBASE || "" }));
