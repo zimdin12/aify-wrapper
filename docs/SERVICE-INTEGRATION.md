@@ -44,9 +44,10 @@ that path to the configured endpoint, keeping any path prefix. Use the fixture a
 vendor its bytes from a known wrapper revision in your service tests. Your service does not need to
 import JavaScript or depend on the wrapper at runtime.
 
-`X-API-Key` is the credential. Validate it before admitting an MCP request. The other headers name the
-caller, machine and launch folder; they are context, not proof of identity or authority. A caller may
-be unnamed. For tools that require an agent, check that context separately. To smoke-test the service,
+`X-API-Key` is the credential. Validate it before admitting an MCP request. The other headers describe the
+caller, machine, launch folder and runtime. `X-Aify-Runtime` is `claude-code` or `hermes` for these HTTP
+configs. Treat it as context, not proof of identity or authority. A caller may be unnamed. For tools
+that require an agent, check that context separately. To smoke-test the service,
 accept `initialize`, list one tool such as `echo` with `tools/list`, and have `tools/call` return the
 text it was given. For a stdio adapter's launch variables see the [launcher environment contract](contracts/launch-env.md).
 For optional turn context see the separate [turn-start request and reply contract](contracts/turn-start.md).

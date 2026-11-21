@@ -48,6 +48,7 @@ async function serveExample(t, { spec, wire, endpoint }) {
       if (!req.headers[names.agentId]) return send(400, { problem: "missing caller header" });
       return result({ content: [{ type: "text", text: params.arguments.text }], structuredContent: {
         caller: req.headers[names.agentId], machine: req.headers[names.machineId], folder: req.headers[names.launchFolder],
+        runtime: req.headers[names.runtime],
       } });
     }
     return send(400);
@@ -67,7 +68,7 @@ function nodeOutput(relative, args, env) {
 function installedEntries(host, name) {
   const base = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(AIFY_|HERDR_|HERMES_)/i.test(key)));
   const env = { ...base, HOME: host.home, USERPROFILE: host.home, APPDATA: host.home, LOCALAPPDATA: host.home,
-    AIFY_AGENT_ID: AGENT, AIFY_MACHINE_ID: HOST, AIFY_SERVICE_REGISTRY: host.registry };
+    AIFY_AGENT_ID: AGENT, AIFY_MACHINE_ID: HOST, AIFY_SERVICE_REGISTRY: host.registry, AIFY_RUNTIME: "codex" };
   const baked = nodeOutput("../lib/registry-cli.mjs", ["session-http-b64", host.registry], env);
   assert.ok(baked, "the guide's spec must opt in to HTTP tools");
   const config = nodeOutput("../bin/aify-session-mcp.mjs", [], { ...env, AIFY_SESSION_HTTP_B64: baked });
@@ -86,7 +87,7 @@ function installedEntries(host, name) {
   const templates = new Map([["${AIFY_AGENT_ID}", AGENT], ["${workspaceFolder}", process.cwd()]]);
   assert.deepEqual(Object.values(hermes.headers).filter((value) => value.startsWith("${")).sort(), [...templates.keys()].sort());
   const expanded = Object.fromEntries(Object.entries(hermes.headers).map(([key, value]) => [key, templates.get(value) ?? value]));
-  return [claude, { ...hermes, headers: expanded }];
+  return [["claude-code", claude], ["hermes", { ...hermes, headers: expanded }]];
 }
 
 function rpc(url, headers, method, params, id = 1) {
@@ -118,20 +119,24 @@ test("the service guide registers an HTTP-only tool and both session configurati
   assert.deepEqual(registry.services[name].mcp ?? [], [], "the service must contribute no local command");
   assert.deepEqual(host.npmCalls(), [], "the service must install no bridge");
 
-  for (const entry of installedEntries(host, name)) {
-    assert.equal(entry.url, `${endpoint}${wire.path}`);
-    assert.equal(entry.command, undefined);
-    const noKey = await rpc(entry.url, {}, "tools/list");
-    assert.equal(noKey.status, 401, "control: the tools are not open without the configured key");
-    await noKey.text();
-    const initialized = await result(entry, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "fixture-client", version: "1" } });
-    assert.equal(initialized.serverInfo.name, name);
-    assert.equal((await rpc(entry.url, entry.headers, "notifications/initialized", {}, null)).status, 202);
-    assert.deepEqual((await result(entry, "tools/list")).tools.map((tool) => tool.name), ["echo"]);
-    const echo = await result(entry, "tools/call", { name: "echo", arguments: { text: "guide smoke test" } });
-    assert.deepEqual(echo.content, [{ type: "text", text: "guide smoke test" }]);
-    assert.equal(echo.structuredContent.caller, AGENT);
-    assert.match(echo.structuredContent.machine, /:example-host$/);
-    assert.equal(path.resolve(echo.structuredContent.folder), process.cwd());
+  assert.equal(wire.headers.runtime, "X-Aify-Runtime");
+  for (const [runtime, entry] of installedEntries(host, name)) {
+    await t.test(`${runtime} sends its own runtime header`, async () => {
+      assert.equal(entry.url, `${endpoint}${wire.path}`);
+      assert.equal(entry.command, undefined);
+      const noKey = await rpc(entry.url, {}, "tools/list");
+      assert.equal(noKey.status, 401, "control: the tools are not open without the configured key");
+      await noKey.text();
+      const initialized = await result(entry, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "fixture-client", version: "1" } });
+      assert.equal(initialized.serverInfo.name, name);
+      assert.equal((await rpc(entry.url, entry.headers, "notifications/initialized", {}, null)).status, 202);
+      assert.deepEqual((await result(entry, "tools/list")).tools.map((tool) => tool.name), ["echo"]);
+      const echo = await result(entry, "tools/call", { name: "echo", arguments: { text: "guide smoke test" } });
+      assert.deepEqual(echo.content, [{ type: "text", text: "guide smoke test" }]);
+      assert.equal(echo.structuredContent.caller, AGENT);
+      assert.match(echo.structuredContent.machine, /:example-host$/);
+      assert.equal(path.resolve(echo.structuredContent.folder), process.cwd());
+      assert.equal(echo.structuredContent.runtime, runtime, "outbound runtime header must name the launcher, not the inherited value");
+    });
   }
 });

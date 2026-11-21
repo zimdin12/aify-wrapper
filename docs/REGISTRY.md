@@ -64,7 +64,7 @@ the launcher stale rather than leaving you to notice.
 | `<service>.credentialRef` | no | Saved credential basename, not a key or a path. The wrapper's launch helpers and aify-env resolve it when needed. Absent, `null` or `""` means no reference. Otherwise the parser trims the string and requires 1–64 ASCII letters, digits, dots, underscores or hyphens, not starting with a dot. A basename (including a nested state-feed reference) cannot be shared across services, even in a different case. |
 | `<service>.mcp` | no | MCP servers this service contributes to a runtime. Each needs `name` and `command`; `args` optional. |
 | `<service>.strictMcp` | no | Boolean, default `false`. Only `true` opts this service's MCP servers into the wrapper's strict-mode configuration. Other types are refused. |
-| `<service>.mcpTransport` | no | `"stdio"` or `"http"`: how this service's launchers reach its MCP tools. Declared, it decides them over `install.sh --mcp-transport`, at install and at re-render, so the guided chain (which passes no flag) renders what the service serves. Absent keeps the flag, default stdio. Anything else is refused. |
+| `<service>.mcpTransport` | no | `"stdio"` or `"http"`: how this service's launchers reach its MCP tools. Declared, it decides them over `install.sh --mcp-transport`, at install and at re-render, so the guided chain (which passes no flag) renders what the service serves. Absent keeps the flag, default stdio. Anything else is refused. The wrapper's HTTP configs name the runtime in `X-Aify-Runtime`. |
 | `<service>.sessionInject` | no | `{ "mcp": true }` adds this service's `mcp` servers to every default-mode Claude session and every codex session, beside the operator's own; with `mcpTransport: "http"`, Claude and Hermes reach it at its `/mcp/http` instead. See below. |
 | `<service>.agentState` | no | aify-env's state-feed configuration, omitted when absent. The wrapper validates an object with required `path` and optional `credentialRef`, no other keys. The path starts with exactly one `/` and contains no backslashes, spaces or ASCII control characters. If supplied, the reference must be a nonempty, already trimmed basename under the `credentialRef` rule above. |
 | `<service>.fileActivity` | no | The activity receiver's ingress declaration, omitted when absent. The wrapper accepts only `{ "path": "/api/v1/file-activity" }`, with no extra keys. It does not supply credentials or enable collection. |
@@ -204,9 +204,10 @@ declared `mcpTransport`), with or without `sessionInject`: that is aify-comms' p
 - **Path and headers.** The packaged [HTTP MCP fixture](contracts/http-mcp.json) mirrors `MCP_HTTP_PATH` and
   `MCP_HTTP_HEADERS` from `lib/session-http.mjs`. `/mcp/http` is appended to the configured endpoint (including
   any endpoint prefix); it matches aify-comms' default mount, not a custom `MCP_PATH_PREFIX`.
-- **Caller and placement headers are not credentials.** Only `X-API-Key` carries the service key. Header names
-  are case-insensitive. An unnamed Claude launch keeps the entry without the agent header; each tool decides
-  whether a caller is needed. An unset agent variable makes the templated Hermes entry unusable (see below).
+- **Launch context is not a credential.** `X-Aify-Runtime` carries the launcher id (`claude-code` or `hermes`),
+  not a user-supplied environment value. Only `X-API-Key` carries the service key. Header names are case-insensitive.
+  An unnamed Claude launch still sends the runtime but omits the agent header; each tool decides whether it needs
+  a caller. An unset agent variable makes the templated Hermes entry unusable (see below).
 - **The key, per service** (`sessionKey`): a key exported under a name the service itself declares in `keyEnv` wins;
   a service that declares none never takes an exported key, so one service's key cannot reach another's header.
   Otherwise the key its `credentialRef` names, only when the launch sends to the endpoint the registry names it for

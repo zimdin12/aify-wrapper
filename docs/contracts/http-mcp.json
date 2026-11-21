@@ -2,5 +2,6 @@
   "agentId": "X-Aify-Agent-Id",
   "machineId": "X-Aify-Machine-Id",
   "launchFolder": "X-Aify-Launch-Folder",
+  "runtime": "X-Aify-Runtime",
   "apiKey": "X-API-Key"
 } }

@@ -101,7 +101,7 @@ function start(world, { env = {}, args = [], lease = null, cwd } = {}) {
 }
 
 /** The entry the own service gets: at the endpoint the launch resolved, as its agent, with its credential's key. */
-const httpEntry = (url = NOWHERE) => ({ type: "http", url: `${url}/mcp/http`, headers: { "X-Aify-Agent-Id": "probe-agent", "X-API-Key": KEY } });
+const httpEntry = (url = NOWHERE) => ({ type: "http", url: `${url}/mcp/http`, headers: { "X-Aify-Agent-Id": "probe-agent", "X-Aify-Runtime": "claude-code", "X-API-Key": KEY } });
 /** The launch-specific headers, which session-http.test.js holds; here only the service's own fields are compared. */
 const own = (config) => {
   const { "X-Aify-Machine-Id": machine, "X-Aify-Launch-Folder": folder, ...headers } = config.mcpServers["aify-comms"].headers;
@@ -127,7 +127,7 @@ test("the own service is reached at the endpoint this launch resolved, and its c
   const moved = "http://127.0.0.2:2";
   const { run, configs } = launch({ transport: "http", env: { AIFY_COMMS_URL: moved } });
   assert.equal(run.status, 0, run.stderr);
-  assert.deepEqual(own(configs[0]), { ...httpEntry(moved), headers: { "X-Aify-Agent-Id": "probe-agent" } });
+  assert.deepEqual(own(configs[0]), { ...httpEntry(moved), headers: { "X-Aify-Agent-Id": "probe-agent", "X-Aify-Runtime": "claude-code" } });
   assert.match(run.stderr, /aify-comms: no key found \(the request base does not match an authorized service base\)/);
 });
 

@@ -2,7 +2,7 @@
 // Per-session MCP over HTTP (lib/session-http.mjs, bin/aify-session-mcp.mjs): a service is reached at its
 // `<endpoint>/mcp/http`, as the launch's agent, instead of through a local process per session.
 //
-// WHAT MUST HOLD. Claude gets one file per launch with the four agreed headers, removed when the launch ends; a
+// WHAT MUST HOLD. Claude gets one file per launch with the agreed headers, removed when the launch ends; a
 // service with no key still gets its entry, without X-API-Key, and is named; strict mode carries only the launcher's
 // own service; Hermes gets one machine-wide entry whose per-launch values are Hermes' own variables; Codex keeps the
 // local process; and a service that does not declare http launches exactly as before. The own service's launch path
@@ -91,17 +91,17 @@ test("the baked list reads back as written, and anything else is refused rather 
   }
 });
 
-test("each service gets one entry at its /mcp/http with the four agreed headers, its own at the launch's endpoint", () => {
+test("each service gets one entry at its /mcp/http with the agreed headers, its own at the launch's endpoint", () => {
   const services = sessionHttpServices(registryWith(HTTP), { own: "aify-comms" });
   assert.equal(sessionEndpoint(services[0], LAUNCH.ownEndpoint), "http://127.0.0.3:8800");
   assert.deepEqual(claudeHttpServers(services, LAUNCH), {
     "aify-comms": {
       type: "http", url: "http://127.0.0.3:8800/mcp/http",
-      headers: { "X-Aify-Agent-Id": "agent-one", "X-Aify-Machine-Id": "win32:host-a", "X-Aify-Launch-Folder": "C:/work/alpha" },
+      headers: { "X-Aify-Agent-Id": "agent-one", "X-Aify-Machine-Id": "win32:host-a", "X-Aify-Launch-Folder": "C:/work/alpha", "X-Aify-Runtime": "claude-code" },
     },
     "aify-dashboard": {
       type: "http", url: "http://127.0.0.2:9700/mcp/http",
-      headers: { "X-Aify-Agent-Id": "agent-one", "X-Aify-Machine-Id": "win32:host-a", "X-Aify-Launch-Folder": "C:/work/alpha", "X-API-Key": KEY },
+      headers: { "X-Aify-Agent-Id": "agent-one", "X-Aify-Machine-Id": "win32:host-a", "X-Aify-Launch-Folder": "C:/work/alpha", "X-Aify-Runtime": "claude-code", "X-API-Key": KEY },
     },
   });
   // A launch nobody named still gets the tools, with no agent header; the service then answers reads and refuses writes.
@@ -133,7 +133,7 @@ test("Hermes' entry names only variables hermes-aify sets, writes the machine id
     name: "aify-dashboard",
     value: {
       url: "http://127.0.0.2:9700/mcp/http",
-      headers: { "X-Aify-Agent-Id": "${AIFY_AGENT_ID}", "X-Aify-Machine-Id": "win32:host-a", "X-Aify-Launch-Folder": "${workspaceFolder}", "X-API-Key": KEY },
+      headers: { "X-Aify-Agent-Id": "${AIFY_AGENT_ID}", "X-Aify-Machine-Id": "win32:host-a", "X-Aify-Launch-Folder": "${workspaceFolder}", "X-Aify-Runtime": "hermes", "X-API-Key": KEY },
       "x-aify-owner": "aify-wrapper",
     },
   }]);
