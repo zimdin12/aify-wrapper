@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
+import path from "node:path";
 
 const args = process.argv.slice(2);
 const option = (name) => args[args.indexOf(name) + 1];
@@ -12,6 +13,9 @@ if (args.includes("app-server")) {
   assert.ok(entries.length <= 1, "app-server must receive one UserPromptSubmit list");
   const handlers = [...(entries[0] ?? "").matchAll(/\{type="command",command=("(?:[^"\\]|\\.)*"),timeout=(\d+),async=(true|false)\}/g)]
     .map(([, command, timeout, background]) => ({ command: JSON.parse(command), timeout: Number(timeout), async: background === "true" }));
+  const profilePath = path.join(process.env.CODEX_HOME, "hooks.json");
+  const profile = fs.existsSync(profilePath) ? JSON.parse(fs.readFileSync(profilePath, "utf8")) : {};
+  const profileHandlers = profile.hooks?.UserPromptSubmit?.flatMap(({ hooks }) => hooks) ?? [];
   fs.writeFileSync(`${capture}.argv`, JSON.stringify(args));
   const server = net.createServer((socket) => {
     socket.setEncoding("utf8");
@@ -23,14 +27,15 @@ if (args.includes("app-server")) {
       message += part;
       if (!message.endsWith("\n")) return;
       const input = JSON.parse(message);
-      let added = null;
-      const context = handlers.find((handler) => !handler.async);
-      if (context) {
+      const added = [];
+      for (const context of [...profileHandlers, ...handlers].filter((handler) => !handler.async)) {
         const run = spawnSync("bash", ["-c", context.command], { input: JSON.stringify(input), encoding: "utf8" });
+        if (profileHandlers.includes(context) && run.status !== 0) continue;
         assert.equal(run.status, 0, run.stderr || run.error?.message);
-        added = run.stdout ? JSON.parse(run.stdout) : null;
+        if (run.stdout) added.push(JSON.parse(run.stdout));
       }
-      socket.end(JSON.stringify({ handlers, added, input: [input.prompt, ...(added ? [added.hookSpecificOutput.additionalContext] : [])] }));
+      socket.end(JSON.stringify({ handlers, added: added[0] ?? null,
+        input: [input.prompt, ...added.map((item) => item.hookSpecificOutput.additionalContext)] }));
     });
   });
   server.listen(Number(new URL(option("--listen")).port), "127.0.0.1");

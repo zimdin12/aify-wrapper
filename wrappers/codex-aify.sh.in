@@ -620,7 +620,7 @@ if aify_herdr_hooks_report 2>/dev/null; then
   _aify_hook_options+=(--state-script "$AIFY_WRAPPER_DIR_FWD/bin/aify-herdr-state.sh" --report-withheld-state)
 fi
 if [ "$CODEX_AIFY_SHARED" != true ] && [ -n "$CODEX_AIFY_AGENT_ID" ]; then
-  _aify_hook_options+=(--turn-start-script "$AIFY_WRAPPER_DIR_FWD/bin/aify-turn-start.mjs")
+  _aify_hook_options+=(--turn-start-script "$AIFY_WRAPPER_DIR_FWD/bin/aify-turn-start.mjs" --bridge-dir "$AIFY_BRIDGE_DIR_FWD")
 fi
 if [ "${#_aify_hook_options[@]}" -gt 1 ]; then
   # Codex honors the existing TUI bypass only for fresh starts. A local managed Start lacks it.

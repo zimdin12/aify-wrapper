@@ -19,7 +19,7 @@ const rule = "fixture turn-start context";
 const trustRow = (key, hash) => `[hooks.state.${JSON.stringify(key)}]\ntrusted_hash = "${hash}"\n`;
 
 async function launch(t, endpoint, { target = true, herdr = false, subagent = false, resume = false,
-  managed = resume, viaWrapper = resume, trustContext = false, trustState = resume } = {}) {
+  managed = resume, viaWrapper = resume, trustContext = false, trustState = resume, profile = null } = {}) {
   const env = host(t, { endpoint });
   const home = env.HOME;
   const registry = env.AIFY_SERVICE_REGISTRY;
@@ -47,10 +47,25 @@ async function launch(t, endpoint, { target = true, herdr = false, subagent = fa
     const key = codexHookTrustKey(event, { root: path.parse(home).root, handlerIndex: herdr ? 1 : 0 });
     config += `\n${trustRow(key, codexHookHash(event, `node "${runner}"`, false))}`;
   }
+  const bridge = path.join(home, "comms bridge", "mcp", "stdio");
+  const hooksFile = path.join(codex, "hooks.json");
+  let hooksJson;
+  if (profile) {
+    const installed = path.join(bridge, "node_modules", "aify-wrapper");
+    if (profile === "installed") {
+      fs.mkdirSync(path.dirname(installed), { recursive: true });
+      fs.symlinkSync(root, installed, "dir");
+    }
+    const cmd = 'if [ -n "${AIFY_AGENT_ID:-}" ]; then node "' + posix(path.join(installed, "bin", "aify-turn-start.mjs")) + '"; fi';
+    const group = { hooks: [{ type: "command", command: cmd, timeout: 5 }] };
+    const unrelated = { hooks: [{ type: "command", command: "true", timeout: 2 }] };
+    hooksJson = JSON.stringify({ hooks: { UserPromptSubmit: profile === "unrelated" ? [unrelated] : [unrelated, group] } });
+    fs.writeFileSync(hooksFile, hooksJson);
+  }
   fs.writeFileSync(trust, config);
   const sealed = withPath(env, PATH);
   const rendered = spawnSync("bash", [path.join(root, "install.sh"), "--client", "codex", "--endpoint", "http://127.0.0.2:1",
-    "--render-only", out, "--registry", registry], { cwd: home, env: sealed, encoding: "utf8" });
+    "--render-only", out, "--registry", registry, "--bridge-dir", bridge], { cwd: home, env: sealed, encoding: "utf8" });
   assert.equal(rendered.status, 0, rendered.stderr || rendered.error?.message);
   const flags = ["--safe", managed ? "--managed" : "--resident", ...(resume ? ["--resume", "thread-1"] : [])];
   const result = await run("bash", [path.join(out, "codex-aify"), ...flags], { cwd: home, env: sealed, encoding: "utf8", timeout: 60_000 }).catch((error) => {
@@ -58,6 +73,7 @@ async function launch(t, endpoint, { target = true, herdr = false, subagent = fa
     throw new Error(`${error.message}\nApp-server log: ${fs.existsSync(log) ? fs.readFileSync(log, "utf8") : "not written"}`);
   });
   assert.equal(fs.readFileSync(trust, "utf8"), config, "launch must not write user trust configuration");
+  if (hooksJson !== undefined) assert.equal(fs.readFileSync(hooksFile, "utf8"), hooksJson, "launch must not rewrite profile hooks");
   const appArgs = JSON.parse(fs.readFileSync(`${capture}.argv`, "utf8"));
   assert.equal(appArgs.includes("--dangerously-bypass-hook-trust"), false, "the app-server's existing trust policy must not be widened");
   return { ...result, ...JSON.parse(fs.readFileSync(`${capture}.turn`, "utf8")), appArgs,
@@ -76,6 +92,24 @@ test("the rendered app-server gets turn-start context beside the existing Herdr 
   assert.equal(receiver.seen.length, 1);
   assert.equal(receiver.seen[0].headers["x-api-key"], KEY);
   assert.equal(receiver.seen[0].body.sessionKey, "thread-1");
+});
+
+test("an upgraded Comms profile supplies context once, without shifting the Herdr hook", { skip: process.platform === "win32" }, async (t) => {
+  const receiver = await service(t, answer(rule));
+  const result = await launch(t, receiver.endpoint, { herdr: true, profile: "installed" });
+  assert.equal(receiver.seen.length, 1, "the installed profile and the wrapper must not both submit turn-start");
+  assert.deepEqual(result.handlers, [stateHandler], "the wrapper still supplies its async state hook");
+  assert.deepEqual(result.input, ["fixture prompt", rule]);
+});
+
+test("an unrelated profile hook or a missing Comms runner does not displace turn-start", { skip: process.platform === "win32" }, async (t) => {
+  const receiver = await service(t, answer(rule));
+  for (const profile of ["unrelated", "missing-runner"]) {
+    const result = await launch(t, receiver.endpoint, { profile });
+    assert.deepEqual(result.handlers, [{ command: `node "${runner}"`, async: false, timeout: 3 }]);
+    assert.deepEqual(result.input, ["fixture prompt", rule]);
+  }
+  assert.equal(receiver.seen.length, 2);
 });
 
 test("no target adds no command; a subagent with a configured hook makes no request", async (t) => {
