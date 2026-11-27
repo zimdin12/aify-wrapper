@@ -15,7 +15,9 @@ if (args.includes("app-server")) {
     .map(([, command, timeout, background]) => ({ command: JSON.parse(command), timeout: Number(timeout), async: background === "true" }));
   const profilePath = path.join(process.env.CODEX_HOME, "hooks.json");
   const profile = fs.existsSync(profilePath) ? JSON.parse(fs.readFileSync(profilePath, "utf8")) : {};
-  const profileHandlers = profile.hooks?.UserPromptSubmit?.flatMap(({ hooks }) => hooks) ?? [];
+  // The test says whether Codex trusts the profile's hooks: its agent loop skips one it does not.
+  const profileHandlers = process.env.AIFY_TEST_CODEX_PROFILE_UNTRUSTED === "1" ? []
+    : profile.hooks?.UserPromptSubmit?.flatMap(({ hooks }) => hooks) ?? [];
   fs.writeFileSync(`${capture}.argv`, JSON.stringify(args));
   const server = net.createServer((socket) => {
     socket.setEncoding("utf8");

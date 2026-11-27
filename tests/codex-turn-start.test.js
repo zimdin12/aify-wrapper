@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { CODEX_STATE_EVENTS, codexHookHash, codexHookTrustKey, codexStateCommand } from "../lib/codex-herdr-hooks.mjs";
+import { CODEX_STATE_EVENTS, codexHookHash, codexHookTrustKey, codexProfileHookTrusted, codexStateCommand } from "../lib/codex-herdr-hooks.mjs";
 import { sealedPath, withPath } from "./sealed-path.mjs";
 import { KEY, answer, host, service } from "./turn-start-host.mjs";
 
@@ -19,7 +19,7 @@ const rule = "fixture turn-start context";
 const trustRow = (key, hash) => `[hooks.state.${JSON.stringify(key)}]\ntrusted_hash = "${hash}"\n`;
 
 async function launch(t, endpoint, { target = true, herdr = false, subagent = false, resume = false,
-  managed = resume, viaWrapper = resume, trustContext = false, trustState = resume, profile = null } = {}) {
+  managed = resume, viaWrapper = resume, trustContext = false, trustState = resume, profile = null, trustProfile = false } = {}) {
   const env = host(t, { endpoint });
   const home = env.HOME;
   const registry = env.AIFY_SERVICE_REGISTRY;
@@ -61,11 +61,15 @@ async function launch(t, endpoint, { target = true, herdr = false, subagent = fa
     const unrelated = { hooks: [{ type: "command", command: "true", timeout: 2 }] };
     hooksJson = JSON.stringify({ hooks: { UserPromptSubmit: profile === "unrelated" ? [unrelated] : [unrelated, group] } });
     fs.writeFileSync(hooksFile, hooksJson);
+    // Keyed as Codex keys a hooks.json hook (file, event, group, hook), in the quoting the Comms installer writes.
+    if (trustProfile) config += `\n[hooks.state.'${hooksFile}:user_prompt_submit:1:0']\ntrusted_hash = "${codexHookHash("user_prompt_submit", cmd, false, 5)}"\n`;
+    // Codex's agent loop skips a profile hook config.toml does not trust; only a managed launch has nobody to trust it.
+    env.AIFY_TEST_CODEX_PROFILE_UNTRUSTED = managed && !trustProfile ? "1" : "0";
   }
   fs.writeFileSync(trust, config);
   const sealed = withPath(env, PATH);
   const rendered = spawnSync("bash", [path.join(root, "install.sh"), "--client", "codex", "--endpoint", "http://127.0.0.2:1",
-    "--render-only", out, "--registry", registry, "--bridge-dir", bridge], { cwd: home, env: sealed, encoding: "utf8" });
+    "--render-only", out, "--registry", registry, ...(profile ? ["--bridge-dir", bridge] : [])], { cwd: home, env: sealed, encoding: "utf8" });
   assert.equal(rendered.status, 0, rendered.stderr || rendered.error?.message);
   const flags = ["--safe", managed ? "--managed" : "--resident", ...(resume ? ["--resume", "thread-1"] : [])];
   const result = await run("bash", [path.join(out, "codex-aify"), ...flags], { cwd: home, env: sealed, encoding: "utf8", timeout: 60_000 }).catch((error) => {
@@ -110,6 +114,33 @@ test("an unrelated profile hook or a missing Comms runner does not displace turn
     assert.deepEqual(result.input, ["fixture prompt", rule]);
   }
   assert.equal(receiver.seen.length, 2);
+});
+
+test("a managed resume leaves context to the profile hook only once Codex trusts it", { skip: process.platform === "win32" }, async (t) => {
+  const receiver = await service(t, answer(rule));
+  const resume = { resume: true, herdr: true, profile: "installed" };
+  const neither = await launch(t, receiver.endpoint, resume);
+  assert.deepEqual(neither.handlers, [stateHandler]);
+  assert.match(neither.stderr, /turn-start context withheld: the hook is not trusted for this managed launch\./, "no hook can carry the context, and the launch must say so");
+  assert.deepEqual(receiver.seen, []);
+  const ours = await launch(t, receiver.endpoint, { ...resume, trustContext: true });
+  assert.deepEqual(ours.handlers, [stateHandler, { command: `node "${runner}"`, async: false, timeout: 3 }],
+    "Codex skips the untrusted profile hook, so the trusted launch hook must still carry the context");
+  assert.equal(receiver.seen.length, 1);
+  const theirs = await launch(t, receiver.endpoint, { ...resume, trustContext: true, trustProfile: true });
+  assert.deepEqual(theirs.handlers, [stateHandler], "a trusted profile hook carries the context alone");
+  assert.doesNotMatch(theirs.stderr, /turn-start context withheld/);
+  assert.deepEqual(theirs.input, ["fixture prompt", rule]);
+  assert.equal(receiver.seen.length, 2);
+});
+
+test("the profile hook's trust is read at the key and hash codex-cli 0.169.0 reported for it", () => {
+  const hook = { command: 'if [ -n "${AIFY_AGENT_ID:-}" ]; then node "/opt/fake-bridge/node_modules/aify-wrapper/bin/aify-turn-start.mjs"; fi', timeout: 5 };
+  const file = "/home/someone/.codex/hooks.json";
+  const row = `[hooks.state.'${file}:user_prompt_submit:0:0']\ntrusted_hash = "sha256:28759988dcbbc4f705616ebdbae87587337da16194eaed3d15a9bbf6654b3fce"\n`;
+  assert.equal(codexProfileHookTrusted(row, file, 0, hook), true);
+  assert.equal(codexProfileHookTrusted(row, file, 1, hook), false, "trust recorded for one group is not another group's");
+  assert.equal(codexProfileHookTrusted(row, file, 0, { ...hook, timeout: 3 }), false, "a changed hook is a hook Codex has not trusted");
 });
 
 test("no target adds no command; a subagent with a configured hook makes no request", async (t) => {
